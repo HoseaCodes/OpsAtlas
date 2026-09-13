@@ -5,10 +5,6 @@
     "description" : "The control plane for the OpsAtlas service catalog.\n\nConventions that hold for every endpoint: collections are cursor-paginated and never offset-paginated; failures are RFC 9457 problem documents carrying a correlationId and, for validation failures, a violations array locating each problem by JSON Pointer; a correlation id is accepted on X-Correlation-Id or generated, and echoed on every response.\n\nNothing in this API reports observed health. No field describes a measurement the platform has taken, because nothing probes anything yet.\n",
     "version" : "v1"
   },
-  "servers" : [ {
-    "url" : "http://localhost:59841",
-    "description" : "Generated server url"
-  } ],
   "paths" : {
     "/api/v1/services/{slug}" : {
       "get" : {

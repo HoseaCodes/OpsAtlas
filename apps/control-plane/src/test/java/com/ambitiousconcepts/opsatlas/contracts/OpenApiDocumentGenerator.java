@@ -78,6 +78,14 @@ class OpenApiDocumentGenerator extends PostgresTestBase {
                 .as("the rule set endpoint must be described")
                 .isFalse();
 
+        // springdoc records the URL it was generated from, which is a random
+        // port here and a deployment address in any other environment. Left in,
+        // it would make the drift check fail on every run for a reason that has
+        // nothing to do with the contract - and a check that always fails is a
+        // check everyone learns to ignore. A committed contract has no business
+        // naming a server anyway: the base URL is the caller's to choose.
+        ((com.fasterxml.jackson.databind.node.ObjectNode) document).remove("servers");
+
         Files.createDirectories(OUTPUT.getParent());
         // Pretty-printed and newline-terminated so the committed file produces a
         // readable diff when an endpoint changes. The diff is the review.
