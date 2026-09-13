@@ -1,0 +1,24 @@
+# Every dependency here is either named in CLAUDE.md section 5 or carries a
+# justification comment, per the rule that additions need one.
+
+[versions]
+java = "21"
+springBoot = "3.5.3"
+springDependencyManagement = "1.1.7"
+archunit = "1.4.1"
+uuidGenerator = "5.1.0"
+
+[libraries]
+# Justification: Java 21 has no built-in UUIDv7 generator, and CLAUDE.md
+# section 7 requires UUIDv7 where ordering helps. Generating application-side
+# rather than in Postgres keeps ids available before insert and avoids
+# depending on a Postgres version that ships uuidv7().
+uuid-generator = { module = "com.fasterxml.uuid:java-uuid-generator", version.ref = "uuidGenerator" }
+
+# Justification: test scope only. This is the mechanism that makes the module
+# boundaries in ADR 0001 real rather than aspirational.
+archunit-junit5 = { module = "com.tngtech.archunit:archunit-junit5", version.ref = "archunit" }
+
+[plugins]
+spring-boot = { id = "org.springframework.boot", version.ref = "springBoot" }
+spring-dependency-management = { id = "io.spring.dependency-management", version.ref = "springDependencyManagement" }
