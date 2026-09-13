@@ -46,8 +46,15 @@ test("the scorecard tab is a real navigation, not client-only state", async ({ p
   await page.goto("/catalog/orders-api");
   await expect(page.getByRole("heading", { level: 1, name: "Orders API" })).toBeVisible();
 
-  await page.getByRole("tab", { name: "Scorecard" }).click();
-  await expect(page).toHaveURL(/\?tab=scorecard$/);
+  // The click is retried with the assertion because a click that lands between
+  // the server-rendered markup appearing and the router hydrating is swallowed,
+  // which failed this test roughly one run in three. Retrying the pair still
+  // asserts the whole property - that clicking the tab changes the URL - rather
+  // than weakening it to "the tab exists".
+  await expect(async () => {
+    await page.getByRole("tab", { name: "Scorecard" }).click();
+    await expect(page).toHaveURL(/\?tab=scorecard$/, { timeout: 2_000 });
+  }).toPass({ timeout: 15_000 });
 });
 
 test("a service detail page shows its scorecard and what the checks do not cover", async ({ page }) => {
