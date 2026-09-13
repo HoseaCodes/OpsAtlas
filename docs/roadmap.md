@@ -201,6 +201,21 @@ in the code: a window of N days means today and the N-1 days before it, so a
 30-day ribbon's oldest day is `today - 29`. The first draft of the test planted
 `today - 30`, got one day back instead of two, and was wrong.
 
+**Third gap closed after phase 8:** `CLAUDE.md` §10 requires keyboard navigation
+with visible focus. The stylesheet had a `:focus-visible` rule and nothing
+asserted it, which is the failure mode worth naming: `outline: none` in a later
+change breaks it silently and is invisible to everyone using a mouse.
+`e2e/keyboard.spec.ts` now tabs through the catalog in a real browser and fails
+if any element takes focus without showing it, checks that the nav, the filters
+and the service list are reachable in that order, and opens a service and a tab
+with Enter alone. Verified by mutation: replacing the rule with `outline: none`
+fails the two visibility tests and correctly leaves the two reachability tests
+passing.
+
+It has to be a browser test. `:focus-visible` does not match a scripted
+`.focus()` — the first draft of the last test called it, and would have been
+asserting the browser's mouse behaviour while claiming to test keyboard support.
+
 **Deferred, with reasons:**
 
 - **Drift detection.** CLAUDE.md §5 lists it as the observer's job. It needs a

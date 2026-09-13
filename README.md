@@ -84,9 +84,11 @@ jobs — selection, focus ring, error-budget fill, open-incident emphasis. See
 | OpenAPI document generated from the code, drift-checked | **Real** | `make check-openapi` fails the build on any difference |
 | Swagger UI over that document, at `/swagger-ui.html` | **Real** | served by springdoc; on by default locally, off when `OPSATLAS_SWAGGER_UI=false` |
 | Typed TypeScript client, no hand-written API types | **Real** | `make typecheck` |
-| Web console — catalog, detail, scorecard, register by paste | **Real** | 37 component tests, 19 Playwright tests against the real stack |
+| Web console — catalog, detail, scorecard, register by paste | **Real** | 37 component tests, 23 Playwright tests against the real stack |
 | A copyable prompt on `/register`, generated from the schema and the live rules | **Real** | `manifestPrompt.test.ts` walks the real schema and fails if a field is missing from the prompt; a Playwright test reads the clipboard |
 | Loading / empty / partial-failure / error / never-observed states | **Real** | `states.test.tsx`, and the detail page settles its two requests independently |
+| Status carried by shape and height, never by hue | **Real** | `status.test.tsx` — a pass differs from a fail by shape, a day's availability by height |
+| Keyboard navigation with a visible focus ring | **Real, and verified** | `keyboard.spec.ts` — tabs through the catalog in a real browser and fails if anything takes focus without showing it; deleting the `:focus-visible` rule fails it |
 | Polling a GitHub repository for its `service.yaml` | **Real** | `SourceSyncIT`, `SourceApiIT`, and a one-off check against the real api.github.com |
 | Conditional requests — an unchanged manifest costs a 304 and no ingestion | **Real** | `SourceSyncIT`; verified against real GitHub |
 | A failing sync leaves the registered service untouched | **Real, and verified** | `SourceSyncIT` — seven failure modes, each asserting the service survives |

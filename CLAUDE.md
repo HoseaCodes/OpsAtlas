@@ -60,7 +60,7 @@ worse than no `terraform/` directory.
   `apps/observer`; it is installed here via Homebrew.
 - **Tests:** `make test` — 14 schema fixtures, 37 console component tests,
   33 Go tests (race-clean) and 257 JVM tests, all passing. `make test-all` adds
-  19 Playwright tests against the real stack. Integration tests use
+  23 Playwright tests against the real stack. Integration tests use
   Testcontainers and need a running Docker daemon; the Playwright tests need the
   stack running.
 - **CI is written but has never run.** There is no remote configured. Do not
@@ -105,6 +105,12 @@ worse than no `terraform/` directory.
 - **A window of N days means today and the N-1 days before it.** So a 30-day
   ribbon's oldest day is `today - 29`. Easy to get wrong by one in either
   direction, and it has been.
+- **Keyboard focus is visible, and asserted.** §10 requires keyboard navigation
+  with visible focus; `e2e/keyboard.spec.ts` tabs through the catalog and fails
+  if anything takes focus without showing it. Deleting the `:focus-visible` rule
+  from `globals.css` fails two of its four tests. It has to be a browser test —
+  `:focus-visible` does not match a scripted `.focus()`, so a component test
+  asserting the ring would be asserting its own simulation.
 - **A test that plants rows must remove them in `@AfterEach`.** Resetting only on
   the way in leaves rows for whichever class runs next — `CatalogApiIT` asserts
   an empty catalog and has been broken this way twice.
