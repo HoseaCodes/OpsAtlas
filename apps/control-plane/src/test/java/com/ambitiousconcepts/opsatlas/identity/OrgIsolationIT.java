@@ -1,6 +1,7 @@
 package com.ambitiousconcepts.opsatlas.identity;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -8,6 +9,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.ambitiousconcepts.opsatlas.support.PostgresTestBase;
+import com.ambitiousconcepts.opsatlas.integrations.api.SourceCatalog;
+import com.ambitiousconcepts.opsatlas.integrations.api.SourceRef;
+import com.ambitiousconcepts.opsatlas.integrations.api.SourceView;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.UUID;
@@ -60,10 +64,15 @@ class OrgIsolationIT extends PostgresTestBase {
     @Autowired
     private JdbcTemplate jdbc;
 
+    @Autowired
+    private SourceCatalog sources;
+
     private UUID theirServiceId;
+    private UUID theirSourceId;
 
     @BeforeEach
     void plantAnotherOrganizationsData() {
+        jdbc.update("delete from source");
         jdbc.update("delete from environment");
         jdbc.update("delete from service");
         jdbc.update("delete from team");
@@ -94,10 +103,23 @@ class OrgIsolationIT extends PostgresTestBase {
                 UUID.randomUUID(),
                 THEIRS,
                 theirServiceId);
+
+        theirSourceId = UUID.randomUUID();
+        jdbc.update(
+                """
+                insert into source (id, org_id, provider, repository, git_ref, path, enabled,
+                                    consecutive_failures, service_id, version, created_at, updated_at)
+                values (?, ?, 'github', 'other-tenant/their-secret-api', 'main', 'service.yaml', true,
+                        0, ?, 0, now(), now())
+                """,
+                theirSourceId,
+                THEIRS,
+                theirServiceId);
     }
 
     @AfterEach
     void removeAnotherOrganizationsData() {
+        jdbc.update("delete from source where org_id = ?", THEIRS);
         jdbc.update("delete from environment where org_id = ?", THEIRS);
         jdbc.update("delete from service where org_id = ?", THEIRS);
         jdbc.update("delete from organization where id = ?", THEIRS);
@@ -211,5 +233,83 @@ class OrgIsolationIT extends PostgresTestBase {
                 .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
 
         jdbc.update("delete from team where id = ?", ourTeam);
+    }
+
+    // -- Sources (phase 6) --------------------------------------------------
+
+    @Test
+    @DisplayName("another organization's sources are not in the list")
+    void source_list_excludes_other_organizations() throws Exception {
+        mockMvc.perform(get("/api/v1/sources").param("limit", "100"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items").isEmpty());
+    }
+
+    @Test
+    @DisplayName("fetching another organization's source is 404, never 403")
+    void fetching_their_source_reports_absent() throws Exception {
+        mockMvc.perform(get("/api/v1/sources/" + theirSourceId))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.type").value("https://opsatlas.ambitiousconcepts.io/problems/not-found"));
+    }
+
+    @Test
+    @DisplayName("the 404 for their source discloses nothing about it")
+    void their_source_404_leaks_nothing() throws Exception {
+        String body = mockMvc.perform(get("/api/v1/sources/" + theirSourceId))
+                .andExpect(status().isNotFound())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        assertThat(body).doesNotContain("other-tenant").doesNotContain("their-secret-api");
+    }
+
+    @Test
+    @DisplayName("syncing another organization's source is 404, and does not touch it")
+    void syncing_their_source_is_refused() throws Exception {
+        mockMvc.perform(post("/api/v1/sources/" + theirSourceId + "/sync"))
+                .andExpect(status().isNotFound());
+
+        assertThat(jdbc.queryForObject(
+                        "select last_attempt_at from source where id = ?", java.sql.Timestamp.class, theirSourceId))
+                .as("their source must not have been polled on our behalf")
+                .isNull();
+    }
+
+    @Test
+    @DisplayName("disabling another organization's source is 404, and leaves it enabled")
+    void disabling_their_source_is_refused() throws Exception {
+        mockMvc.perform(post("/api/v1/sources/" + theirSourceId + "/disable"))
+                .andExpect(status().isNotFound());
+
+        assertThat(jdbc.queryForObject("select enabled from source where id = ?", Boolean.class, theirSourceId))
+                .isTrue();
+    }
+
+    @Test
+    @DisplayName("deleting another organization's source is 404, and it survives")
+    void deleting_their_source_is_refused() throws Exception {
+        mockMvc.perform(delete("/api/v1/sources/" + theirSourceId))
+                .andExpect(status().isNotFound());
+
+        assertThat(jdbc.queryForObject("select count(*) from source where id = ?", Integer.class, theirSourceId))
+                .isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("their watched repository does not block us watching the same one")
+    void watching_is_scoped_per_organization() {
+        // Uniqueness is per organization. If it were global, one tenant could
+        // deny another the ability to watch a public repository by watching it
+        // first.
+        SourceView ours = sources.watch(
+                OURS, "github", SourceRef.of("other-tenant/their-secret-api", "main", "service.yaml"));
+
+        assertThat(ours.id()).isNotEqualTo(theirSourceId);
+        assertThat(jdbc.queryForObject(
+                        "select count(*) from source where repository = 'other-tenant/their-secret-api'",
+                        Integer.class))
+                .isEqualTo(2);
     }
 }

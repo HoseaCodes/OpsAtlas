@@ -39,5 +39,8 @@ public abstract class PostgresTestBase {
         registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
         registry.add("spring.datasource.username", POSTGRES::getUsername);
         registry.add("spring.datasource.password", POSTGRES::getPassword);
+        // Scheduler and GitHub defaults live in src/test/resources/application.properties,
+        // below @DynamicPropertySource in precedence, so a test that arranges a
+        // stub overrides them without racing this method.
     }
 }

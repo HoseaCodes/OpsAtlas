@@ -63,6 +63,53 @@ class ArchitectureTest {
             .because("the catalog -> governance dependency is one-directional and must stay that way");
 
     @ArchTest
+    static final ArchRule integrations_internals_are_private = noClasses()
+            .that()
+            .resideOutsideOfPackage("com.ambitiousconcepts.opsatlas.integrations..")
+            .should()
+            .dependOnClassesThat()
+            .resideInAPackage("com.ambitiousconcepts.opsatlas.integrations.internal..")
+            .because("the sync machinery is private to integrations (ADR 0001)");
+
+    /**
+     * The dependency runs integrations -> catalog -> governance, and only that
+     * way. Catalog must not learn where a manifest came from: it accepts a
+     * document from anywhere, which is exactly why a polled manifest and a
+     * pasted one cannot be treated differently (ADR 0008).
+     */
+    @ArchTest
+    static final ArchRule catalog_does_not_depend_on_integrations = noClasses()
+            .that()
+            .resideInAPackage("com.ambitiousconcepts.opsatlas.catalog..")
+            .should()
+            .dependOnClassesThat()
+            .resideInAPackage("com.ambitiousconcepts.opsatlas.integrations..")
+            .because("catalog does not know how a manifest reached it, and must not start knowing");
+
+    @ArchTest
+    static final ArchRule governance_does_not_depend_on_integrations = noClasses()
+            .that()
+            .resideInAPackage("com.ambitiousconcepts.opsatlas.governance..")
+            .should()
+            .dependOnClassesThat()
+            .resideInAPackage("com.ambitiousconcepts.opsatlas.integrations..")
+            .because("policy is evaluated against facts, never against where they were fetched from");
+
+    /**
+     * ADR 0008's central claim, as a build rule: OpsAtlas never writes to a
+     * monitored repository. Only integrations may make outbound HTTP calls at
+     * all, so a write path could not appear anywhere else without this failing.
+     */
+    @ArchTest
+    static final ArchRule only_integrations_makes_outbound_http_calls = noClasses()
+            .that()
+            .resideOutsideOfPackage("com.ambitiousconcepts.opsatlas.integrations..")
+            .should()
+            .dependOnClassesThat()
+            .resideInAnyPackage("org.springframework.web.client..", "java.net.http..")
+            .because("reaching out to another system is integrations' job and nobody else's (ADR 0008)");
+
+    @ArchTest
     static final ArchRule shared_depends_on_no_sibling_module = noClasses()
             .that()
             .resideInAPackage("com.ambitiousconcepts.opsatlas.shared..")
@@ -116,16 +163,14 @@ class ArchitectureTest {
 
     /**
      * Phase discipline, from CLAUDE.md section 3 rule 3: no package exists for a
-     * phase that is not being implemented. {@code operations} and
-     * {@code integrations} are in docs/roadmap.md and must not appear on disk
-     * until their phase is active. Deleting this rule is how they are admitted -
-     * which makes admitting them a deliberate, reviewable act.
+     * phase that is not being implemented. {@code integrations} was admitted in
+     * phase 6 by deleting it from this list, which is what makes admitting a
+     * module a deliberate, reviewable act rather than a directory appearing.
+     * {@code operations} arrives with the observer.
      */
     @ArchTest
     static final ArchRule no_packages_for_future_phases = noClasses()
             .should()
-            .resideInAnyPackage(
-                    "com.ambitiousconcepts.opsatlas.operations..",
-                    "com.ambitiousconcepts.opsatlas.integrations..")
-            .because("these modules belong to later phases and must not exist as empty scaffolding");
+            .resideInAPackage("com.ambitiousconcepts.opsatlas.operations..")
+            .because("the operations module belongs to the observer phase and must not exist as scaffolding");
 }

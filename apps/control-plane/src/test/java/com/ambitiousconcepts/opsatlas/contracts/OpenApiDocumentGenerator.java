@@ -77,6 +77,12 @@ class OpenApiDocumentGenerator extends PostgresTestBase {
         assertThat(document.at("/paths/~1api~1v1~1policy~1rules").isMissingNode())
                 .as("the rule set endpoint must be described")
                 .isFalse();
+        assertThat(document.at("/paths/~1api~1v1~1sources").isMissingNode())
+                .as("the sources collection must be described")
+                .isFalse();
+        assertThat(document.at("/paths/~1api~1v1~1sources~1{id}~1sync").isMissingNode())
+                .as("the manual sync endpoint must be described")
+                .isFalse();
 
         // springdoc records the URL it was generated from, which is a random
         // port here and a deployment address in any other environment. Left in,
