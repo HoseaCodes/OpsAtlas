@@ -36,6 +36,16 @@ spring:
     virtual:
       enabled: true
 
+  http:
+    client:
+      # Timeouts for every outbound call. An unbounded read is how a scheduled
+      # job stops being scheduled: one unresponsive host holds the poll thread
+      # and every source behind it silently stops syncing. Deliberately short -
+      # this is a background poll of a small file, and a provider that cannot
+      # answer in ten seconds should be recorded unreachable and retried.
+      connect-timeout: ${OPSATLAS_HTTP_CONNECT_TIMEOUT:5s}
+      read-timeout: ${OPSATLAS_HTTP_READ_TIMEOUT:10s}
+
 server:
   port: ${OPSATLAS_PORT:8080}
   error:
@@ -78,6 +88,25 @@ management:
   health:
     db:
       enabled: true
+
+# ---------------------------------------------------------------------------
+# Repository sync (ADR 0008). OpsAtlas polls; it never registers a webhook and
+# never holds write access.
+# ---------------------------------------------------------------------------
+opsatlas:
+  sync:
+    # Set false to stop the scheduler. Tests do this: a timer firing underneath
+    # an assertion is a flake generator.
+    enabled: ${OPSATLAS_SYNC_ENABLED:true}
+    interval: ${OPSATLAS_SYNC_INTERVAL:PT5M}
+    initial-delay: ${OPSATLAS_SYNC_INITIAL_DELAY:PT30S}
+    batch-size: ${OPSATLAS_SYNC_BATCH_SIZE:25}
+  github:
+    base-url: ${OPSATLAS_GITHUB_BASE_URL:https://api.github.com}
+    # Optional. Unauthenticated reads work for public repositories at 60
+    # requests per hour per IP; a token raises that to 5,000. Only the ability
+    # to read contents is needed - never grant write scope (ADR 0008).
+    token: ${OPSATLAS_GITHUB_TOKEN:}
 
 logging:
   pattern:

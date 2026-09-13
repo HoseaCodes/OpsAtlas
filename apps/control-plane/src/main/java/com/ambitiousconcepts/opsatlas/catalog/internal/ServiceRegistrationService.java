@@ -173,6 +173,18 @@ class ServiceRegistrationService implements ServiceRegistration {
                             + "\". Re-read it, reapply your change, and retry.");
         }
 
+        return applyManifest(orgId, service, document, sourceRef);
+    }
+
+    /**
+     * The body shared by {@link #update} and {@link #updateFromSource}.
+     *
+     * <p>Everything after the precondition check is identical for both, and has
+     * to stay identical: a manifest applied by a poller must be validated,
+     * scored and audited exactly as one applied by a person.
+     */
+    private ServiceDetail applyManifest(UUID orgId, ServiceEntity service, String document, String sourceRef) {
+        String slug = service.getSlug();
         var ingested = ingestor.ingest(document);
         ManifestV1 manifest = ingested.manifest();
 
@@ -234,6 +246,17 @@ class ServiceRegistrationService implements ServiceRegistration {
         payload.put("checksPassed", scorecard.checksPassed());
         payload.put("checksApplicable", scorecard.checksApplicable());
         return payload;
+    }
+
+    @Override
+    @Transactional
+    public ServiceDetail updateFromSource(UUID orgId, UUID serviceId, String document, String sourceRef) {
+        ServiceEntity service = services.findByOrgIdAndId(orgId, serviceId)
+                .orElseThrow(() -> new NotFoundException("Service", serviceId.toString()));
+
+        // No If-Match. See ServiceRegistration.updateFromSource for why, and for
+        // what it costs.
+        return applyManifest(orgId, service, document, sourceRef);
     }
 
     private void rejectIfSlugTaken(UUID orgId, String slug, UUID allowedId) {

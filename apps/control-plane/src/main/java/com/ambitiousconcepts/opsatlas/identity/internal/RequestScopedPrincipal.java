@@ -2,6 +2,8 @@ package com.ambitiousconcepts.opsatlas.identity.internal;
 
 import com.ambitiousconcepts.opsatlas.identity.api.CurrentPrincipal;
 import com.ambitiousconcepts.opsatlas.identity.api.Principal;
+import com.ambitiousconcepts.opsatlas.identity.api.PrincipalScope;
+import java.util.function.Supplier;
 import org.springframework.stereotype.Component;
 
 /**
@@ -13,7 +15,7 @@ import org.springframework.stereotype.Component;
  * organization, so the clear is not optional and is tested.
  */
 @Component
-class RequestScopedPrincipal implements CurrentPrincipal {
+class RequestScopedPrincipal implements CurrentPrincipal, PrincipalScope {
 
     private static final ThreadLocal<Principal> CURRENT = new ThreadLocal<>();
 
@@ -26,6 +28,28 @@ class RequestScopedPrincipal implements CurrentPrincipal {
                             + "outside a request, which means it is not scoped to one.");
         }
         return principal;
+    }
+
+    /**
+     * Runs work as {@code principal}, restoring whatever was bound before.
+     *
+     * <p>Restore rather than clear, because this nests: a manual sync arrives
+     * inside a request that already has a principal bound, and clearing on the
+     * way out would leave the rest of that request unable to read one.
+     */
+    @Override
+    public <T> T runAs(Principal principal, Supplier<T> work) {
+        Principal previous = CURRENT.get();
+        CURRENT.set(principal);
+        try {
+            return work.get();
+        } finally {
+            if (previous == null) {
+                CURRENT.remove();
+            } else {
+                CURRENT.set(previous);
+            }
+        }
     }
 
     static void bind(Principal principal) {

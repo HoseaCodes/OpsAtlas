@@ -2,6 +2,7 @@ package com.ambitiousconcepts.opsatlas;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
  * OpsAtlas control plane.
@@ -11,12 +12,12 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  * {@code ArchitectureTest} fails the build when that is violated. See
  * {@code docs/adr/0001-modular-monolith-as-one-gradle-module.md}.
  *
- * <p>Modules present in this phase: {@code shared}, {@code identity},
- * {@code catalog}. {@code governance} arrives in phase 3. {@code operations}
- * and {@code integrations} are in {@code docs/roadmap.md} and deliberately not
- * on disk.
+ * <p>Modules present: {@code shared}, {@code identity}, {@code catalog},
+ * {@code governance}, {@code integrations}. {@code operations} arrives with the
+ * observer and is in {@code docs/roadmap.md}, deliberately not on disk.
  */
 @SpringBootApplication
+@EnableScheduling
 public class ControlPlaneApplication {
     public static void main(String[] args) {
         SpringApplication.run(ControlPlaneApplication.class, args);
