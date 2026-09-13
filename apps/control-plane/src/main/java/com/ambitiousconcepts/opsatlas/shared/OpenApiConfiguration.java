@@ -36,20 +36,25 @@ public class OpenApiConfiguration {
     }
 
     /**
-     * Marks every response property required unless it is explicitly nullable.
+     * Marks every response property required, and lets {@code nullable} carry
+     * whether its value may be absent.
      *
-     * <p>Without this, springdoc emits no {@code required} array at all, and the
-     * generated TypeScript makes every field optional. That is not a frontend
-     * inconvenience: it is the contract failing to say which fields a caller can
-     * rely on, so every consumer has to defend against absences that cannot
-     * happen, and the ones that <em>can</em> happen stop standing out.
+     * <p>Without this, springdoc emits no {@code required} array at all and the
+     * generated TypeScript makes every field optional. That is the contract
+     * failing to say what a caller can rely on: every consumer then defends
+     * against absences that cannot happen, and the ones that genuinely can
+     * happen stop standing out.
      *
-     * <p>Inverting the burden this way means a field is only optional when
-     * somebody said so with {@code @Schema(nullable = true)} - which is a
-     * deliberate statement about the domain rather than a default nobody chose.
+     * <p>Required and nullable answer different questions, and both are marked
+     * because both are true. Jackson serializes a null field rather than
+     * omitting it, so <em>the key is always present</em> - that is what
+     * {@code required} says. Whether the value may be null is a separate fact
+     * about the domain, declared with {@code @Schema(nullable = true)} at the
+     * field. Conflating them would produce {@code string | null | undefined} in
+     * TypeScript for a field that is never undefined.
      */
     @Bean
-    public OpenApiCustomizer requiredUnlessNullable() {
+    public OpenApiCustomizer describeRequiredAndNullableAccurately() {
         return openApi -> {
             Components components = openApi.getComponents();
             if (components == null || components.getSchemas() == null) {
@@ -66,15 +71,10 @@ public class OpenApiConfiguration {
             return;
         }
 
-        List<String> required = new ArrayList<>();
-        properties.forEach((name, property) -> {
-            if (!Boolean.TRUE.equals(property.getNullable())) {
-                required.add(name);
-            }
-            // Nested inline object schemas get the same treatment, so a nested
-            // record does not quietly revert to all-optional.
-            markRequired(property);
-        });
+        List<String> required = new ArrayList<>(properties.keySet());
+        // Nested inline object schemas get the same treatment, so a nested
+        // record does not quietly revert to all-optional.
+        properties.values().forEach(OpenApiConfiguration::markRequired);
 
         if (!required.isEmpty()) {
             schema.setRequired(required);

@@ -172,28 +172,28 @@ export interface components {
             /** Format: uuid */
             id: string;
             name: string;
-            url?: string;
-            readinessPath?: string;
-            livenessPath?: string;
+            url: string;
+            readinessPath: string;
+            livenessPath: string;
             /** Format: date-time */
-            lastObservedAt?: string;
+            lastObservedAt: string;
         };
         JsonNode: Record<string, never>;
         ServiceDetail: {
             /** Format: uuid */
             id: string;
             slug: string;
-            displayName?: string;
+            displayName: string;
             repository: string;
             /** Format: int32 */
             tier: number;
-            runtime?: string;
+            runtime: string;
             lifecycle: string;
-            owner?: string;
+            owner: string;
             schemaVersion: string;
             manifestDigest: string;
             sourcePath: string;
-            sourceRef?: string;
+            sourceRef: string;
             environments: components["schemas"]["EnvironmentView"][];
             manifest: components["schemas"]["JsonNode"];
             /** Format: date-time */
@@ -218,15 +218,15 @@ export interface components {
             path: string;
             enabled: boolean;
             /** Format: date-time */
-            lastAttemptAt?: string;
+            lastAttemptAt: string;
             /** Format: date-time */
-            lastSuccessAt?: string;
-            lastOutcome?: string;
-            lastDetail?: string;
+            lastSuccessAt: string;
+            lastOutcome: string;
+            lastDetail: string;
             /** Format: int32 */
             consecutiveFailures: number;
             /** Format: uuid */
-            serviceId?: string;
+            serviceId: string;
             /** Format: date-time */
             createdAt: string;
             /** Format: int64 */
@@ -234,21 +234,21 @@ export interface components {
         };
         PageResponseSourceView: {
             items: components["schemas"]["SourceView"][];
-            nextCursor?: string;
+            nextCursor: string;
         };
         PageResponseServiceSummary: {
             items: components["schemas"]["ServiceSummary"][];
-            nextCursor?: string;
+            nextCursor: string;
         };
         ServiceSummary: {
             /** Format: uuid */
             id: string;
             slug: string;
-            displayName?: string;
+            displayName: string;
             repository: string;
             /** Format: int32 */
             tier: number;
-            runtime?: string;
+            runtime: string;
             lifecycle: string;
             owned: boolean;
             /** Format: date-time */
@@ -260,7 +260,7 @@ export interface components {
             checkId: string;
             title: string;
             status: string;
-            detail?: string;
+            detail: string;
         };
         Scorecard: {
             /** Format: uuid */
@@ -300,7 +300,7 @@ export interface components {
         };
         PageResponseAuditEntry: {
             items: components["schemas"]["AuditEntry"][];
-            nextCursor?: string;
+            nextCursor: string;
         };
     };
     responses: never;

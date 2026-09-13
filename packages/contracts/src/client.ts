@@ -16,6 +16,7 @@ export type CheckResult = components["schemas"]["CheckResult"];
 export type AuditEntry = components["schemas"]["AuditEntry"];
 export type PolicyRules = components["schemas"]["PolicyRules"];
 export type EnvironmentView = components["schemas"]["EnvironmentView"];
+export type SourceView = components["schemas"]["SourceView"];
 
 export interface Page<T> {
   items: T[];
@@ -103,6 +104,18 @@ export class OpsAtlasClient {
     if (params.cursor) query.set("cursor", params.cursor);
     if (params.limit) query.set("limit", String(params.limit));
     return this.request<Page<AuditEntry>>(`/api/v1/audit-events?${query}`, init);
+  }
+
+  /** Repositories OpsAtlas watches. Read-only against the provider; see ADR 0008. */
+  listSources(params: { cursor?: string; limit?: number } = {}, init?: RequestInit) {
+    const query = new URLSearchParams();
+    if (params.cursor) query.set("cursor", params.cursor);
+    if (params.limit) query.set("limit", String(params.limit));
+    return this.request<Page<SourceView>>(`/api/v1/sources?${query}`, init);
+  }
+
+  getSource(id: string, init?: RequestInit) {
+    return this.request<SourceView>(`/api/v1/sources/${encodeURIComponent(id)}`, init);
   }
 
   /** Register a service. The body is the raw service.yaml, not a JSON envelope. */

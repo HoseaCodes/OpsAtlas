@@ -487,7 +487,7 @@
             "format" : "date-time"
           }
         },
-        "required" : [ "id", "name" ]
+        "required" : [ "id", "lastObservedAt", "livenessPath", "name", "readinessPath", "url" ]
       },
       "JsonNode" : {
         "type" : "object"
@@ -555,7 +555,7 @@
             "format" : "int64"
           }
         },
-        "required" : [ "environments", "id", "lifecycle", "manifest", "manifestDigest", "registeredAt", "repository", "schemaVersion", "slug", "sourcePath", "tier", "updatedAt", "version" ]
+        "required" : [ "displayName", "environments", "id", "lifecycle", "manifest", "manifestDigest", "owner", "registeredAt", "repository", "runtime", "schemaVersion", "slug", "sourcePath", "sourceRef", "tier", "updatedAt", "version" ]
       },
       "WatchRequest" : {
         "type" : "object",
@@ -628,7 +628,7 @@
             "format" : "int64"
           }
         },
-        "required" : [ "consecutiveFailures", "createdAt", "enabled", "id", "path", "provider", "ref", "repository", "version" ]
+        "required" : [ "consecutiveFailures", "createdAt", "enabled", "id", "lastAttemptAt", "lastDetail", "lastOutcome", "lastSuccessAt", "path", "provider", "ref", "repository", "serviceId", "version" ]
       },
       "PageResponseSourceView" : {
         "type" : "object",
@@ -643,7 +643,7 @@
             "type" : "string"
           }
         },
-        "required" : [ "items" ]
+        "required" : [ "items", "nextCursor" ]
       },
       "PageResponseServiceSummary" : {
         "type" : "object",
@@ -658,7 +658,7 @@
             "type" : "string"
           }
         },
-        "required" : [ "items" ]
+        "required" : [ "items", "nextCursor" ]
       },
       "ServiceSummary" : {
         "type" : "object",
@@ -698,7 +698,7 @@
             "format" : "int64"
           }
         },
-        "required" : [ "id", "lifecycle", "owned", "registeredAt", "repository", "slug", "tier", "version" ]
+        "required" : [ "displayName", "id", "lifecycle", "owned", "registeredAt", "repository", "runtime", "slug", "tier", "version" ]
       },
       "CheckResult" : {
         "type" : "object",
@@ -716,7 +716,7 @@
             "type" : "string"
           }
         },
-        "required" : [ "checkId", "status", "title" ]
+        "required" : [ "checkId", "detail", "status", "title" ]
       },
       "Scorecard" : {
         "type" : "object",
@@ -831,7 +831,7 @@
             "type" : "string"
           }
         },
-        "required" : [ "items" ]
+        "required" : [ "items", "nextCursor" ]
       }
     }
   }

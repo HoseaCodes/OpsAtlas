@@ -42,13 +42,20 @@ public class ApiExceptionHandler {
     /** Problem type URIs. Not dereferenced today; stable so that clients may switch on them. */
     private static final String TYPE_BASE = "https://opsatlas.ambitiousconcepts.io/problems/";
 
+    /**
+     * Something submitted did not validate.
+     *
+     * <p>The title is deliberately generic. RFC 9457 says a title summarises the
+     * problem <em>type</em> and should not vary between occurrences of it, and
+     * this type covers a manifest that failed its schema as well as a source
+     * location that is not addressable. Naming a document in the title was wrong
+     * for the second case. What varies is {@code detail} and {@code violations},
+     * which is where per-occurrence information belongs.
+     */
     @ExceptionHandler(ValidationFailedException.class)
     public ProblemDetail onValidationFailed(ValidationFailedException e) {
         ProblemDetail problem = problem(
-                HttpStatus.UNPROCESSABLE_ENTITY,
-                "validation-failed",
-                "The document did not satisfy the schema",
-                e.getMessage());
+                HttpStatus.UNPROCESSABLE_ENTITY, "validation-failed", "Validation failed", e.getMessage());
         problem.setProperty("violations", e.violations());
         return problem;
     }
