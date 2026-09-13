@@ -29,6 +29,10 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: pnpm
+      - name: Refuse credentials in source control
+        # Cheapest job, run first: this repository is public, and a leaked
+        # credential is the one mistake here that a later commit cannot undo.
+        run: make check-secrets
       - run: pnpm install --frozen-lockfile
       - name: Validate every example and invalid fixture
         run: make check-examples

@@ -63,8 +63,14 @@ worse than no `terraform/` directory.
   23 Playwright tests against the real stack. Integration tests use
   Testcontainers and need a running Docker daemon; the Playwright tests need the
   stack running.
-- **CI is written but has never run.** There is no remote configured. Do not
-  describe the pipeline as passing.
+- **CI is written and has still never run — but not for the reason this file
+  used to give.** A remote does exist (`github.com/HoseaCodes/OpsAtlas`, public,
+  default branch `slice-one-foundation`) and GitHub has the workflow registered
+  and active. It reports **zero runs**, because `on: push` named `branches:
+  [master]` and no branch by that name has ever existed here. The trigger is
+  unfiltered now, so the next push fires it. **Until a run exists, do not
+  describe the pipeline as passing** — and check rather than assume: the GitHub
+  API answers `/repos/HoseaCodes/OpsAtlas/actions/runs` without authentication.
 - **Database:** PostgreSQL 16 via `deploy/compose`. Flyway owns the schema;
   Hibernate runs `ddl-auto: validate` so entity/migration drift fails startup.
 - **Cross-organization isolation is verified** by `OrgIsolationIT` (22 tests),
@@ -191,7 +197,11 @@ worse than no `terraform/` directory.
    parsed with a safe loader, validated against schema, and stored. Never eval,
    shell out, template, or deserialize into arbitrary types.
 5. **Secrets never enter source control.** Config comes from environment
-   variables with documented defaults for local development only.
+   variables with documented defaults for local development only. Enforced by
+   `make check-secrets`, which runs first in CI and as part of `make test`: it
+   catches eight credential shapes and tracked `.env`/key files, and is a floor
+   rather than a proof (ADR 0012). **The repository is public** — a leaked
+   credential has to be rotated, not deleted in a later commit.
 6. **Never disable or skip a test to make a build pass.** Fix it or report it.
 7. **Ask before rewriting working code.** Refactors need a stated reason.
 

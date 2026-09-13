@@ -108,7 +108,8 @@ jobs — selection, focus ring, error-budget fill, open-incident emphasis. See
 | OTLP export is best-effort — a collector that is down costs a request nothing | **Real** | `TraceCorrelationIT` points the exporter at a closed port and asserts requests still succeed |
 | Traces, metrics and dashboards locally (Tempo, Prometheus, Grafana) | **Real** | `make up-telemetry`; Prometheus scraping the control plane and the observer |
 | Logs shipped to a log store (Loki) | **Not built** | deferred with a reason — see below |
-| CI pipeline | **Written, never executed** | `.github/workflows/ci.yml` — there is no remote to run it |
+| No credentials in source control | **Real, enforced** | `make check-secrets` — eight credential formats plus tracked `.env`/key files, run first in CI and by `make test`; verified by planting a token and a tracked `.env` and watching it fail. It raises the floor, it is not a proof — [ADR 0012](docs/adr/0012-secret-scanning-is-a-grep.md) says what it misses |
+| CI pipeline | **Written, never executed** | `.github/workflows/ci.yml` — registered and active on GitHub, but it reports zero runs: the push trigger named a branch that has never existed. Fixed; it fires on the next push. Not a passing pipeline until one does |
 | Scorecard — ten declaration rules, tier-conditional | **Real** | `PolicyCheckTest` (49), `ScorecardApiIT` (12) |
 | `NOT_APPLICABLE` as a real outcome, with a moving denominator | **Real** | a tier 3 service is scored out of 7, not 10 |
 | Scorecard + audit written in the registration transaction | **Real, and verified** | `ScorecardApiIT` — a forced mid-registration failure leaves no service, no scorecard and no audit row |
@@ -194,6 +195,7 @@ catalog response is what keeps them acyclic
 | [0009](docs/adr/0009-observations-are-rolled-up-not-a-time-series.md) | Observations are counters, never a row per probe; storage is bounded and independent of probe frequency |
 | [0010](docs/adr/0010-health-is-served-separately-from-the-catalog.md) | Health is served by its own endpoints so `catalog` and `operations` stay acyclic |
 | [0011](docs/adr/0011-correlation-id-is-the-trace-id.md) | The correlation ID *is* the trace ID, when there is one — one string searches the logs, the traces and the audit log |
+| [0012](docs/adr/0012-secret-scanning-is-a-grep.md) | Secret scanning is a grep run before the push, not a scanner run after it |
 
 Diagrams of what exists — context, modules, the registration sequence, one
 request traced across both processes, and the data model — are in
@@ -505,9 +507,10 @@ OpsAtlas/
 ├── packages/contracts/     service.yaml JSON Schema and the fixture validator
 ├── deploy/compose/         local PostgreSQL; collector, Tempo, Prometheus,
 │                           Grafana behind a compose profile
+├── scripts/                check-secrets.sh, and deliberately nothing else
 ├── examples/services/      six valid manifests, eight invalid fixtures
 └── docs/
-    ├── adr/                0001–0011
+    ├── adr/                0001–0012
     ├── architecture/       what exists, in Mermaid
     ├── design/tokens.md    the design system, extracted from the prototype
     └── roadmap.md          phases, target layout, deferred decisions

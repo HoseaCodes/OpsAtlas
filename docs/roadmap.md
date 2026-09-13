@@ -39,8 +39,9 @@ OpsAtlas/
 │   └── helm/                        phase 10
 ├── examples/
 │   └── services/                  ✓ example and fixture manifests
+├── scripts/                       ✓ check-secrets.sh — a layout deviation, ADR 0012
 ├── docs/
-│   ├── adr/                       ✓ 0001-0011
+│   ├── adr/                       ✓ 0001-0012
 │   ├── architecture/              ✓ slice-one.md
 │   ├── design/                    ✓ tokens.md
 │   └── roadmap.md                 ✓ this file
@@ -273,11 +274,25 @@ tests, the OpenAPI drift check, the console build and component tests, and the
 browser smoke test. README table finalised, `docs/architecture/slice-one.md`
 written, `CLAUDE.md` §2 rewritten.
 
-**Not verified:** the workflow has never run. There is no remote configured, so
-CI is written-and-unexecuted and is described that way in the README. The
-commands it runs are the same ones `make` runs locally, and those do pass — but
-that is not the same as the pipeline being green, and it should not be reported
-as if it were.
+**Not verified:** the workflow has never run. The commands it runs are the same
+ones `make` runs locally, and those do pass — but that is not the same as the
+pipeline being green, and it should not be reported as if it were.
+
+**Why it never ran, found after phase 8.** The original reason recorded here was
+"there is no remote configured". That stopped being true: the repository is on
+GitHub, public, with `slice-one-foundation` as its default branch, and the
+workflow is registered and active. It still reported **zero runs**, because
+`on: push` named `branches: [master]` and no branch by that name has ever
+existed in this repository. A pipeline that looks present and fires on nothing
+is worse than no pipeline, because the badge-shaped absence reads as coverage.
+
+The trigger is unfiltered now rather than renamed to the current branch: naming
+a branch is what caused this, and naming a different one fails the same way
+after the next rename. The workflow was also audited against the repository for
+the first time — every file, `make` target and pnpm script it references exists,
+the foojay resolver needed for the Java 21 toolchain is configured, and the
+Playwright job builds and starts the console itself. That is a static audit, not
+a run, and it is not evidence the pipeline is green.
 
 ### Phase 8 — Telemetry ✓ **complete**
 

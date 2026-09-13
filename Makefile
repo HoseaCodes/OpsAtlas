@@ -10,7 +10,7 @@ COMPOSE := docker compose -f deploy/compose/docker-compose.yml
 GRADLE  := ./gradlew --console=plain
 
 .DEFAULT_GOAL := help
-.PHONY: help install check-examples typecheck test test-all test-java test-web test-observer check dev dev-web dev-observer e2e up up-telemetry down down-telemetry logs psql clean clean-db openapi check-openapi
+.PHONY: help install check-examples check-secrets typecheck test test-all test-java test-web test-observer check dev dev-web dev-observer e2e up up-telemetry down down-telemetry logs psql clean clean-db openapi check-openapi
 
 help: ## Show the targets that exist today
 	@echo ""
@@ -96,6 +96,9 @@ install: ## Install workspace dependencies
 check-examples: ## Validate every example and fixture manifest against the schema
 	pnpm --filter @opsatlas/contracts check:examples
 
+check-secrets: ## Refuse credential-shaped strings and tracked key files
+	./scripts/check-secrets.sh
+
 test-java: ## Run the control plane tests (needs a running Docker daemon)
 	$(GRADLE) :control-plane:test
 
@@ -112,7 +115,7 @@ test-observer: ## Run the observer tests, with the race detector
 e2e: ## Run the browser smoke test (needs the control plane running)
 	pnpm --filter @opsatlas/web e2e
 
-test: check-examples typecheck test-web test-observer test-java ## Every test that needs no running server
+test: check-secrets check-examples typecheck test-web test-observer test-java ## Every test that needs no running server
 
 test-all: test e2e ## Everything, including the browser smoke test
 
