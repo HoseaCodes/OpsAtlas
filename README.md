@@ -91,11 +91,11 @@ jobs — selection, focus ring, error-budget fill, open-incident emphasis. See
 | Keyboard navigation with a visible focus ring | **Real, and verified** | `keyboard.spec.ts` — tabs through the catalog in a real browser and fails if anything takes focus without showing it; deleting the `:focus-visible` rule fails it |
 | Polling a GitHub repository for its `service.yaml` | **Real** | `SourceSyncIT`, `SourceApiIT`, and a one-off check against the real api.github.com |
 | Conditional requests — an unchanged manifest costs a 304 and no ingestion | **Real** | `SourceSyncIT`; verified against real GitHub |
-| A failing sync leaves the registered service untouched | **Real, and verified** | `SourceSyncIT` — seven failure modes, each asserting the service survives |
+| A failing sync leaves the registered service untouched | **Real, and verified** | `SourceSyncIT` — eight failing-sync cases, each asserting the service survives |
 | Read-only by construction — no webhook, no write scope | **Real, enforced** | `ArchitectureTest` — only `integrations` may make outbound HTTP calls |
 | Sources page with sync status and per-source explanations | **Real** | 4 component tests, 5 Playwright tests |
 | **Go observer** — probes health endpoints, bounded concurrency, jitter, retries | **Real** | 33 Go tests, race-clean; run live against the control plane |
-| Probe availability, per environment and per UTC day | **Real** | `ObservationIngestIT` (23 tests), 5 Playwright tests |
+| Probe availability, per environment and per UTC day | **Real** | `ObservationIngestIT` (17 tests), 5 Playwright tests |
 | Health meter and 30-day ribbon rendering real measurements | **Real** | `health.spec.ts` — 5 Playwright tests driving a real browser against real observations |
 | Idempotent observation ingestion | **Real** | a replayed batch applies nothing; counters are where a double-write is silent |
 | Retention — bounded storage, not a table that only grows | **Real, and verified** | `ObservationRetentionIT` (6 tests) calls the scheduled job directly against a fixed clock; disabling the pruning fails four of them |

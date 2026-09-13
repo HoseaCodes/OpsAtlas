@@ -418,8 +418,10 @@ expanding scope.
 | ~~6~~ | ~~GitHub sync~~ — **done**, by polling rather than webhooks (ADR 0008). A GitHub App is still deferred: it needs a registered application, a private key, an installation flow and somewhere to keep per-installation tokens, and identity is still a stub. | |
 | ~~7~~ | ~~Go observer~~ — **done**. Drift detection is deferred: it needs a deployment concept to compare a declared version against a running one. | |
 | ~~8~~ | ~~OpenTelemetry, Prometheus, Tempo, Grafana~~ — **done**. Loki is still deferred: structured JSON on stdout already carries the correlation ID, and shipping it needs an agent, a retention policy and a second query language. | |
-| 9 | Transactional outbox, platform events, Redis read models | Only once there is a demonstrated need (§6) |
-| 10 | Terraform, Kubernetes, Helm, k6 load tests | Nothing to deploy until there is something to run |
+| **9** | **Authentication and authorization** — OpsAtlas verifies RS256 tokens from Storm-Gate; a `principal` table maps a subject to an organization; the observer gets an OpsAtlas-issued credential (ADR 0013) | **Active.** It is the only thing blocking deployment: eight write endpoints are open today |
+| 10 | Packaging — Dockerfiles for the control plane and console, a compose profile that runs the whole stack | There is no Dockerfile in this repository. Small, and it makes "what you tested is what you deploy" true |
+| 11 | Transactional outbox, platform events, Redis read models | Only once there is a demonstrated need (§6). Nothing today has a second consumer of registration events, no observer needs coordinating, and no read model is slow |
+| 12 | Terraform, Kubernetes, Helm, k6 load tests | Only once there is a deployed target worth measuring. The previous entry said "nothing to deploy until there is something to run", which stopped being true at phase 8 — the blocker was never packaging, it was that nothing authenticates |
 
 ### Deferred decisions, recorded so they are not lost
 
