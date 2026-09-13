@@ -4,6 +4,28 @@
 # default here is the local compose password and grants access to nothing else.
 
 spring:
+  # ---------------------------------------------------------------------------
+  # Authentication (ADR 0013). OpsAtlas verifies RS256 tokens issued by
+  # Storm-Gate against its published key set. It holds no signing key: it can
+  # check a token and cannot mint one, which is why this names a JWKS URI and
+  # never a secret.
+  #
+  # The defaults point at a local Storm-Gate. They are development defaults, not
+  # a deployment: OPSATLAS_OIDC_ISSUER and OPSATLAS_OIDC_JWKS_URI must both be
+  # set wherever this runs for real, and the issuer must be publishing RS256
+  # (Storm-Gate defaults to HS256, under which a verifier would need the secret
+  # that also mints - see ADR 0013).
+  # ---------------------------------------------------------------------------
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: ${OPSATLAS_OIDC_JWKS_URI:http://localhost:8090/.well-known/jwks.json}
+          issuer-uri: ${OPSATLAS_OIDC_ISSUER:http://localhost:8090}
+          # Storm-Gate stamps the subject as `id`, not `sub`. Left at the
+          # default, every request would authenticate as nobody.
+          principal-claim-name: id
+
   application:
     name: opsatlas-control-plane
 

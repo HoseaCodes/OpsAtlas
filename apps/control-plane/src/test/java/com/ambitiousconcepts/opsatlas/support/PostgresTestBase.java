@@ -7,6 +7,7 @@ import java.util.stream.Collectors;
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.context.annotation.Import;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -33,6 +34,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * leave behind - see {@link #resetToTheSeededState()}.
  */
 @Testcontainers
+@Import(AuthenticatedByDefault.class)
 public abstract class PostgresTestBase {
 
     static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16.4-alpine")

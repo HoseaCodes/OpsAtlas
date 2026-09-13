@@ -133,9 +133,27 @@ class CatalogApiIT extends PostgresTestBase {
 
     @Test
     void an_unmapped_path_is_a_problem_document_too() throws Exception {
-        mockMvc.perform(get("/api/v1/services/../../etc/passwd"))
+        mockMvc.perform(get("/api/v1/no-such-endpoint"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.correlationId").isNotEmpty());
+    }
+
+    @Test
+    void a_traversal_attempt_is_refused_before_it_is_routed() throws Exception {
+        // This used to be the case above and answered 404, having been routed
+        // and found to match nothing. Since authentication arrived it is refused
+        // at 400 by Spring Security's StrictHttpFirewall, which rejects the
+        // request rather than normalising it and hoping the normalisation agrees
+        // with whatever the filesystem would have done.
+        //
+        // That is a better answer, so the test follows the behaviour rather than
+        // the behaviour being bent back to the test. The correlation id still
+        // comes back, because CorrelationIdFilter runs ahead of the security
+        // chain - a refused request is still one somebody may need to find in
+        // the logs.
+        mockMvc.perform(get("/api/v1/services/../../etc/passwd"))
+                .andExpect(status().isBadRequest())
+                .andExpect(header().exists(com.ambitiousconcepts.opsatlas.shared.CorrelationIdFilter.HEADER));
     }
 
     @Test

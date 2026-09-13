@@ -20,6 +20,12 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-validation")
     implementation("org.springframework.boot:spring-boot-starter-actuator")
 
+    // Authentication (ADR 0013). The resource server starter brings Spring
+    // Security plus the JOSE support that verifies an RS256 token against a
+    // published JWKS - OpsAtlas checks tokens and can never mint one. Both are
+    // in the stack CLAUDE.md section 5 already fixes for the control plane.
+    implementation("org.springframework.boot:spring-boot-starter-oauth2-resource-server")
+
     implementation("org.flywaydb:flyway-core")
     runtimeOnly("org.flywaydb:flyway-database-postgresql")
     runtimeOnly("org.postgresql:postgresql")
@@ -42,6 +48,7 @@ dependencies {
     // actually have. See docs/adr/0003-org-scoping-stub.md.
 
     testImplementation("org.springframework.boot:spring-boot-starter-test")
+    testImplementation("org.springframework.security:spring-security-test")
     testImplementation("org.springframework.boot:spring-boot-testcontainers")
     testImplementation("org.testcontainers:junit-jupiter")
     testImplementation("org.testcontainers:postgresql")
