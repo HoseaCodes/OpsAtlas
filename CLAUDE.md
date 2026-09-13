@@ -63,14 +63,20 @@ worse than no `terraform/` directory.
   23 Playwright tests against the real stack. Integration tests use
   Testcontainers and need a running Docker daemon; the Playwright tests need the
   stack running.
-- **CI is written and has still never run — but not for the reason this file
-  used to give.** A remote does exist (`github.com/HoseaCodes/OpsAtlas`, public,
-  default branch `slice-one-foundation`) and GitHub has the workflow registered
-  and active. It reports **zero runs**, because `on: push` named `branches:
-  [master]` and no branch by that name has ever existed here. The trigger is
-  unfiltered now, so the next push fires it. **Until a run exists, do not
-  describe the pipeline as passing** — and check rather than assume: the GitHub
-  API answers `/repos/HoseaCodes/OpsAtlas/actions/runs` without authentication.
+- **CI has run, and it is green.** Run #1 on 2026-09-13, commit `16b3435`,
+  branch `master`: all six jobs passed — contract fixtures (23s), console (43s),
+  observer (84s), control plane (119s), OpenAPI drift (119s) and the browser
+  smoke test (190s). That last one is the one worth knowing passed: it starts
+  PostgreSQL, boots the control plane, builds and serves the console and drives
+  Playwright against all three on a clean runner. The Java 21 toolchain
+  provisions itself there via the foojay resolver, with no JDK installed.
+  Still do not describe a *later* state of the pipeline as passing without
+  checking: `/repos/HoseaCodes/OpsAtlas/actions/runs` answers unauthenticated.
+- **Only pushes to `master` run CI.** That is the trigger (`branches: [master]`)
+  and `master` is now the default branch. `slice-one-foundation` still exists and
+  pushes to it fire nothing — a pull request into `master` does. This is the
+  failure that hid a non-running pipeline for the life of the project, so check
+  which branch work is landing on before trusting a green history.
 - **Database:** PostgreSQL 16 via `deploy/compose`. Flyway owns the schema;
   Hibernate runs `ddl-auto: validate` so entity/migration drift fails startup.
 - **Cross-organization isolation is verified** by `OrgIsolationIT` (22 tests),
