@@ -27,19 +27,21 @@ worse than no `terraform/` directory.
 > Update this section whenever it becomes inaccurate. It is the first thing
 > future sessions read.
 
-- **Phase:** slice one, phases 0–2 complete. Phase 3 (scorecard and audit) is
-  next. The phase list is in `docs/roadmap.md`.
+- **Phase:** slice one, phases 0–3 complete. Phase 4 (OpenAPI client and the web
+  console) is next. The phase list is in `docs/roadmap.md`.
 - **What exists:** the `service.yaml` v1 JSON Schema and fixtures; a running
   control plane that registers services from a real manifest and serves them —
   `POST`, `GET /{slug}`, `GET` (cursor-paged), `PUT` with `If-Match` — with the
   ADR 0002 ingestion pipeline, RFC 9457 problem responses, correlation IDs and
-  the org-scoping stub; Flyway schema for `organization`, `team`, `service`,
-  `environment`; ADRs 0001–0007; `docs/design/tokens.md`.
+  the org-scoping stub; a `governance` module scoring ten declaration rules and
+  auditing every change, both inside the registration transaction; Flyway schema
+  for `organization`, `team`, `service`, `environment`, `policy_result`,
+  `policy_result_check`, `audit_event`; ADRs 0001–0007; `docs/design/tokens.md`.
 - **Build:** pnpm workspace plus Gradle, `make` as the single entry point.
   `make dev` runs the control plane on :8080 against compose PostgreSQL.
   **No JDK needs to be installed** — the build declares a Java 21 toolchain and
   Gradle provisions Temurin 21 itself (this machine has only 17 and 25).
-- **Tests:** `make test` — 14 schema fixtures plus 98 JVM tests, all passing.
+- **Tests:** `make test` — 14 schema fixtures plus 162 JVM tests, all passing.
   Integration tests use Testcontainers and need a running Docker daemon.
 - **Database:** PostgreSQL 16 via `deploy/compose`. Flyway owns the schema;
   Hibernate runs `ddl-auto: validate` so entity/migration drift fails startup.
@@ -49,6 +51,12 @@ worse than no `terraform/` directory.
 - **Nothing observes anything.** There is no health, no SLO attainment and no
   30-day history, and there will not be until the observer (phase 7). Any field
   shaped like a status is null and labelled "never observed".
+- **The scorecard scores manifests, not running systems.** All ten rules are
+  declaration checks. `GET /api/v1/policy/rules` says so in its payload; do not
+  describe them as production-readiness checks.
+- **Bump `PolicyCatalog.VERSION`** whenever a rule is added, removed, or changed
+  in a way that alters its verdict. It is what keeps an old score readable as
+  what it meant when it was computed.
 - **The v3 HTML prototype is no longer in the repository.** Its design decisions
   were extracted to `docs/design/tokens.md`; work from that note. It is
   gitignored because its seeded data uses insurance-domain service names, which

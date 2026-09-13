@@ -4,11 +4,11 @@ A service operations control plane: it catalogs services, records who owns them,
 checks whether they are healthy, and scores them against production-readiness
 policy.
 
-> **Status: phase 2 of slice one.** The control plane runs, and services can be
-> registered from a real `service.yaml` and read back. There is no scorecard yet
-> (phase 3), no console (phase 4) and no health monitoring at all (phase 7).
-> Everything else in this README is described as what it will be, and labelled as
-> such. The
+> **Status: phase 3 of slice one.** The control plane runs. Services register
+> from a real `service.yaml`, are scored against ten policy rules, and every
+> change is audited. There is no console yet (phase 4) and **no health monitoring
+> at all** (phase 7) — nothing in this system observes anything. Everything else
+> in this README is described as what it will be, and labelled as such. The
 > [what actually works](#what-actually-works-today) table below is the
 > authoritative answer.
 
@@ -65,7 +65,7 @@ jobs — selection, focus ring, error-budget fill, open-incident emphasis. See
 | Semantic validation — duplicate environment names | **Real** | same |
 | Architecture decisions, phases 0–10 | **Real** (written down) | [`docs/adr/`](docs/adr/), [`docs/roadmap.md`](docs/roadmap.md) |
 | Design system extracted from the prototype | **Real** (written down) | [`docs/design/tokens.md`](docs/design/tokens.md) |
-| Control plane (Java 21 / Spring Boot) | **Real** | `make test` — 98 JVM tests |
+| Control plane (Java 21 / Spring Boot) | **Real** | `make test` — 162 JVM tests |
 | PostgreSQL schema and Flyway migrations | **Real** | `SeedConsistencyIT`, and Hibernate `ddl-auto: validate` refuses to start on drift |
 | `POST /api/v1/services` — register from a `service.yaml` | **Real** | `RegistrationApiIT`, plus 13 curl assertions against a running server |
 | Safe YAML ingestion — size cap, no alias expansion, no type construction | **Real** | `ManifestValidationTest` — billion-laughs, `!!java` tags, duplicate keys and a 70 KiB body are all refused |
@@ -74,11 +74,15 @@ jobs — selection, focus ring, error-budget fill, open-incident emphasis. See
 | `PUT` with `If-Match` optimistic locking (428 / 412) | **Real** | `RegistrationApiIT` |
 | `GET /api/v1/services` and `/{slug}` with cursor pagination | **Real** | `CatalogApiIT`, `RegistrationApiIT` |
 | Cross-organization isolation | **Real, and verified** | `OrgIsolationIT` — 7 tests, including one proving the database refuses a cross-org reference |
+| Scorecard — ten declaration rules, tier-conditional | **Real** | `PolicyCheckTest` (49), `ScorecardApiIT` (12) |
+| `NOT_APPLICABLE` as a real outcome, with a moving denominator | **Real** | a tier 3 service is scored out of 7, not 10 |
+| Scorecard + audit written in the registration transaction | **Real, and verified** | `ScorecardApiIT` — a forced mid-registration failure leaves no service, no scorecard and no audit row |
+| Audit log with correlation IDs, cursor-paged | **Real** | `ScorecardApiIT` |
+| `GET /api/v1/policy/rules` — the rule set and its rationale | **Real** | `ScorecardApiIT` |
 | RFC 9457 problem responses with `correlationId` and `violations[]` | **Real** | `CatalogApiIT` |
 | Correlation ID accepted, generated, echoed | **Real** | `CatalogApiIT` |
-| Module boundaries between `catalog`, `identity`, `shared` | **Real, enforced** | `ArchitectureTest` — 6 rules |
+| Module boundaries between `catalog`, `governance`, `identity`, `shared` | **Real, enforced** | `ArchitectureTest` — 9 rules |
 | Org scoping via stub `PrincipalResolver` | **Real, but unauthenticated** | `SeedConsistencyIT`, `OrgIsolationIT` |
-| Scorecard evaluation | **Not built** | phase 3 |
 | Web console | **Not built** | phase 4 |
 | Health monitoring, SLO attainment, 30-day history | **Not built** | phase 7 — needs the Go observer |
 | Dependency graph and blast radius | **Not built** | phase 7 |
@@ -147,6 +151,36 @@ contents yet. See [ADR 0001](docs/adr/0001-modular-monolith-as-one-gradle-module
 | [0005](docs/adr/0005-openapi-generated-committed-drift-checked.md) | OpenAPI generated from code, committed, and drift-checked in CI |
 | [0006](docs/adr/0006-prototype-is-not-committed.md) | The v3 HTML prototype stays out of the repository |
 | [0007](docs/adr/0007-service-identity-and-re-registration.md) | Registration is keyed by where the manifest lives; idempotency by content digest; POST never overwrites |
+
+### The scorecard, and what it does not check
+
+Registering a service evaluates ten rules and stores the result in the same
+transaction as the service row. Registering the six example manifests produces:
+
+```text
+service                  tier  score    failing
+orders-api               1     10/10    -
+pricing-engine           1     8/10     journeys-declared, runbook-linked
+billing-worker           2     7/10     environment-urls, liveness-probe, readiness-probe
+customer-portal          2     9/10     observability-service-name
+identity-bff             1     9/10     dependencies-declared
+legacy-report-runner     3     0/7      (7 failing; 3 not applicable at tier 3)
+```
+
+Two things in that table are the whole design:
+
+- **The denominator moves.** `legacy-report-runner` is scored out of 7, not 10.
+  A tier 3 internal tool has no SLO obligation, so it is marked `NOT_APPLICABLE`
+  rather than failed — otherwise every internal tool reads as the worst thing in
+  the fleet and the fleet number means nothing.
+- **Every failure says why**, in a sentence the owning team can act on. The
+  database refuses to store a failure without one.
+
+**These are declaration checks.** They read what a `service.yaml` declares.
+Nothing here verifies that a runbook link resolves, that telemetry arrives, or
+that a health endpoint answers — the integrations that could do that do not
+exist. `GET /api/v1/policy/rules` says so in its own payload, so the console
+cannot present them as more than they are.
 
 ---
 
@@ -258,7 +292,8 @@ OpsAtlas/
 │   └── src/main/java/com/ambitiousconcepts/opsatlas/
 │       ├── shared/         errors, pagination, correlation — depends on nothing
 │       ├── identity/       the org-scoping stub
-│       └── catalog/        services, environments, and service.yaml ingestion
+│       ├── catalog/        services, environments, service.yaml ingestion
+│       └── governance/     policy rules, scorecards, audit
 ├── packages/contracts/     service.yaml JSON Schema and the fixture validator
 ├── deploy/compose/         local PostgreSQL
 ├── examples/services/      six valid manifests, eight invalid fixtures
@@ -279,8 +314,8 @@ Slice one is the catalog vertical slice, and nothing else.
 | 0 | Foundation, `service.yaml` contract, fixtures | **complete** |
 | 1 | Control plane skeleton, PostgreSQL, empty catalog endpoint | **complete** — `make dev` works |
 | 2 | Ingestion and registration | **complete** |
-| 3 | Scorecard and audit | next |
-| 4 | OpenAPI client and the web console |  |
+| 3 | Scorecard and audit | **complete** |
+| 4 | OpenAPI client and the web console | next |
 | 5 | CI and documentation close-out |  |
 
 After slice one: GitHub sync, the Go observer, the telemetry pipeline, events,

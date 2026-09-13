@@ -24,7 +24,7 @@ OpsAtlas/
 │   │       ├── shared/            ✓ errors, pagination, correlation
 │   │       ├── identity/          ✓ the org-scoping stub
 │   │       ├── catalog/           ✓ services, environments, service.yaml ingestion
-│   │       ├── governance/          phase 3 — policies, scorecards, audit
+│   │       ├── governance/        ✓ policy rules, scorecards, audit
 │   │       ├── operations/          phase 7 — desired state, observations, deployments
 │   │       └── integrations/        phase 6 — GitHub, CI, cloud
 │   ├── web/                         phase 4 — Next.js App Router console
@@ -104,16 +104,25 @@ path in the same repository registers a second service rather than moving the
 first; nothing detects that, and it is worth revisiting when the GitHub
 integration can see file renames in a diff.
 
-### Phase 3 — Scorecard and audit
+### Phase 3 — Scorecard and audit ✓ **complete**
 
 `governance` module, the ten declaration checks from ADR 0004, `PolicyCatalog`,
 evaluation inside the registration transaction, `policy_result`,
-`policy_result_check`, `audit_event`, `GET /api/v1/services/{id}/scorecard`,
-`GET /api/v1/audit-events`.
+`policy_result_check`, `audit_event`, `GET /api/v1/services/{slug}/scorecard`,
+`GET /api/v1/policy/rules`, `GET /api/v1/audit-events`.
 
-**Verified by:** per-check pass/fail/not-applicable unit tests; an integration
-test that forces a mid-registration failure and asserts no service row, no policy
-result and no audit event survive; `OrgIsolationIT`.
+**Verified by:** 162 JVM tests. `PolicyCheckTest` (49) asserts that every rule
+passes a fully declared manifest and fails a bare one — a rule that cannot fail
+is padding — and that every failure is a complete sentence. `ScorecardApiIT` (12)
+covers scoring over HTTP, the shrinking tier 3 denominator, re-scoring on update,
+and the transactional guarantee: a forced mid-registration failure leaves no
+service row, no policy result and no audit event. Additionally verified against a
+running server: six example manifests registered and scored, the fleet table
+reproduced in the README, and audit entries carrying the correlation ID of the
+request that caused them.
+
+**Deliberately not built here:** policy exceptions. They need an approver, an
+approver needs identity, and identity is stubbed (ADR 0003, ADR 0004).
 
 ### Phase 4 — Contracts and console
 
