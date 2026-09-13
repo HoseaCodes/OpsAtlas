@@ -93,17 +93,6 @@ class ObservationIngestIT extends PostgresTestBase {
 
     @BeforeEach
     void registerAService() {
-        jdbc.update("delete from environment_day");
-        jdbc.update("delete from environment_state");
-        jdbc.update("delete from observation_batch");
-        jdbc.update("delete from source");
-        jdbc.update("delete from policy_result_check");
-        jdbc.update("delete from policy_result");
-        jdbc.update("delete from audit_event");
-        jdbc.update("delete from environment");
-        jdbc.update("delete from service");
-        jdbc.update("delete from team");
-
         // Registration writes an audit event, and an audit event needs an actor.
         // Called outside a request there is none, so one is bound explicitly -
         // which is what PrincipalScope exists for.

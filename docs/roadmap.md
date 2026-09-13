@@ -216,6 +216,27 @@ It has to be a browser test. `:focus-visible` does not match a scripted
 `.focus()` — the first draft of the last test called it, and would have been
 asserting the browser's mouse behaviour while claiming to test keyboard support.
 
+**Fourth gap closed after phase 8:** test isolation. The Testcontainers
+instance is shared by every integration test, and seven classes each carried
+their own hand-written list of `delete from` statements — in different orders,
+covering different tables. Every list was a chance to miss one, and twice a new
+class did, leaking rows into `CatalogApiIT`'s empty-catalog assertion. The reset
+now lives once in `PostgresTestBase`, discovers its tables from `pg_tables` so a
+future migration's table is covered without anybody remembering, and preserves
+whatever Flyway seeded rather than hardcoding the organization id — which is
+deliberately package-private in `identity.internal`, and widening production
+visibility to let a test know it would be the wrong trade.
+
+Deliberately **not** `@Transactional` with a rollback, which is the usual answer.
+Several tests here depend on real commit semantics — `REQUIRES_NEW` in the source
+store, optimistic locking, and idempotent ingestion reading back what it
+committed — and wrapping them in a rolled-back transaction would quietly change
+what they prove.
+
+Verified in both directions: all seven hand-written lists removed and the suite
+still passes 257, and disabling the shared reset fails 96 tests across 13
+classes. Runtime is unchanged at roughly half a minute.
+
 **Deferred, with reasons:**
 
 - **Drift detection.** CLAUDE.md §5 lists it as the observer's job. It needs a

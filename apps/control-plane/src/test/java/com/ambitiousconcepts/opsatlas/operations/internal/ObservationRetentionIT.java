@@ -10,7 +10,6 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.UUID;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -100,12 +99,6 @@ class ObservationRetentionIT extends PostgresTestBase {
 
     @BeforeEach
     void plantAnObservedEnvironment() {
-        jdbc.update("delete from observation_batch");
-        jdbc.update("delete from environment_day");
-        jdbc.update("delete from environment_state");
-        jdbc.update("delete from environment");
-        jdbc.update("delete from service");
-
         serviceId = UUID.randomUUID();
         jdbc.update(
                 """
@@ -128,23 +121,6 @@ class ObservationRetentionIT extends PostgresTestBase {
                 environmentId,
                 ORG,
                 serviceId);
-    }
-
-    /**
-     * Symmetrical with the reset above, deliberately.
-     *
-     * <p>A class that tidies up only on the way in leaves its rows for whichever
-     * test runs next, which is how a suite acquires an ordering dependency
-     * nobody can see. This one plants a service, and an empty-catalog assertion
-     * elsewhere is entitled to find an empty catalog.
-     */
-    @AfterEach
-    void removeWhatWasPlanted() {
-        jdbc.update("delete from observation_batch");
-        jdbc.update("delete from environment_day");
-        jdbc.update("delete from environment_state");
-        jdbc.update("delete from environment");
-        jdbc.update("delete from service");
     }
 
     @Test

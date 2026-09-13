@@ -58,13 +58,6 @@ class SourceSyncIT extends PostgresTestBase {
 
     @BeforeEach
     void clear() {
-        jdbc.update("delete from source");
-        jdbc.update("delete from policy_result_check");
-        jdbc.update("delete from policy_result");
-        jdbc.update("delete from audit_event");
-        jdbc.update("delete from environment");
-        jdbc.update("delete from service");
-        jdbc.update("delete from team");
         GITHUB.reset();
     }
 

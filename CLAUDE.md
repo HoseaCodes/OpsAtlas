@@ -111,9 +111,15 @@ worse than no `terraform/` directory.
   from `globals.css` fails two of its four tests. It has to be a browser test —
   `:focus-visible` does not match a scripted `.focus()`, so a component test
   asserting the ring would be asserting its own simulation.
-- **A test that plants rows must remove them in `@AfterEach`.** Resetting only on
-  the way in leaves rows for whichever class runs next — `CatalogApiIT` asserts
-  an empty catalog and has been broken this way twice.
+- **Tests start from the seeded state; `PostgresTestBase` guarantees it.** One
+  Testcontainers instance is shared by every integration test, and a `@BeforeEach`
+  in the base class truncates every table except `organization` and preserves
+  whatever Flyway seeded. **A test only has to plant what it needs** — do not add
+  hand-written `delete from` lists, which is what seven classes used to carry,
+  in different orders, covering different tables. The tables are discovered from
+  `pg_tables`, so one added by a future migration is covered without anybody
+  remembering. Disabling that reset fails 96 of 257 tests, which is the measure
+  of how much it was holding up.
 - **The observer detects no drift.** §5 lists it as its job; it needs a
   deployment concept that does not exist. A failed probe is an outage, not a
   drift, and must not be described as one.

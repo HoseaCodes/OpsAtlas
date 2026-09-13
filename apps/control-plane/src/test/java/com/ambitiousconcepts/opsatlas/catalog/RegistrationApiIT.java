@@ -15,7 +15,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -41,15 +40,6 @@ class RegistrationApiIT extends PostgresTestBase {
 
     @Autowired
     private JdbcTemplate jdbc;
-
-    @BeforeEach
-    void clearCatalog() {
-        // Each test starts from an empty catalog. The seeded organization is
-        // left alone: it is schema, not fixture data.
-        jdbc.update("delete from environment");
-        jdbc.update("delete from service");
-        jdbc.update("delete from team");
-    }
 
     private static String fixture(String name) {
         try {

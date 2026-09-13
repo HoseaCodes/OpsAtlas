@@ -18,7 +18,6 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.UUID;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -50,16 +49,6 @@ class ScorecardApiIT extends PostgresTestBase {
     private PrincipalScope principals;
 
     private static final UUID ORG = UUID.fromString("00000000-0000-4000-8000-000000000001");
-
-    @BeforeEach
-    void clear() {
-        jdbc.update("delete from policy_result_check");
-        jdbc.update("delete from policy_result");
-        jdbc.update("delete from audit_event");
-        jdbc.update("delete from environment");
-        jdbc.update("delete from service");
-        jdbc.update("delete from team");
-    }
 
     private static String fixture(String name) {
         try {

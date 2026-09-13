@@ -23,7 +23,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
@@ -50,18 +49,8 @@ class SourceApiIT extends PostgresTestBase {
     @Autowired
     private MockMvc mockMvc;
 
-    @Autowired
-    private JdbcTemplate jdbc;
-
     @BeforeEach
     void clear() {
-        jdbc.update("delete from source");
-        jdbc.update("delete from policy_result_check");
-        jdbc.update("delete from policy_result");
-        jdbc.update("delete from audit_event");
-        jdbc.update("delete from environment");
-        jdbc.update("delete from service");
-        jdbc.update("delete from team");
         GITHUB.reset();
     }
 

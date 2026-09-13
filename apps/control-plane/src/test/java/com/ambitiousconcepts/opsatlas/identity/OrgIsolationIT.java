@@ -15,7 +15,6 @@ import com.ambitiousconcepts.opsatlas.integrations.api.SourceView;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.UUID;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -119,12 +118,8 @@ class OrgIsolationIT extends PostgresTestBase {
 
     @BeforeEach
     void plantAnotherOrganizationsData() {
-        jdbc.update("delete from source");
-        jdbc.update("delete from environment");
-        jdbc.update("delete from service");
-        jdbc.update("delete from team");
-        jdbc.update("delete from organization where id = ?", THEIRS);
-
+        // PostgresTestBase has already emptied everything but the seeded
+        // organization, so this only has to plant.
         jdbc.update(
                 "insert into organization (id, slug, name) values (?, 'other-tenant', 'Other Tenant')",
                 THEIRS);
@@ -200,25 +195,6 @@ class OrgIsolationIT extends PostgresTestBase {
                 theirSourceId,
                 THEIRS,
                 theirServiceId);
-    }
-
-    /**
-     * Symmetrical with the reset above, deliberately.
-     *
-     * <p>Several tests here register a service of our own - a list that excludes
-     * their rows proves nothing if it is empty, so there has to be something in
-     * it. Those rows would otherwise outlive this class and reach whichever test
-     * runs next, which is how a suite acquires an ordering dependency that
-     * nobody can see.
-     */
-    @AfterEach
-    void removeAnotherOrganizationsData() {
-        jdbc.update("delete from audit_event where org_id = ?", THEIRS);
-        jdbc.update("delete from source");
-        jdbc.update("delete from environment");
-        jdbc.update("delete from service");
-        jdbc.update("delete from team");
-        jdbc.update("delete from organization where id = ?", THEIRS);
     }
 
     @Test
@@ -327,8 +303,6 @@ class OrgIsolationIT extends PostgresTestBase {
                         ourTeam,
                         "a".repeat(64)))
                 .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
-
-        jdbc.update("delete from team where id = ?", ourTeam);
     }
 
     // -- Sources (phase 6) --------------------------------------------------
