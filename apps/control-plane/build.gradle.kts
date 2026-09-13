@@ -25,6 +25,8 @@ dependencies {
     runtimeOnly("org.postgresql:postgresql")
 
     implementation(libs.uuid.generator)
+    implementation(libs.snakeyaml.engine)
+    implementation(libs.json.schema.validator)
 
     // Spring Security is in the fixed stack but is deliberately absent until
     // authentication is a phase. Adding the starter now would put every
@@ -38,12 +40,42 @@ dependencies {
     testImplementation(libs.archunit.junit5)
 }
 
+/**
+ * The service.yaml JSON Schema has exactly one copy, in packages/contracts.
+ * It is copied into the jar at build time so the control plane and the
+ * workspace validate against identical bytes rather than two files that agree
+ * until someone edits one of them. ADR 0002.
+ */
+val contractSchemas = rootProject.file("packages/contracts/schemas")
+
+tasks.named<ProcessResources>("processResources") {
+    from(contractSchemas) {
+        into("contracts/schemas")
+    }
+    // A missing schema must fail the build, not produce a jar that cannot
+    // validate anything.
+    doLast {
+        val copied = File(destinationDir, "contracts/schemas/service.v1.schema.json")
+        require(copied.isFile) {
+            "The service.yaml schema was not copied from $contractSchemas. " +
+                "The control plane cannot validate manifests without it."
+        }
+    }
+}
+
 tasks.withType<JavaCompile>().configureEach {
     options.compilerArgs.addAll(listOf("-Xlint:all", "-parameters"))
 }
 
 tasks.withType<Test>().configureEach {
     useJUnitPlatform()
+
+    // Tests read the example manifests and their expected violations from the
+    // repository rather than from a copy. examples/services/invalid/expected.json
+    // is the single source of truth shared with the Node checker; a copy here
+    // would let the two drift silently.
+    systemProperty("opsatlas.examples.dir", rootProject.file("examples/services").absolutePath)
+
     testLogging {
         events("passed", "skipped", "failed")
         showStandardStreams = false
