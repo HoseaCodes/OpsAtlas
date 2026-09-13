@@ -59,7 +59,7 @@ worse than no `terraform/` directory.
   Gradle provisions Temurin 21 itself. Go 1.27+ **is** required for
   `apps/observer`; it is installed here via Homebrew.
 - **Tests:** `make test` — 14 schema fixtures, 37 console component tests,
-  33 Go tests (race-clean) and 251 JVM tests, all passing. `make test-all` adds
+  33 Go tests (race-clean) and 257 JVM tests, all passing. `make test-all` adds
   19 Playwright tests against the real stack. Integration tests use
   Testcontainers and need a running Docker daemon; the Playwright tests need the
   stack running.
@@ -93,7 +93,21 @@ worse than no `terraform/` directory.
   them, so there is still no percentile to quote.
 - **Observations are counters, never rows per probe.** Storage is environments ×
   retained days and must stay independent of probe frequency. The retention job
-  is what makes that true, so it is not optional.
+  is what makes that true, so it is not optional — and it is now covered by
+  `ObservationRetentionIT` (6 tests), which calls it directly against a fixed
+  clock because nothing else in the suite ever executes a `@Scheduled` method.
+- **The retention window must stay wider than the window the console draws.**
+  Retention keeps 35 days, the ribbon draws 30, and `ObservationRetentionIT`
+  reads both from the real configuration rather than restating them — narrowing
+  `OPSATLAS_RETENTION_DAYS` below the ribbon fails the build. A prune that landed
+  inside the drawn window would leave a gap that reads as "never probed" rather
+  than "no longer kept".
+- **A window of N days means today and the N-1 days before it.** So a 30-day
+  ribbon's oldest day is `today - 29`. Easy to get wrong by one in either
+  direction, and it has been.
+- **A test that plants rows must remove them in `@AfterEach`.** Resetting only on
+  the way in leaves rows for whichever class runs next — `CatalogApiIT` asserts
+  an empty catalog and has been broken this way twice.
 - **The observer detects no drift.** §5 lists it as its job; it needs a
   deployment concept that does not exist. A failed probe is an outage, not a
   drift, and must not be described as one.

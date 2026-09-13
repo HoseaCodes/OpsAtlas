@@ -70,7 +70,7 @@ jobs — selection, focus ring, error-budget fill, open-incident emphasis. See
 | Semantic validation — duplicate environment names | **Real** | same |
 | Architecture decisions, phases 0–10 | **Real** (written down) | [`docs/adr/`](docs/adr/), [`docs/roadmap.md`](docs/roadmap.md) |
 | Design system extracted from the prototype | **Real** (written down) | [`docs/design/tokens.md`](docs/design/tokens.md) |
-| Control plane (Java 21 / Spring Boot) | **Real** | `make test` — 251 JVM tests |
+| Control plane (Java 21 / Spring Boot) | **Real** | `make test` — 257 JVM tests |
 | PostgreSQL schema and Flyway migrations | **Real** | `SeedConsistencyIT`, and Hibernate `ddl-auto: validate` refuses to start on drift |
 | `POST /api/v1/services` — register from a `service.yaml` | **Real** | `RegistrationApiIT`, plus 13 curl assertions against a running server |
 | Safe YAML ingestion — size cap, no alias expansion, no type construction | **Real** | `ManifestValidationTest` — billion-laughs, `!!java` tags, duplicate keys and a 70 KiB body are all refused |
@@ -96,6 +96,8 @@ jobs — selection, focus ring, error-budget fill, open-incident emphasis. See
 | Probe availability, per environment and per UTC day | **Real** | `ObservationIngestIT` (23 tests), 5 Playwright tests |
 | Health meter and 30-day ribbon rendering real measurements | **Real** | `health.spec.ts` — 5 Playwright tests driving a real browser against real observations |
 | Idempotent observation ingestion | **Real** | a replayed batch applies nothing; counters are where a double-write is silent |
+| Retention — bounded storage, not a table that only grows | **Real, and verified** | `ObservationRetentionIT` (6 tests) calls the scheduled job directly against a fixed clock; disabling the pruning fails four of them |
+| The retention window stays wider than the 30-day ribbon | **Real, enforced** | the same test reads both windows from the real configuration — narrowing `OPSATLAS_RETENTION_DAYS` below the ribbon fails the build |
 | Prometheus metrics and `/healthz` on the observer | **Real** | served on `:9090`; scraped live — the `observer` target reports `up` and `opsatlas_observer_probes_total` returns series |
 | Correlation ID **is** the W3C trace ID | **Real** | `TraceCorrelationIT` (5) — including an inbound `traceparent` being joined rather than replaced |
 | A caller's own `X-Correlation-Id` echoed unchanged, and tagged on the span | **Real** | `TraceCorrelationIT` |

@@ -183,6 +183,24 @@ handler mapping and fails unless each appears in a `COVERED` set or in
 its isolation now breaks the build. Verified by removing an entry: the failure
 names the endpoint and says what to do about it.
 
+**Second gap closed after phase 8:** the retention job had no test. It is
+`@Scheduled`, so nothing in the suite ever ran it, and ADR 0009's claim that
+storage is bounded is only true because it does — `environment_day` otherwise
+accumulates a row per environment per day forever. `ObservationRetentionIT` now
+calls it directly against a fixed clock and pins six properties, including the
+one that is easy to get silently wrong: the retention window has to stay wider
+than the window the console draws, or a prune landing between two requests puts
+a gap at the ribbon's oldest edge that reads as "never probed" rather than "no
+longer kept". Both windows are read from the real configuration, so narrowing
+`OPSATLAS_RETENTION_DAYS` below the ribbon fails the build. Verified by mutation
+in both directions: disabling the pruning fails four of the six, and narrowing
+the production default fails the ribbon test.
+
+Writing it also found an off-by-one in this file's own understanding rather than
+in the code: a window of N days means today and the N-1 days before it, so a
+30-day ribbon's oldest day is `today - 29`. The first draft of the test planted
+`today - 30`, got one day back instead of two, and was wrong.
+
 **Deferred, with reasons:**
 
 - **Drift detection.** CLAUDE.md §5 lists it as the observer's job. It needs a
