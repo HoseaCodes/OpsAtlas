@@ -4,10 +4,11 @@ A service operations control plane: it catalogs services, records who owns them,
 checks whether they are healthy, and scores them against production-readiness
 policy.
 
-> **Status: phase 1 of slice one.** The control plane runs and serves an API,
-> against a real PostgreSQL. The catalog it serves is **empty** — registration
-> arrives in phase 2. Everything else in this README is described as what it
-> will be, and labelled as such. The
+> **Status: phase 2 of slice one.** The control plane runs, and services can be
+> registered from a real `service.yaml` and read back. There is no scorecard yet
+> (phase 3), no console (phase 4) and no health monitoring at all (phase 7).
+> Everything else in this README is described as what it will be, and labelled as
+> such. The
 > [what actually works](#what-actually-works-today) table below is the
 > authoritative answer.
 
@@ -64,14 +65,19 @@ jobs — selection, focus ring, error-budget fill, open-incident emphasis. See
 | Semantic validation — duplicate environment names | **Real** | same |
 | Architecture decisions, phases 0–10 | **Real** (written down) | [`docs/adr/`](docs/adr/), [`docs/roadmap.md`](docs/roadmap.md) |
 | Design system extracted from the prototype | **Real** (written down) | [`docs/design/tokens.md`](docs/design/tokens.md) |
-| Control plane (Java 21 / Spring Boot) | **Real** | `make test` — 31 tests |
+| Control plane (Java 21 / Spring Boot) | **Real** | `make test` — 98 JVM tests |
 | PostgreSQL schema and Flyway migrations | **Real** | `SeedConsistencyIT`, and Hibernate `ddl-auto: validate` refuses to start on drift |
-| `GET /api/v1/services` with cursor pagination | **Real, and returns an empty page** | `CatalogApiIT`, plus curl against a running server |
+| `POST /api/v1/services` — register from a `service.yaml` | **Real** | `RegistrationApiIT`, plus 13 curl assertions against a running server |
+| Safe YAML ingestion — size cap, no alias expansion, no type construction | **Real** | `ManifestValidationTest` — billion-laughs, `!!java` tags, duplicate keys and a 70 KiB body are all refused |
+| Located validation errors (JSON Pointer + keyword + sentence) | **Real** | every fixture in `examples/services/invalid/` asserted against `expected.json`, by both the JVM and the Node checker |
+| Idempotent re-registration by manifest digest | **Real** | `RegistrationApiIT` — a replay returns 200 and does not move `version` |
+| `PUT` with `If-Match` optimistic locking (428 / 412) | **Real** | `RegistrationApiIT` |
+| `GET /api/v1/services` and `/{slug}` with cursor pagination | **Real** | `CatalogApiIT`, `RegistrationApiIT` |
+| Cross-organization isolation | **Real, and verified** | `OrgIsolationIT` — 7 tests, including one proving the database refuses a cross-org reference |
 | RFC 9457 problem responses with `correlationId` and `violations[]` | **Real** | `CatalogApiIT` |
 | Correlation ID accepted, generated, echoed | **Real** | `CatalogApiIT` |
 | Module boundaries between `catalog`, `identity`, `shared` | **Real, enforced** | `ArchitectureTest` — 6 rules |
-| Org scoping via stub `PrincipalResolver` | **Real, but unauthenticated** | `SeedConsistencyIT`; cross-org isolation is **not yet tested** (phase 3) |
-| Service registration API | **Not built** | phase 2 |
+| Org scoping via stub `PrincipalResolver` | **Real, but unauthenticated** | `SeedConsistencyIT`, `OrgIsolationIT` |
 | Scorecard evaluation | **Not built** | phase 3 |
 | Web console | **Not built** | phase 4 |
 | Health monitoring, SLO attainment, 30-day history | **Not built** | phase 7 — needs the Go observer |
@@ -140,6 +146,7 @@ contents yet. See [ADR 0001](docs/adr/0001-modular-monolith-as-one-gradle-module
 | [0004](docs/adr/0004-scorecard-rule-model.md) | Typed check beans, versioned rule sets, per-check rows, `NOT_APPLICABLE` as a first-class outcome |
 | [0005](docs/adr/0005-openapi-generated-committed-drift-checked.md) | OpenAPI generated from code, committed, and drift-checked in CI |
 | [0006](docs/adr/0006-prototype-is-not-committed.md) | The v3 HTML prototype stays out of the repository |
+| [0007](docs/adr/0007-service-identity-and-re-registration.md) | Registration is keyed by where the manifest lives; idempotency by content digest; POST never overwrites |
 
 ---
 
@@ -163,9 +170,10 @@ the console.
 
 **Observer** — Go. Phase 7.
 
-**Contract tooling** — Ajv ✓ for schema validation in the workspace.
-snakeyaml-engine and networknt/json-schema-validator join on the JVM side in
-phase 2, when there is something to ingest.
+**Contract tooling** — Ajv ✓ for schema validation in the workspace,
+snakeyaml-engine ✓ and networknt/json-schema-validator ✓ on the JVM side. The
+JSON Schema has exactly one copy, in `packages/contracts`; Gradle copies it into
+the control-plane jar so both sides validate against identical bytes.
 
 ---
 
@@ -198,16 +206,37 @@ make            # list the targets that exist
 Then:
 
 ```bash
-curl -s localhost:8080/api/v1/services
-# {"items":[],"nextCursor":null}
+# Register a service from its manifest. The request body IS the file.
+curl -X POST localhost:8080/api/v1/services \
+  -H 'Content-Type: application/yaml' \
+  --data-binary @examples/services/orders-api.yaml
+
+# Read it back
+curl -s localhost:8080/api/v1/services/orders-api | jq
+
+# List, with cursor pagination
+curl -s 'localhost:8080/api/v1/services?limit=10' | jq
 ```
 
-That empty array is the honest current state, not a failure. Registration lands
-in phase 2.
+Try registering a deliberately broken one to see what an error looks like:
 
 ```bash
-# The error shape, which is real now and will not change:
-curl -s 'localhost:8080/api/v1/services?cursor=nope' | jq
+curl -s -X POST localhost:8080/api/v1/services \
+  -H 'Content-Type: application/yaml' \
+  --data-binary @examples/services/invalid/unknown-property.yaml | jq
+```
+
+```json
+{
+  "type": "https://opsatlas.ambitiousconcepts.io/problems/validation-failed",
+  "status": 422,
+  "correlationId": "…",
+  "violations": [{
+    "pointer": "/spec",
+    "keyword": "additionalProperties",
+    "message": "An unrecognised property was found at /spec: property 'healthz' is not defined in the schema… Check the spelling; unknown keys are rejected rather than ignored so a typo cannot silently do nothing."
+  }]
+}
 ```
 
 `make check-examples` validates the six example manifests, then asserts that each
@@ -229,12 +258,12 @@ OpsAtlas/
 │   └── src/main/java/com/ambitiousconcepts/opsatlas/
 │       ├── shared/         errors, pagination, correlation — depends on nothing
 │       ├── identity/       the org-scoping stub
-│       └── catalog/        services and environments
+│       └── catalog/        services, environments, and service.yaml ingestion
 ├── packages/contracts/     service.yaml JSON Schema and the fixture validator
 ├── deploy/compose/         local PostgreSQL
 ├── examples/services/      six valid manifests, eight invalid fixtures
 └── docs/
-    ├── adr/                0001–0006
+    ├── adr/                0001–0007
     ├── design/tokens.md    the design system, extracted from the prototype
     └── roadmap.md          phases, target layout, deferred decisions
 ```
@@ -249,8 +278,8 @@ Slice one is the catalog vertical slice, and nothing else.
 |---|---|---|
 | 0 | Foundation, `service.yaml` contract, fixtures | **complete** |
 | 1 | Control plane skeleton, PostgreSQL, empty catalog endpoint | **complete** — `make dev` works |
-| 2 | Ingestion and registration | next |
-| 3 | Scorecard and audit |  |
+| 2 | Ingestion and registration | **complete** |
+| 3 | Scorecard and audit | next |
 | 4 | OpenAPI client and the web console |  |
 | 5 | CI and documentation close-out |  |
 

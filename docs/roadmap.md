@@ -23,7 +23,7 @@ OpsAtlas/
 │   │   └── src/main/java/com/ambitiousconcepts/opsatlas/
 │   │       ├── shared/            ✓ errors, pagination, correlation
 │   │       ├── identity/          ✓ the org-scoping stub
-│   │       ├── catalog/           ✓ services and environments; ingestion in phase 2
+│   │       ├── catalog/           ✓ services, environments, service.yaml ingestion
 │   │       ├── governance/          phase 3 — policies, scorecards, audit
 │   │       ├── operations/          phase 7 — desired state, observations, deployments
 │   │       └── integrations/        phase 6 — GitHub, CI, cloud
@@ -39,7 +39,7 @@ OpsAtlas/
 ├── examples/
 │   └── services/                  ✓ example and fixture manifests
 ├── docs/
-│   ├── adr/                       ✓ 0001-0006
+│   ├── adr/                       ✓ 0001-0007
 │   ├── architecture/                phase 5 — Mermaid diagrams
 │   ├── design/                    ✓ tokens.md
 │   └── roadmap.md                 ✓ this file
@@ -79,21 +79,30 @@ against a running server on the compose database: the empty page body, a
 generated and an echoed correlation ID, the problem document for a bad cursor,
 and the named-parameter error for an out-of-range limit.
 
-**Known gap carried into phase 3:** cross-organization isolation is designed but
-not yet tested. `OrgIsolationIT` needs a second organization to exist, which
-needs registration. Until that test exists, the isolation is unverified and is
-described that way.
+**Gap closed in phase 2:** cross-organization isolation, which phase 1 left
+unverified, is now covered by `OrgIsolationIT`.
 
-### Phase 2 — Ingestion and registration
+### Phase 2 — Ingestion and registration ✓ **complete**
 
 The ADR 0002 pipeline: size cap, snakeyaml-engine load, schema validation,
-violation mapping, semantic normalization. `POST /api/v1/services`,
-`GET /api/v1/services/{slug}`, `PUT /api/v1/services/{id}` with `If-Match`.
+violation mapping, binding, semantic checks. `POST /api/v1/services`,
+`GET /api/v1/services/{slug}`, `PUT /api/v1/services/{slug}` with `If-Match`.
+Identity and re-registration semantics are ADR 0007.
 
-**Verified by:** every fixture in `examples/services/` registering, every fixture
-in `examples/services/invalid/` producing exactly the violations in
-`expected.json`, a 70 KiB body rejected before parsing, and an alias-expansion
-document rejected by the loader's limits.
+**Verified by:** 98 JVM tests. Every fixture in `examples/services/` registers;
+every fixture in `examples/services/invalid/` produces exactly the violations
+`expected.json` states; a 70 KiB body is refused before parsing; a billion-laughs
+document, a `!!java` type tag and a duplicate key are all refused by the loader.
+`OrgIsolationIT` covers every read and write path against a planted second
+organization. Additionally verified by 13 curl assertions against a running
+server: 201 / 200 replay / 409 conflict / 428 / 412 / 200 update / 422, and
+cursor paging visiting six services exactly once.
+
+**Deliberately not built here:** the `PUT` addresses services by slug, not UUID,
+because renames are refused (ADR 0007). Moving a `service.yaml` to a different
+path in the same repository registers a second service rather than moving the
+first; nothing detects that, and it is worth revisiting when the GitHub
+integration can see file renames in a diff.
 
 ### Phase 3 — Scorecard and audit
 
@@ -157,6 +166,12 @@ expanding scope.
   resolved into a graph. Blast radius needs both the graph and the observer.
 - **Idempotency keys** — §9 requires them for observation and webhook ingestion.
   Neither exists in slice one; re-registration is made idempotent by the manifest
-  digest instead.
+  digest instead (ADR 0007).
+- **Manifest moves** — a `service.yaml` moved to a new path registers a second
+  service, because the path is part of the registration key (ADR 0007). Detecting
+  a move needs the GitHub integration's view of a diff.
+- **Service renames** — refused today. Supporting them means addressing services
+  by UUID in URLs and carrying an alias, which is a migration feature rather than
+  an edit.
 - **Offset pagination** — never. §9 requires cursor pagination for every
   collection, and slice one sets that precedent with the first endpoint.
