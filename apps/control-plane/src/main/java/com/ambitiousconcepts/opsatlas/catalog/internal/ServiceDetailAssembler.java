@@ -62,11 +62,7 @@ class ServiceDetailAssembler {
                 environment.getName(),
                 environment.getUrl(),
                 environment.getReadinessPath(),
-                environment.getLivenessPath(),
-                // Always null in slice one: nothing observes anything yet. The
-                // console renders "never observed" from this rather than
-                // inferring it from a missing field.
-                null);
+                environment.getLivenessPath());
     }
 
     private com.fasterxml.jackson.databind.JsonNode readManifest(ServiceEntity service) {

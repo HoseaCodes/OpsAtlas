@@ -14,10 +14,9 @@ import java.util.UUID;
  * request, and so a reader can see exactly what was stored rather than a
  * summary of it.
  *
- * <p>As with {@link ServiceSummary}, there is no health, attainment or 30-day
- * history here. Those come from the observer, which is phase 7. A field the
- * console could render as a status would imply a capability the backend does not
- * have.
+ * <p>Carries no health. That is {@code operations}' to report, and is served at
+ * {@code /api/v1/services/{slug}/health} - see
+ * {@code docs/adr/0010-health-is-composed-by-the-console.md}.
  *
  * @param owner the owning team's slug, or null when the manifest declares none
  * @param manifest the normalized document as validated and stored
@@ -48,15 +47,11 @@ public record ServiceDetail(
 
     /**
      * @param readinessPath from spec.health.readiness, applied to every environment
-     * @param lastObservedAt always null in slice one - nothing observes anything yet.
-     *     Present so the console's "never observed" state reads a real field rather
-     *     than inferring absence from a missing key.
      */
     public record EnvironmentView(
             UUID id,
             String name,
             @Schema(nullable = true) String url,
             @Schema(nullable = true) String readinessPath,
-            @Schema(nullable = true) String livenessPath,
-            @Schema(nullable = true) Instant lastObservedAt) {}
+            @Schema(nullable = true) String livenessPath) {}
 }

@@ -20,6 +20,15 @@ import com.tngtech.archunit.lang.ArchRule;
         importOptions = ImportOption.DoNotIncludeTests.class)
 class ArchitectureTest {
 
+    /**
+     * Modules that may not exist yet.
+     *
+     * <p>Deliberately naming nothing real: every module in CLAUDE.md section 5
+     * now has contents. The placeholder keeps the rule compilable and the intent
+     * visible - a module proposed in future has to be added here first.
+     */
+    private static final String[] NO_MODULES_ARE_PENDING = {"com.ambitiousconcepts.opsatlas.__pending__.."};
+
     @ArchTest
     static final ArchRule catalog_internals_are_private = noClasses()
             .that()
@@ -110,6 +119,31 @@ class ArchitectureTest {
             .because("reaching out to another system is integrations' job and nobody else's (ADR 0008)");
 
     @ArchTest
+    static final ArchRule operations_internals_are_private = noClasses()
+            .that()
+            .resideOutsideOfPackage("com.ambitiousconcepts.opsatlas.operations..")
+            .should()
+            .dependOnClassesThat()
+            .resideInAPackage("com.ambitiousconcepts.opsatlas.operations.internal..")
+            .because("the observation machinery is private to operations (ADR 0001)");
+
+    /**
+     * ADR 0010. operations resolves environment ids through catalog.api, so the
+     * dependency runs operations -> catalog. Health is served by its own
+     * endpoints rather than folded into the catalog's responses precisely so
+     * that this can be asserted: two modules that each need the other are one
+     * module wearing two names.
+     */
+    @ArchTest
+    static final ArchRule catalog_does_not_depend_on_operations = noClasses()
+            .that()
+            .resideInAPackage("com.ambitiousconcepts.opsatlas.catalog..")
+            .should()
+            .dependOnClassesThat()
+            .resideInAPackage("com.ambitiousconcepts.opsatlas.operations..")
+            .because("the catalog carries no health; operations serves it separately (ADR 0010)");
+
+    @ArchTest
     static final ArchRule shared_depends_on_no_sibling_module = noClasses()
             .that()
             .resideInAPackage("com.ambitiousconcepts.opsatlas.shared..")
@@ -162,15 +196,20 @@ class ArchitectureTest {
             .because("each module's HTTP surface belongs in its own web package, so the API surface is greppable");
 
     /**
-     * Phase discipline, from CLAUDE.md section 3 rule 3: no package exists for a
-     * phase that is not being implemented. {@code integrations} was admitted in
-     * phase 6 by deleting it from this list, which is what makes admitting a
+     * Phase discipline, from CLAUDE.md section 3 rule 3.
+     *
+     * <p>Every module named in CLAUDE.md section 5 now exists and has contents:
+     * {@code integrations} was admitted in phase 6 and {@code operations} in
+     * phase 7, each by deleting it from this list. That is what made admitting a
      * module a deliberate, reviewable act rather than a directory appearing.
-     * {@code operations} arrives with the observer.
+     *
+     * <p>The rule is kept, empty, because the next module to be proposed should
+     * have to be added here to be allowed - and an empty list is a clearer
+     * statement of "nothing is pending" than a deleted test.
      */
     @ArchTest
     static final ArchRule no_packages_for_future_phases = noClasses()
             .should()
-            .resideInAPackage("com.ambitiousconcepts.opsatlas.operations..")
-            .because("the operations module belongs to the observer phase and must not exist as scaffolding");
+            .resideInAnyPackage(NO_MODULES_ARE_PENDING)
+            .because("a module may only exist once its phase is active");
 }

@@ -11,4 +11,6 @@ public interface EnvironmentRepository extends JpaRepository<EnvironmentEntity, 
     List<EnvironmentEntity> findByOrgIdAndServiceIdOrderByNameAsc(UUID orgId, UUID serviceId);
 
     List<EnvironmentEntity> findByOrgIdAndServiceIdIn(UUID orgId, List<UUID> serviceIds);
+
+    List<EnvironmentEntity> findByOrgIdAndIdIn(UUID orgId, List<UUID> ids);
 }

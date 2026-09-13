@@ -7,11 +7,11 @@ import java.util.UUID;
 /**
  * A service as it appears in the catalog list.
  *
- * <p>Deliberately does not carry health, SLO attainment or a 30-day history.
- * Those are produced by the observer, which is phase 7. A field here that the
- * console could render as a status would be a capability the backend does not
- * have - see CLAUDE.md section 10. The console renders an explicit
- * "never observed" state for those columns instead.
+ * <p>Carries no health, deliberately. Health is {@code operations}' to report
+ * and is served separately at {@code /api/v1/health} - see
+ * {@code docs/adr/0010-health-is-composed-by-the-console.md}. The practical
+ * effect is that the catalog still lists every service when the health read is
+ * slow or failing, and the console says which half is missing.
  *
  * @param id          stable identifier, also the pagination sort key
  * @param slug        the name from metadata.name

@@ -101,6 +101,17 @@ opsatlas:
     interval: ${OPSATLAS_SYNC_INTERVAL:PT5M}
     initial-delay: ${OPSATLAS_SYNC_INITIAL_DELAY:PT30S}
     batch-size: ${OPSATLAS_SYNC_BATCH_SIZE:25}
+  # Retention for the rolled-up observations (ADR 0009). The bound on storage
+  # in that decision is only real because the pruning job runs.
+  retention:
+    enabled: ${OPSATLAS_RETENTION_ENABLED:true}
+    # Slightly more than the 30-day ribbon needs, so a prune landing between two
+    # requests never leaves a gap at the ribbon's oldest edge.
+    days: ${OPSATLAS_RETENTION_DAYS:35}
+    idempotency-key-hours: ${OPSATLAS_RETENTION_KEY_HOURS:48}
+    interval: ${OPSATLAS_RETENTION_INTERVAL:PT6H}
+    initial-delay: ${OPSATLAS_RETENTION_INITIAL_DELAY:PT2M}
+
   github:
     base-url: ${OPSATLAS_GITHUB_BASE_URL:https://api.github.com}
     # Optional. Unauthenticated reads work for public repositories at 60
