@@ -100,6 +100,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/observations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["accept"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/sources/{id}": {
         parameters: {
             query?: never;
@@ -132,6 +148,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/services/{slug}/health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["forService_1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/policy/rules": {
         parameters: {
             query?: never;
@@ -140,6 +172,22 @@ export interface paths {
             cookie?: never;
         };
         get: operations["rules"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["summary"];
         put?: never;
         post?: never;
         delete?: never;
@@ -175,8 +223,6 @@ export interface components {
             url: string;
             readinessPath: string;
             livenessPath: string;
-            /** Format: date-time */
-            lastObservedAt: string;
         };
         JsonNode: Record<string, never>;
         ServiceDetail: {
@@ -232,6 +278,31 @@ export interface components {
             /** Format: int64 */
             version: number;
         };
+        Observation: {
+            /** Format: uuid */
+            environmentId: string;
+            /** Format: date-time */
+            observedAt: string;
+            /** @enum {string} */
+            outcome: "HEALTHY" | "UNHEALTHY" | "TIMEOUT" | "UNREACHABLE";
+            /** Format: int32 */
+            responseMs: number;
+            /** Format: int32 */
+            statusCode: number;
+            detail: string;
+        };
+        ObservationBatch: {
+            idempotencyKey: string;
+            observerId: string;
+            observations: components["schemas"]["Observation"][];
+        };
+        IngestResult: {
+            /** Format: int32 */
+            applied: number;
+            /** Format: int32 */
+            ignored: number;
+            replayed: boolean;
+        };
         PageResponseSourceView: {
             items: components["schemas"]["SourceView"][];
             nextCursor: string;
@@ -274,6 +345,43 @@ export interface components {
             checksApplicable: number;
             checks: components["schemas"]["CheckResult"][];
         };
+        DailyAvailability: {
+            day: string;
+            /** Format: int32 */
+            probes: number;
+            /** Format: int32 */
+            successes: number;
+            /** Format: double */
+            availability: number;
+            /** Format: int32 */
+            meanResponseMs: number;
+            /** Format: int32 */
+            maxResponseMs: number;
+        };
+        EnvironmentHealth: {
+            /** Format: uuid */
+            environmentId: string;
+            status: string;
+            detail: string;
+            /** Format: date-time */
+            lastProbeAt: string;
+            /** Format: date-time */
+            lastHealthyAt: string;
+            /** Format: int32 */
+            consecutiveFailures: number;
+            /** Format: int32 */
+            responseMs: number;
+            /** Format: double */
+            probeAvailability: number;
+            days: components["schemas"]["DailyAvailability"][];
+        };
+        ServiceHealth: {
+            /** Format: uuid */
+            serviceId: string;
+            environments: components["schemas"]["EnvironmentHealth"][];
+            neverObserved: boolean;
+            notice: string;
+        };
         PolicyRuleView: {
             id: string;
             title: string;
@@ -284,6 +392,12 @@ export interface components {
             policySetVersion: string;
             rules: components["schemas"]["PolicyRuleView"][];
             declarationOnlyNotice: string;
+        };
+        HealthSummary: {
+            statuses: {
+                [key: string]: string;
+            };
+            notice: string;
         };
         AuditEntry: {
             /** Format: uuid */
@@ -532,6 +646,30 @@ export interface operations {
             };
         };
     };
+    accept: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ObservationBatch"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["IngestResult"];
+                };
+            };
+        };
+    };
     get_1: {
         parameters: {
             query?: never;
@@ -596,6 +734,28 @@ export interface operations {
             };
         };
     };
+    forService_1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ServiceHealth"];
+                };
+            };
+        };
+    };
     rules: {
         parameters: {
             query?: never;
@@ -612,6 +772,28 @@ export interface operations {
                 };
                 content: {
                     "*/*": components["schemas"]["PolicyRules"];
+                };
+            };
+        };
+    };
+    summary: {
+        parameters: {
+            query?: {
+                serviceIds?: string[];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["HealthSummary"];
                 };
             };
         };

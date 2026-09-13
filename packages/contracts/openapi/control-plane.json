@@ -334,6 +334,34 @@
         }
       }
     },
+    "/api/v1/observations" : {
+      "post" : {
+        "tags" : [ "observation-controller" ],
+        "operationId" : "accept",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/ObservationBatch"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/IngestResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/sources/{id}" : {
       "get" : {
         "tags" : [ "source-controller" ],
@@ -405,6 +433,32 @@
         }
       }
     },
+    "/api/v1/services/{slug}/health" : {
+      "get" : {
+        "tags" : [ "health-controller" ],
+        "operationId" : "forService_1",
+        "parameters" : [ {
+          "name" : "slug",
+          "in" : "path",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ServiceHealth"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/policy/rules" : {
       "get" : {
         "tags" : [ "scorecard-controller" ],
@@ -416,6 +470,36 @@
               "*/*" : {
                 "schema" : {
                   "$ref" : "#/components/schemas/PolicyRules"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/health" : {
+      "get" : {
+        "tags" : [ "health-controller" ],
+        "operationId" : "summary",
+        "parameters" : [ {
+          "name" : "serviceIds",
+          "in" : "query",
+          "required" : false,
+          "schema" : {
+            "type" : "array",
+            "items" : {
+              "type" : "string",
+              "format" : "uuid"
+            }
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/HealthSummary"
                 }
               }
             }
@@ -481,13 +565,9 @@
           },
           "livenessPath" : {
             "type" : "string"
-          },
-          "lastObservedAt" : {
-            "type" : "string",
-            "format" : "date-time"
           }
         },
-        "required" : [ "id", "lastObservedAt", "livenessPath", "name", "readinessPath", "url" ]
+        "required" : [ "id", "livenessPath", "name", "readinessPath", "url" ]
       },
       "JsonNode" : {
         "type" : "object"
@@ -630,6 +710,70 @@
         },
         "required" : [ "consecutiveFailures", "createdAt", "enabled", "id", "lastAttemptAt", "lastDetail", "lastOutcome", "lastSuccessAt", "path", "provider", "ref", "repository", "serviceId", "version" ]
       },
+      "Observation" : {
+        "type" : "object",
+        "properties" : {
+          "environmentId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "observedAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "outcome" : {
+            "type" : "string",
+            "enum" : [ "HEALTHY", "UNHEALTHY", "TIMEOUT", "UNREACHABLE" ]
+          },
+          "responseMs" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "statusCode" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "detail" : {
+            "type" : "string"
+          }
+        },
+        "required" : [ "detail", "environmentId", "observedAt", "outcome", "responseMs", "statusCode" ]
+      },
+      "ObservationBatch" : {
+        "type" : "object",
+        "properties" : {
+          "idempotencyKey" : {
+            "type" : "string"
+          },
+          "observerId" : {
+            "type" : "string"
+          },
+          "observations" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/Observation"
+            }
+          }
+        },
+        "required" : [ "idempotencyKey", "observations", "observerId" ]
+      },
+      "IngestResult" : {
+        "type" : "object",
+        "properties" : {
+          "applied" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "ignored" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "replayed" : {
+            "type" : "boolean"
+          }
+        },
+        "required" : [ "applied", "ignored", "replayed" ]
+      },
       "PageResponseSourceView" : {
         "type" : "object",
         "properties" : {
@@ -749,6 +893,99 @@
         },
         "required" : [ "checks", "checksApplicable", "checksPassed", "evaluatedAt", "policySetVersion", "serviceId" ]
       },
+      "DailyAvailability" : {
+        "type" : "object",
+        "properties" : {
+          "day" : {
+            "type" : "string"
+          },
+          "probes" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "successes" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "availability" : {
+            "type" : "number",
+            "format" : "double"
+          },
+          "meanResponseMs" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "maxResponseMs" : {
+            "type" : "integer",
+            "format" : "int32"
+          }
+        },
+        "required" : [ "availability", "day", "maxResponseMs", "meanResponseMs", "probes", "successes" ]
+      },
+      "EnvironmentHealth" : {
+        "type" : "object",
+        "properties" : {
+          "environmentId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "status" : {
+            "type" : "string"
+          },
+          "detail" : {
+            "type" : "string"
+          },
+          "lastProbeAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "lastHealthyAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "consecutiveFailures" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "responseMs" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "probeAvailability" : {
+            "type" : "number",
+            "format" : "double"
+          },
+          "days" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/DailyAvailability"
+            }
+          }
+        },
+        "required" : [ "consecutiveFailures", "days", "detail", "environmentId", "lastHealthyAt", "lastProbeAt", "probeAvailability", "responseMs", "status" ]
+      },
+      "ServiceHealth" : {
+        "type" : "object",
+        "properties" : {
+          "serviceId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "environments" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/EnvironmentHealth"
+            }
+          },
+          "neverObserved" : {
+            "type" : "boolean"
+          },
+          "notice" : {
+            "type" : "string"
+          }
+        },
+        "required" : [ "environments", "neverObserved", "notice", "serviceId" ]
+      },
       "PolicyRuleView" : {
         "type" : "object",
         "properties" : {
@@ -784,6 +1021,21 @@
           }
         },
         "required" : [ "declarationOnlyNotice", "policySetVersion", "rules" ]
+      },
+      "HealthSummary" : {
+        "type" : "object",
+        "properties" : {
+          "statuses" : {
+            "type" : "object",
+            "additionalProperties" : {
+              "type" : "string"
+            }
+          },
+          "notice" : {
+            "type" : "string"
+          }
+        },
+        "required" : [ "notice", "statuses" ]
       },
       "AuditEntry" : {
         "type" : "object",
