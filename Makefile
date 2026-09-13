@@ -10,7 +10,7 @@ COMPOSE := docker compose -f deploy/compose/docker-compose.yml
 GRADLE  := ./gradlew --console=plain
 
 .DEFAULT_GOAL := help
-.PHONY: help install check-examples typecheck test test-java check dev up down logs psql clean clean-db openapi check-openapi
+.PHONY: help install check-examples typecheck test test-all test-java test-web check dev dev-web e2e up down logs psql clean clean-db openapi check-openapi
 
 help: ## Show the targets that exist today
 	@echo ""
@@ -18,9 +18,6 @@ help: ## Show the targets that exist today
 	@echo ""
 	@grep -E '^[a-z-]+:.*?## .*$$' $(MAKEFILE_LIST) \
 		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[1m%-16s\033[0m %s\n", $$1, $$2}'
-	@echo ""
-	@echo "  Not yet, and deliberately absent rather than stubbed:"
-	@echo "    web             phase 4b"
 	@echo ""
 
 # -- Running ----------------------------------------------------------------
@@ -49,9 +46,12 @@ psql: ## Open a psql shell in the running database container
 dev: up ## Start the database, then run the control plane on :8080
 	@echo ""
 	@echo "  Control plane starting on http://localhost:8080"
-	@echo "  Try:  curl -s localhost:8080/api/v1/services | jq"
+	@echo "  Then, in another terminal: make dev-web"
 	@echo ""
 	$(GRADLE) :control-plane:bootRun
+
+dev-web: ## Run the console on :3000 (needs the control plane running)
+	pnpm --filter @opsatlas/web dev
 
 # -- Contracts --------------------------------------------------------------
 
@@ -80,8 +80,17 @@ test-java: ## Run the control plane tests (needs a running Docker daemon)
 
 typecheck: ## Type-check the workspace
 	pnpm --filter @opsatlas/contracts typecheck
+	pnpm --filter @opsatlas/web typecheck
 
-test: check-examples typecheck test-java ## Run every test there is
+test-web: ## Run the console component tests
+	pnpm --filter @opsatlas/web test
+
+e2e: ## Run the browser smoke test (needs the control plane running)
+	pnpm --filter @opsatlas/web e2e
+
+test: check-examples typecheck test-web test-java ## Every test that needs no running server
+
+test-all: test e2e ## Everything, including the browser smoke test
 
 check: test ## Alias for test
 
@@ -89,6 +98,7 @@ check: test ## Alias for test
 
 clean: ## Remove build output and installed dependencies
 	$(GRADLE) clean
+	rm -rf apps/web/.next apps/web/test-results
 	rm -rf node_modules packages/*/node_modules apps/web/node_modules
 
 clean-db: ## Destroy the local database and its data

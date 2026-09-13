@@ -1,0 +1,249 @@
+@import "tailwindcss";
+
+/* ==========================================================================
+   Tokens, from docs/design/tokens.md.
+
+   The rule everything here serves: status is carried by shape, height and
+   weight, never by hue. Screenshot any page, convert to greyscale, and every
+   status must still be readable.
+
+   Colour is rationed to four jobs and no others:
+     selection · focus ring · error-budget fill · open-incident emphasis
+
+   Dark is the default (tokens.md §2). The full light palette is defined and
+   supported; because meaning is carried by shape, neither theme is load-bearing.
+   ========================================================================== */
+
+:root,
+:root[data-theme="dark"] {
+  --bg: #131715;
+  --surface: #1b201d;
+  --surface-2: #232a26;
+  --ink: #e7eae5;
+  --ink-2: #9ba49c;
+  --ink-3: #6f7872;
+  --rule: #2c332e;
+  --rule-2: #3a423c;
+  --accent: #8aa6ee;
+  --alarm: #db9186;
+  --shadow: 0 12px 28px rgba(0, 0, 0, 0.45);
+}
+
+:root[data-theme="light"] {
+  --bg: #eceeeb;
+  --surface: #fafbf9;
+  --surface-2: #e3e7e2;
+  --ink: #1a1f1c;
+  --ink-2: #5c655f;
+  --ink-3: #8a938c;
+  --rule: #d2d7d1;
+  --rule-2: #bfc6bf;
+  --accent: #24479b;
+  --alarm: #8a2b22;
+  --shadow: 0 12px 28px rgba(26, 31, 28, 0.1);
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-rule: var(--rule);
+  --color-rule-2: var(--rule-2);
+  --color-accent: var(--accent);
+  --color-alarm: var(--alarm);
+  --font-sans: var(--font-archivo), "Helvetica Neue", Arial, sans-serif;
+  --font-mono: var(--font-plex-mono), "SFMono-Regular", Menlo, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Every number is mono, with slashed zero so a 0 cannot be read as an O. */
+.mono,
+.tabular {
+  font-family: var(--font-mono);
+  font-feature-settings: "zero" 1;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition-duration: 0s !important;
+    animation-duration: 0s !important;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Health meter — three notches, height encodes state.
+
+   Rising = healthy, falling at the end = degraded, collapsed = down. Legible at
+   13px and in greyscale, which a coloured dot is not.
+
+   The fourth state is the one slice one actually uses: nothing observes
+   anything yet, so every registered service is "never observed" and renders as
+   a dashed outline rather than a fabricated reading.
+   -------------------------------------------------------------------------- */
+.meter {
+  display: inline-flex;
+  gap: 2px;
+  align-items: flex-end;
+  height: 13px;
+}
+.meter i {
+  width: 3px;
+  background: var(--ink);
+  border-radius: 1px;
+  display: block;
+}
+.meter[data-state="healthy"] i:nth-child(1) { height: 6px; }
+.meter[data-state="healthy"] i:nth-child(2) { height: 10px; }
+.meter[data-state="healthy"] i:nth-child(3) { height: 13px; }
+.meter[data-state="degraded"] i:nth-child(1) { height: 6px; }
+.meter[data-state="degraded"] i:nth-child(2) { height: 10px; }
+.meter[data-state="degraded"] i:nth-child(3) { height: 4px; }
+.meter[data-state="down"] i:nth-child(1) { height: 6px; }
+.meter[data-state="down"] i:nth-child(2) { height: 3px; }
+.meter[data-state="down"] i:nth-child(3) { height: 3px; }
+
+/* Never observed: an outline, not a bar. Visibly an absence of data rather
+   than a low reading, which a short filled bar would imply. */
+.meter[data-state="unobserved"] i {
+  height: 13px;
+  background: none;
+  box-shadow: inset 0 0 0 1px var(--rule-2);
+  border-radius: 1px;
+}
+
+/* --------------------------------------------------------------------------
+   Thirty-day ribbon — one bar per day, height encodes SLO attainment.
+   Rendered only as its unobserved form in slice one.
+   -------------------------------------------------------------------------- */
+.ribbon {
+  display: inline-flex;
+  gap: 1.5px;
+  align-items: flex-end;
+  height: 16px;
+}
+.ribbon i {
+  width: 4px;
+  display: block;
+  background: var(--ink);
+  opacity: 0.78;
+  border-radius: 0.5px;
+  height: 16px;
+}
+.ribbon i[data-value="warn"] { height: 9px; opacity: 0.5; }
+.ribbon i[data-value="bad"] { height: 4px; opacity: 0.32; }
+.ribbon i[data-value="none"] {
+  height: 16px;
+  background: none;
+  box-shadow: inset 0 0 0 1px var(--rule);
+  opacity: 1;
+}
+
+/* --------------------------------------------------------------------------
+   Scorecard marks — stroke versus fill, never green versus red.
+   The weight difference is what carries the signal.
+   -------------------------------------------------------------------------- */
+.mark {
+  flex: none;
+  display: block;
+}
+.mark--fail {
+  color: var(--alarm);
+}
+
+/* --------------------------------------------------------------------------
+   Shared chrome
+   -------------------------------------------------------------------------- */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+}
+
+.rule-b {
+  border-bottom: 1px solid var(--rule);
+}
+
+.row-selected {
+  background: var(--surface);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+table.plain {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 13px;
+}
+table.plain th {
+  text-align: left;
+  font-weight: 400;
+  color: var(--ink-2);
+  font-size: 11.5px;
+  padding: 0 10px 8px 0;
+  border-bottom: 1px solid var(--rule);
+}
+table.plain td {
+  padding: 10px 10px 10px 0;
+  border-bottom: 1px solid var(--rule);
+  vertical-align: top;
+}
+table.plain tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+pre.yaml {
+  margin: 0;
+  padding: 14px;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.65;
+  overflow: auto;
+}
+
+/* Skeletons pulse only where motion is welcome. */
+@keyframes skeleton {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 0.6; }
+}
+.skeleton {
+  background: var(--surface-2);
+  border-radius: 4px;
+  animation: skeleton 1.4s ease-in-out infinite;
+}
+
+.sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}

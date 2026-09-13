@@ -34,3 +34,6 @@ blob-report/
 # design decision worth keeping has been extracted into docs/design/tokens.md;
 # read that instead. See docs/adr/0006-prototype-is-not-committed.md.
 service-operations-platform-v3.html
+
+# ── Playwright ───────────────────────────────────────────────────────────
+apps/web/test-results/
