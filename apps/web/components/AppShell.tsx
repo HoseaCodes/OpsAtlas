@@ -34,6 +34,12 @@ export function AppShell({ children }: { children: ReactNode }) {
             >
               Catalog
             </Link>
+            <Link
+              href="/sources"
+              className="rounded-[5px] px-2 py-1.5 text-ink-2 hover:bg-surface-2 hover:text-ink"
+            >
+              Sources
+            </Link>
           </div>
         </nav>
 

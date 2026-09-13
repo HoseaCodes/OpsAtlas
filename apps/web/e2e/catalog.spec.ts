@@ -142,11 +142,12 @@ test("the navigation contains only pages that exist", async ({ page }) => {
   await page.goto("/catalog");
 
   const nav = page.getByRole("navigation", { name: "Sections" });
-  await expect(nav.getByRole("link")).toHaveCount(1);
+  await expect(nav.getByRole("link")).toHaveCount(2);
   await expect(nav.getByRole("link", { name: "Catalog" })).toBeVisible();
+  await expect(nav.getByRole("link", { name: "Sources" })).toBeVisible();
 
   // CLAUDE.md §10: a nav item appears only when its page is real. The
-  // prototype's other seven sections must not be here, even disabled.
+  // prototype's remaining sections must not be here, even disabled.
   for (const absent of ["Incidents", "Cost", "Scorecards", "Teams", "Golden paths", "Architecture"]) {
     await expect(nav.getByRole("link", { name: absent })).toHaveCount(0);
   }
