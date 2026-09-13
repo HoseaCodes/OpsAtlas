@@ -9,6 +9,9 @@ import com.ambitiousconcepts.opsatlas.catalog.internal.domain.ServiceFields;
 import com.ambitiousconcepts.opsatlas.catalog.internal.domain.TeamEntity;
 import com.ambitiousconcepts.opsatlas.catalog.internal.ingest.ManifestIngestor;
 import com.ambitiousconcepts.opsatlas.catalog.internal.ingest.ManifestV1;
+import com.ambitiousconcepts.opsatlas.governance.api.AuditRecorder;
+import com.ambitiousconcepts.opsatlas.governance.api.Scorecard;
+import com.ambitiousconcepts.opsatlas.governance.api.ScorecardService;
 import com.ambitiousconcepts.opsatlas.shared.ConflictException;
 import com.ambitiousconcepts.opsatlas.shared.NotFoundException;
 import com.ambitiousconcepts.opsatlas.shared.PreconditionException;
@@ -58,6 +61,8 @@ class ServiceRegistrationService implements ServiceRegistration {
     private final TeamRepository teams;
     private final EnvironmentRepository environments;
     private final ServiceDetailAssembler assembler;
+    private final ScorecardService scorecards;
+    private final AuditRecorder audit;
     private final Clock clock;
 
     ServiceRegistrationService(
@@ -66,12 +71,16 @@ class ServiceRegistrationService implements ServiceRegistration {
             TeamRepository teams,
             EnvironmentRepository environments,
             ServiceDetailAssembler assembler,
+            ScorecardService scorecards,
+            AuditRecorder audit,
             Clock clock) {
         this.ingestor = ingestor;
         this.services = services;
         this.teams = teams;
         this.environments = environments;
         this.assembler = assembler;
+        this.scorecards = scorecards;
+        this.audit = audit;
         this.clock = clock;
     }
 
@@ -120,12 +129,25 @@ class ServiceRegistrationService implements ServiceRegistration {
         services.save(service);
         syncEnvironments(orgId, service.getId(), manifest, now);
 
+        // Both of these run inside this transaction, so the service row, its
+        // first scorecard and the audit entry either all exist or none do.
+        // CLAUDE.md section 8 requires exactly that.
+        Scorecard scorecard = scorecards.evaluateAndStore(orgId, ServiceFactsMapper.from(service.getId(), manifest));
+        audit.record(
+                orgId,
+                "service.registered",
+                "service",
+                service.getId(),
+                auditPayload(service, ingested.digest(), scorecard));
+
         log.info(
-                "Registered service {} from {}/{} at schema {}",
+                "Registered service {} from {}/{} at schema {}, scoring {}/{}",
                 service.getSlug(),
                 repository,
                 sourcePath,
-                ingested.schemaVersion());
+                ingested.schemaVersion(),
+                scorecard.checksPassed(),
+                scorecard.checksApplicable());
 
         return new RegistrationOutcome(assembler.assemble(orgId, service), true);
     }
@@ -171,13 +193,47 @@ class ServiceRegistrationService implements ServiceRegistration {
         }
 
         Instant now = clock.instant();
+        String previousDigest = service.getManifestDigest();
         service.apply(fieldsFrom(orgId, ingested, service.getSourcePath(), sourceRef), now);
         services.save(service);
         syncEnvironments(orgId, service.getId(), manifest, now);
 
-        log.info("Updated service {} to manifest digest {}", slug, ingested.digest());
+        // Re-scored on every change. A scorecard computed against a manifest
+        // that has since been edited is worse than no scorecard, because it
+        // looks current.
+        Scorecard scorecard = scorecards.evaluateAndStore(orgId, ServiceFactsMapper.from(service.getId(), manifest));
+
+        Map<String, Object> payload = auditPayload(service, ingested.digest(), scorecard);
+        payload.put("previousManifestDigest", previousDigest);
+        audit.record(orgId, "service.updated", "service", service.getId(), payload);
+
+        log.info(
+                "Updated service {} to manifest digest {}, scoring {}/{}",
+                slug,
+                ingested.digest(),
+                scorecard.checksPassed(),
+                scorecard.checksApplicable());
 
         return assembler.assemble(orgId, service);
+    }
+
+    /**
+     * What an audit reader needs to reconstruct the change without re-reading
+     * the manifest. The digest identifies exactly which document was stored; the
+     * score is what it was judged to be at that moment.
+     */
+    private static Map<String, Object> auditPayload(ServiceEntity service, String digest, Scorecard scorecard) {
+        Map<String, Object> payload = new java.util.LinkedHashMap<>();
+        payload.put("slug", service.getSlug());
+        payload.put("repository", service.getRepository());
+        payload.put("sourcePath", service.getSourcePath());
+        payload.put("tier", (int) service.getTier());
+        payload.put("manifestDigest", digest);
+        payload.put("schemaVersion", service.getSchemaVersion());
+        payload.put("policySetVersion", scorecard.policySetVersion());
+        payload.put("checksPassed", scorecard.checksPassed());
+        payload.put("checksApplicable", scorecard.checksApplicable());
+        return payload;
     }
 
     private void rejectIfSlugTaken(UUID orgId, String slug, UUID allowedId) {
