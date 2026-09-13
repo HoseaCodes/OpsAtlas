@@ -70,7 +70,7 @@ jobs — selection, focus ring, error-budget fill, open-incident emphasis. See
 | Semantic validation — duplicate environment names | **Real** | same |
 | Architecture decisions, phases 0–10 | **Real** (written down) | [`docs/adr/`](docs/adr/), [`docs/roadmap.md`](docs/roadmap.md) |
 | Design system extracted from the prototype | **Real** (written down) | [`docs/design/tokens.md`](docs/design/tokens.md) |
-| Control plane (Java 21 / Spring Boot) | **Real** | `make test` — 257 JVM tests |
+| Control plane (Java 21 / Spring Boot) | **Real** | `make test` — 259 JVM tests |
 | PostgreSQL schema and Flyway migrations | **Real** | `SeedConsistencyIT`, and Hibernate `ddl-auto: validate` refuses to start on drift |
 | `POST /api/v1/services` — register from a `service.yaml` | **Real** | `RegistrationApiIT`, plus 13 curl assertions against a running server |
 | Safe YAML ingestion — size cap, no alias expansion, no type construction | **Real** | `ManifestValidationTest` — billion-laughs, `!!java` tags, duplicate keys and a 70 KiB body are all refused |
@@ -111,6 +111,7 @@ jobs — selection, focus ring, error-budget fill, open-incident emphasis. See
 | No credentials in source control | **Real, enforced** | `make check-secrets` — eight credential formats plus tracked `.env`/key files, run first in CI and by `make test`; verified by planting a token and a tracked `.env` and watching it fail. It raises the floor, it is not a proof — [ADR 0012](docs/adr/0012-secret-scanning-is-a-grep.md) says what it misses |
 | CI pipeline — six jobs on a clean runner | **Real, and green** | [run #1](https://github.com/HoseaCodes/OpsAtlas/actions/runs/34782671255) — contract fixtures, console, observer, control plane, OpenAPI drift and the browser smoke test all passed on first execution. The smoke job boots PostgreSQL, the control plane and the console and drives Playwright against them |
 | Scorecard — ten declaration rules, tier-conditional | **Real** | `PolicyCheckTest` (49), `ScorecardApiIT` (12) |
+| **The fleet table below is asserted, not maintained by hand** | **Real, enforced** | `PolicySetIT` registers all six manifests and compares the real scores to the table printed in this README; it also pins the rule-id set beside `PolicyCatalog.VERSION`, so a rule cannot change a verdict without the build noticing |
 | `NOT_APPLICABLE` as a real outcome, with a moving denominator | **Real** | a tier 3 service is scored out of 7, not 10 |
 | Scorecard + audit written in the registration transaction | **Real, and verified** | `ScorecardApiIT` — a forced mid-registration failure leaves no service, no scorecard and no audit row |
 | Audit log with correlation IDs, cursor-paged | **Real** | `ScorecardApiIT` |
@@ -333,7 +334,7 @@ transaction as the service row. Registering the six example manifests produces:
 service                  tier  score    failing
 orders-api               1     10/10    -
 pricing-engine           1     8/10     journeys-declared, runbook-linked
-billing-worker           2     7/10     environment-urls, liveness-probe, readiness-probe
+billing-worker           2     7/10     environment-urls-declared, liveness-probe-declared, readiness-probe-declared
 customer-portal          2     9/10     observability-service-name
 identity-bff             1     9/10     dependencies-declared
 legacy-report-runner     3     0/7      (7 failing; 3 not applicable at tier 3)

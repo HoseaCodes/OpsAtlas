@@ -238,6 +238,61 @@ Verified in both directions: all seven hand-written lists removed and the suite
 still passes 257, and disabling the shared reset fails 96 tests across 13
 classes. Runtime is unchanged at roughly half a minute.
 
+**Fifth gap closed after phase 8:** `PolicyCatalog.VERSION`. `CLAUDE.md` said to
+bump it whenever a rule changes, because it is what lets a score from last month
+still be read as what it meant then — and nothing enforced it. A rule could be
+added, every scorecard could start meaning something different, and every stored
+`policy_set_version` would still claim otherwise.
+
+`PolicySetIT` closes both halves. The rule-id set is pinned beside the version it
+stands for, which catches a rule appearing or disappearing. The README's fleet
+table — the most falsifiable claim in that document, six services with exact
+scores and exact failing rules — is asserted against what the scorer actually
+produces, which catches a rule quietly changing its mind about a manifest.
+
+It found the table already wrong: three failing checks were named
+`environment-urls`, `liveness-probe` and `readiness-probe`, and the real ids are
+`environment-urls-declared`, `liveness-probe-declared` and
+`readiness-probe-declared`. Every number in the table was right; the ids a reader
+would have searched for did not exist.
+
+**And it found something worse than the thing it was written for.** The first
+mutation check appeared to pass in under a second: Gradle had the test task
+up-to-date, because `README.md` was not a declared input. A test that reads a
+file at runtime is not re-run when that file changes — so the test existed,
+looked green, and was skipped by the exact edit it was written to catch. CI never
+hit it, having no cache to be up to date against, which is the worst shape for
+this kind of bug: correct in the place nobody watches, wrong in the place
+everybody works. `README.md`, `examples/services` and
+`packages/contracts/schemas` are declared inputs now.
+
+**A note on the keyboard tests, added in the same stretch.** They press keys and
+expect things to happen, which runs into something `catalog.spec.ts` already had
+written down: an interaction landing between the server-rendered markup
+appearing and the App Router hydrating is swallowed. `waitForLoadState("networkidle")`
+does not close that window — network idle is not hydration — and a helper named
+`ready()` that waits for the wrong thing is worse than no helper, because it
+reads as a guarantee. Where a key press must produce a navigation, the
+press-and-assert pair is retried with `toPass`, as the existing test does.
+
+**One assertion was dropped rather than stabilised.** The tab test also asserted
+that Enter on the Scorecard tab changes the URL, and failed about one run in
+thirty — not the brief swallow the retries handle, but a state where the retry
+exhausted a full fifteen seconds with the URL never changing. The cause is not
+understood. It was removed because it was duplicate coverage: `catalog.spec.ts`
+already asserts that activating that exact tab changes the URL, and the test
+above it already asserts that Enter opens a focused link. What the tab test
+uniquely covers — that the tab is reachable by tabbing and shows its focus — is
+unaffected and still asserted. A longer timeout would have hidden the lead
+instead; the comment in the test says so, so nobody re-adds it believing it was
+merely slow.
+
+Chasing that produced a wrong conclusion on the way, worth recording because it
+was stated before it was checked: a mouse click on the tab did not navigate
+either, which looked like a product bug. It is not one — the same click works
+once the router has attached, and a plain link to the identical URL works
+throughout.
+
 **Deferred, with reasons:**
 
 - **Drift detection.** CLAUDE.md §5 lists it as the observer's job. It needs a

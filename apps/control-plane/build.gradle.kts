@@ -103,6 +103,17 @@ tasks.withType<Test>().configureEach {
     systemProperty("opsatlas.examples.dir", rootProject.file("examples/services").absolutePath)
     systemProperty("opsatlas.contracts.dir", rootProject.file("packages/contracts").absolutePath)
 
+    // Files read at runtime are invisible to Gradle unless they are declared,
+    // and an undeclared input makes a test look green when it simply did not
+    // run: editing only README.md left this task up-to-date, so PolicySetIT -
+    // which asserts the README's fleet table against the real scorer - was
+    // skipped by the very change it exists to catch. CI never hit it, having no
+    // cache to be up to date against, which is the kind of difference between
+    // local and CI that is worth removing rather than remembering.
+    inputs.dir(rootProject.file("examples/services")).withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.dir(rootProject.file("packages/contracts/schemas")).withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.file(rootProject.file("README.md")).withPathSensitivity(PathSensitivity.RELATIVE)
+
     testLogging {
         events("passed", "skipped", "failed")
         showStandardStreams = false

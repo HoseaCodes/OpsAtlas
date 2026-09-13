@@ -59,7 +59,7 @@ worse than no `terraform/` directory.
   Gradle provisions Temurin 21 itself. Go 1.27+ **is** required for
   `apps/observer`; it is installed here via Homebrew.
 - **Tests:** `make test` — 14 schema fixtures, 37 console component tests,
-  33 Go tests (race-clean) and 257 JVM tests, all passing. `make test-all` adds
+  33 Go tests (race-clean) and 259 JVM tests, all passing. `make test-all` adds
   23 Playwright tests against the real stack. Integration tests use
   Testcontainers and need a running Docker daemon; the Playwright tests need the
   stack running.
@@ -117,6 +117,15 @@ worse than no `terraform/` directory.
 - **A window of N days means today and the N-1 days before it.** So a 30-day
   ribbon's oldest day is `today - 29`. Easy to get wrong by one in either
   direction, and it has been.
+- **A key press or click that lands before the App Router hydrates is
+  swallowed.** It is a real window, not a test artefact, and
+  `waitForLoadState("networkidle")` does not close it — network idle is not
+  hydration. Where a Playwright test presses something and expects a navigation,
+  retry the press-and-assert pair with `toPass`, as `catalog.spec.ts` and
+  `keyboard.spec.ts` do. That keeps the whole property under test. One assertion
+  resisted even that and was removed as duplicate coverage rather than given a
+  longer timeout — `keyboard.spec.ts` records why, so it is not re-added on the
+  assumption it was only slow.
 - **Keyboard focus is visible, and asserted.** §10 requires keyboard navigation
   with visible focus; `e2e/keyboard.spec.ts` tabs through the catalog and fails
   if anything takes focus without showing it. Deleting the `:focus-visible` rule
@@ -161,7 +170,17 @@ worse than no `terraform/` directory.
   describe them as production-readiness checks.
 - **Bump `PolicyCatalog.VERSION`** whenever a rule is added, removed, or changed
   in a way that alters its verdict. It is what keeps an old score readable as
-  what it meant when it was computed.
+  what it meant when it was computed. `PolicySetIT` enforces it from both
+  directions: the rule-id set is pinned beside the version it stands for, and the
+  README's fleet table is asserted against what the scorer actually produces, so
+  a rule that quietly changes its mind about a manifest fails the build.
+- **The README's fleet table is a test fixture, not prose.** `PolicySetIT` parses
+  it and compares it to real scores. When it fails it prints the correct table in
+  the README's own column widths, ready to paste.
+- **A file a test reads at runtime must be declared as a Gradle input.** README.md,
+  `examples/services` and `packages/contracts/schemas` are. An undeclared one
+  leaves the test task up-to-date and the test unrun — green for having been
+  skipped by the exact change it exists to catch.
 - **Run `make openapi` after any controller or response-shape change**, and
   commit the result. CI fails on the difference otherwise (ADR 0005).
 - **Extend `OrgIsolationIT` whenever an endpoint is added.** An endpoint it does
