@@ -78,7 +78,8 @@ jobs — selection, focus ring, error-budget fill, open-incident emphasis. See
 | OpenAPI document generated from the code, drift-checked | **Real** | `make check-openapi` fails the build on any difference |
 | Swagger UI over that document, at `/swagger-ui.html` | **Real** | served by springdoc; on by default locally, off when `OPSATLAS_SWAGGER_UI=false` |
 | Typed TypeScript client, no hand-written API types | **Real** | `make typecheck` |
-| Web console — catalog, detail, scorecard, register by paste | **Real** | 16 component tests, 8 Playwright tests against the real stack |
+| Web console — catalog, detail, scorecard, register by paste | **Real** | 29 component tests, 9 Playwright tests against the real stack |
+| A copyable prompt on `/register`, generated from the schema and the live rules | **Real** | `manifestPrompt.test.ts` walks the real schema and fails if a field is missing from the prompt; a Playwright test reads the clipboard |
 | Loading / empty / partial-failure / error / never-observed states | **Real** | `states.test.tsx`, and the detail page settles its two requests independently |
 | CI pipeline | **Written, never executed** | `.github/workflows/ci.yml` — there is no remote to run it |
 | Scorecard — ten declaration rules, tier-conditional | **Real** | `PolicyCheckTest` (49), `ScorecardApiIT` (12) |
@@ -250,6 +251,16 @@ make            # list the targets that exist
 
 Then open <http://localhost:3000>. The catalog is empty until you register
 something — `examples/services/` has six manifests to paste in.
+
+#### Writing a manifest for a service that has none
+
+`/register` carries a prompt you can copy into whichever assistant you use, and
+paste the YAML it returns back into the form. The prompt is generated per request
+from the versioned JSON Schema and from `GET /api/v1/policy/rules`, so it states
+the field constraints and the ten scorecard rules as they are right now rather
+than as they were when somebody last wrote them down. It also tells the
+assistant to omit what it cannot know instead of inventing a URL — a catalog is
+believed, so a plausible wrong value is worse than an absent one.
 
 #### Browsing the API
 

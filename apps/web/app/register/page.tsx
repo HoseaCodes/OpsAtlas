@@ -1,8 +1,26 @@
+import type { PolicyRules } from "@opsatlas/contracts";
+import schema from "@opsatlas/contracts/schema";
+import { ManifestPrompt } from "@/components/ManifestPrompt";
 import { RegisterForm } from "@/components/RegisterForm";
+import { controlPlane, noStore } from "@/lib/api";
+import { buildManifestPrompt, type JsonSchemaNode } from "@/lib/manifestPrompt";
 
 export const metadata = { title: "Register a service — OpsAtlas" };
 
-export default function RegisterPage() {
+// The prompt embeds the policy rules as the control plane currently states them,
+// so it is built per request rather than at build time.
+export const dynamic = "force-dynamic";
+
+export default async function RegisterPage() {
+  // The prompt is worth having without the rules, so a failure here degrades it
+  // rather than failing the page: registering a manifest does not depend on the
+  // rule list, and that is the partial-failure case CLAUDE.md §10 calls normal.
+  const rules = await controlPlane()
+    .getPolicyRules(noStore)
+    .catch((): null => null);
+
+  const prompt = buildManifestPrompt(schema as JsonSchemaNode, rules as PolicyRules | null);
+
   return (
     <>
       <header className="border-b border-rule px-4 pb-5 pt-6 md:px-6">
@@ -18,6 +36,10 @@ export default function RegisterPage() {
           service is whatever its manifest declares.
         </p>
       </header>
+
+      <div className="px-4 pt-5 md:px-6">
+        <ManifestPrompt prompt={prompt} />
+      </div>
 
       <RegisterForm />
     </>

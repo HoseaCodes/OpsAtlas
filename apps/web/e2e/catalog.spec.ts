@@ -85,6 +85,37 @@ test("registering a valid manifest through the console works end to end", async 
   await expect(page.getByRole("main").getByRole("alert")).toContainText(/already registered/i);
 });
 
+test("the register page offers a prompt built from the live schema and rules", async ({ page }) => {
+  await page.goto("/register");
+
+  // Clipboard permissions are not granted by default in headless Chromium, so
+  // this exercises the button and asserts on what the page does, then reads the
+  // clipboard through the page context.
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+
+  const disclosure = page.getByText(/Copy a prompt for your assistant/);
+  await expect(disclosure).toBeVisible();
+  await disclosure.click();
+
+  await page.getByRole("button", { name: "Copy prompt" }).click();
+  await expect(page.getByRole("main").getByRole("status")).toContainText(/Paste it into your assistant/);
+
+  const copied = await page.evaluate(() => navigator.clipboard.readText());
+
+  // The prompt has to carry the contract, not a description of it: the pinned
+  // apiVersion, a pattern straight out of the schema, and the policy set version
+  // the control plane is serving right now.
+  expect(copied).toContain("apiVersion: opsatlas.ambitiousconcepts.io/v1");
+  expect(copied).toContain("^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$");
+
+  const rules = await fetch(`${API}/api/v1/policy/rules`).then((response) => response.json());
+  expect(copied).toContain(rules.policySetVersion);
+  expect(copied).toContain(rules.declarationOnlyNotice);
+  for (const rule of rules.rules) {
+    expect(copied).toContain(rule.rationale);
+  }
+});
+
 test("an invalid manifest is rejected with the location of each problem", async ({ page }) => {
   await page.goto("/register");
 
