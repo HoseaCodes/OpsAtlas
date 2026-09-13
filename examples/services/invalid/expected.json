@@ -1,0 +1,57 @@
+{
+  "$comment": [
+    "Expected validation outcome for every fixture in this directory.",
+    "This file is the single source of truth for two consumers: the Node check",
+    "in packages/contracts/scripts/validate-examples.mjs, and the Java",
+    "ManifestValidationTest in the control plane. If those two ever disagree",
+    "about what a bad manifest produces, one of them is wrong and this file",
+    "says which.",
+    "",
+    "stage: 'schema'   - rejected by JSON Schema validation.",
+    "stage: 'semantic' - passes JSON Schema, rejected by the normalizer.",
+    "pointer          - RFC 6901 JSON Pointer into the submitted document.",
+    "keyword          - the constraint that failed, as reported by the validator."
+  ],
+  "fixtures": {
+    "unknown-api-version.yaml": {
+      "stage": "schema",
+      "why": "An unrecognised apiVersion selects no schema, so nothing else can be checked.",
+      "violations": [{ "pointer": "/apiVersion", "keyword": "const" }]
+    },
+    "invalid-service-name.yaml": {
+      "stage": "schema",
+      "why": "The name becomes a DNS label and a metrics prefix.",
+      "violations": [{ "pointer": "/metadata/name", "keyword": "pattern" }]
+    },
+    "tier-out-of-range.yaml": {
+      "stage": "schema",
+      "why": "Tier drives every conditional policy rule; there is no tier 5.",
+      "violations": [{ "pointer": "/spec/tier", "keyword": "maximum" }]
+    },
+    "unknown-property.yaml": {
+      "stage": "schema",
+      "why": "A misspelled key must be reported rather than silently dropped.",
+      "violations": [{ "pointer": "/spec", "keyword": "additionalProperties" }]
+    },
+    "missing-environments.yaml": {
+      "stage": "schema",
+      "why": "A service that declares nowhere it runs cannot be observed.",
+      "violations": [{ "pointer": "/spec", "keyword": "required" }]
+    },
+    "bad-slo-window.yaml": {
+      "stage": "schema",
+      "why": "The window must be whole days so the error budget can be computed.",
+      "violations": [{ "pointer": "/spec/operations/slo/window", "keyword": "pattern" }]
+    },
+    "slo-target-one-hundred.yaml": {
+      "stage": "schema",
+      "why": "A 100% target has no error budget and no alertable threshold.",
+      "violations": [{ "pointer": "/spec/operations/slo/availability", "keyword": "exclusiveMaximum" }]
+    },
+    "duplicate-environment.yaml": {
+      "stage": "semantic",
+      "why": "JSON Schema cannot express uniqueness by a child property, so the normalizer checks it and points at the duplicate rather than at the array.",
+      "violations": [{ "pointer": "/spec/environments/1/name", "keyword": "duplicate" }]
+    }
+  }
+}

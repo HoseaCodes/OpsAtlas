@@ -1,0 +1,15 @@
+{
+  "name": "@opsatlas/contracts",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Versioned service.yaml JSON Schema, the generated OpenAPI document, and the TypeScript client for the control plane.",
+  "type": "module",
+  "scripts": {
+    "check:examples": "node scripts/validate-examples.mjs"
+  },
+  "devDependencies": {
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1",
+    "yaml": "^2.6.1"
+  }
+}

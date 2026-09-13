@@ -1,0 +1,13 @@
+# A typo must be reported, not ignored. Every object in the schema sets
+# additionalProperties: false so that "healthz" cannot be silently discarded.
+apiVersion: opsatlas.ambitiousconcepts.io/v1
+kind: Service
+metadata:
+  name: orders-api
+  repository: ambitious-concepts/orders-api
+spec:
+  tier: 1
+  environments:
+    - name: production
+  healthz:
+    readiness: /readyz

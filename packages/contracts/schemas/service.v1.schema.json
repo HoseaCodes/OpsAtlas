@@ -1,0 +1,236 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opsatlas.ambitiousconcepts.io/schemas/service.v1.schema.json",
+  "title": "OpsAtlas Service manifest, version 1",
+  "description": "The contract a monitored repository commits as service.yaml. Structural identity is required here; everything a team could reasonably omit is optional and judged by the scorecard instead, so that a manifest can register and then be told what it is missing.",
+  "type": "object",
+  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "additionalProperties": false,
+
+  "properties": {
+    "apiVersion": {
+      "description": "Selects the schema version. An unrecognised value is a validation error, never a guess.",
+      "const": "opsatlas.ambitiousconcepts.io/v1"
+    },
+    "kind": {
+      "const": "Service"
+    },
+    "metadata": { "$ref": "#/$defs/metadata" },
+    "spec": { "$ref": "#/$defs/spec" }
+  },
+
+  "$defs": {
+    "metadata": {
+      "type": "object",
+      "required": ["name", "repository"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "description": "Stable identifier. Becomes the catalog slug and the metrics prefix, so it follows DNS label rules.",
+          "type": "string",
+          "pattern": "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$",
+          "maxLength": 63
+        },
+        "displayName": {
+          "description": "Human-facing name. Falls back to name when absent.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "owner": {
+          "description": "Slug of the owning team. Optional on purpose: an unowned service must be registerable so the catalog can show that nobody is accountable for it. The owner-declared scorecard check is what reports it.",
+          "type": "string",
+          "pattern": "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$",
+          "maxLength": 63
+        },
+        "repository": {
+          "description": "Source repository in owner/name form. Required: it is where this manifest came from, and it keys the service alongside the manifest path.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$",
+          "maxLength": 200
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 500
+        }
+      }
+    },
+
+    "spec": {
+      "type": "object",
+      "required": ["tier", "environments"],
+      "additionalProperties": false,
+      "properties": {
+        "tier": {
+          "description": "1 = customer-facing and paged, 2 = business hours, 3 = internal best effort. Required because every tier-conditional policy rule depends on it.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3
+        },
+        "lifecycle": {
+          "type": "string",
+          "enum": ["active", "deprecated", "retired"],
+          "default": "active"
+        },
+        "runtime": {
+          "description": "Free-form runtime slug, e.g. spring-boot, node, go, static. Deliberately not an enum: a closed list would reject a new runtime before the catalog could record it.",
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]{0,31}$"
+        },
+        "environments": {
+          "description": "Where this service runs. At least one, and names must be unique - uniqueness is checked after schema validation so the error can point at the offending entry.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 20,
+          "items": { "$ref": "#/$defs/environment" }
+        },
+        "health": { "$ref": "#/$defs/health" },
+        "observability": { "$ref": "#/$defs/observability" },
+        "operations": { "$ref": "#/$defs/operations" },
+        "journeys": {
+          "description": "Customer-visible experiences this service is on the path for. The one field the platform cannot infer from telemetry, and the reason an on-call engineer can answer 'who is affected' without asking a product manager.",
+          "type": "array",
+          "maxItems": 25,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          }
+        },
+        "dependencies": {
+          "description": "What this service calls. Absent means 'not stated'; an empty list means 'stated: none'. The scorecard treats those differently.",
+          "type": "array",
+          "maxItems": 50,
+          "items": { "$ref": "#/$defs/dependency" }
+        }
+      }
+    },
+
+    "environment": {
+      "type": "object",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$",
+          "maxLength": 32
+        },
+        "url": {
+          "description": "Base URL the observer will probe. http is permitted for local and preview environments only; the scorecard is where that judgement belongs, not the schema.",
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https?://",
+          "maxLength": 500
+        }
+      }
+    },
+
+    "health": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "readiness": { "$ref": "#/$defs/healthPath" },
+        "liveness": { "$ref": "#/$defs/healthPath" }
+      }
+    },
+
+    "healthPath": {
+      "description": "Absolute path on the environment URL, e.g. /actuator/health/readiness.",
+      "type": "string",
+      "pattern": "^/[A-Za-z0-9._~/-]*$",
+      "maxLength": 200
+    },
+
+    "observability": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "serviceName": {
+          "description": "The OpenTelemetry service.name this process reports under. Without it, traces cannot be joined to this catalog entry.",
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,62}$",
+          "maxLength": 63
+        },
+        "dashboard": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https://",
+          "maxLength": 500
+        }
+      }
+    },
+
+    "operations": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "slo": { "$ref": "#/$defs/slo" },
+        "runbook": {
+          "description": "Absolute https URL, or a repository-relative path such as docs/runbook.md.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500,
+          "anyOf": [
+            { "pattern": "^https://" },
+            { "pattern": "^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*\\.(md|adoc|rst)$" }
+          ]
+        },
+        "contact": {
+          "description": "Chat channel or alias that reaches the owning team.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        }
+      }
+    },
+
+    "slo": {
+      "type": "object",
+      "required": ["availability", "window"],
+      "additionalProperties": false,
+      "properties": {
+        "availability": {
+          "description": "Target availability as a percentage. Exclusive of 100: a 100% target has no error budget, which makes every alert threshold undefined.",
+          "type": "number",
+          "minimum": 90,
+          "exclusiveMaximum": 100
+        },
+        "window": {
+          "description": "Rolling window the target is measured over, in whole days, e.g. 30d.",
+          "type": "string",
+          "pattern": "^[1-9][0-9]{0,2}d$"
+        }
+      }
+    },
+
+    "dependency": {
+      "description": "Either a bare string, which is shorthand for kind: service, or an object naming the kind explicitly.",
+      "oneOf": [
+        {
+          "type": "string",
+          "pattern": "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$",
+          "maxLength": 63
+        },
+        {
+          "type": "object",
+          "required": ["name"],
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "type": "string",
+              "pattern": "^[a-z0-9]([a-z0-9._-]{0,61}[a-z0-9])?$",
+              "maxLength": 63
+            },
+            "kind": {
+              "description": "service = another registered OpsAtlas service; datastore = a database, cache or queue; external = a third party outside the organisation.",
+              "type": "string",
+              "enum": ["service", "datastore", "external"],
+              "default": "service"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

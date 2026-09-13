@@ -1,0 +1,9 @@
+# A service that declares nowhere it runs cannot be observed later.
+apiVersion: opsatlas.ambitiousconcepts.io/v1
+kind: Service
+metadata:
+  name: orders-api
+  repository: ambitious-concepts/orders-api
+spec:
+  tier: 1
+  runtime: spring-boot

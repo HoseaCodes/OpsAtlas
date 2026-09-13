@@ -1,0 +1,9 @@
+apiVersion: opsatlas.ambitiousconcepts.io/v1
+kind: Service
+metadata:
+  name: orders-api
+  repository: ambitious-concepts/orders-api
+spec:
+  tier: 5
+  environments:
+    - name: production

@@ -1,0 +1,37 @@
+# Complete manifest. Every slice-one scorecard check passes.
+apiVersion: opsatlas.ambitiousconcepts.io/v1
+kind: Service
+metadata:
+  name: orders-api
+  displayName: Orders API
+  owner: ambitious-concepts
+  repository: ambitious-concepts/orders-api
+  description: Accepts and tracks customer orders.
+spec:
+  tier: 1
+  runtime: spring-boot
+  environments:
+    - name: production
+      url: https://orders.example.com
+    - name: staging
+      url: https://orders.staging.example.com
+  health:
+    readiness: /actuator/health/readiness
+    liveness: /actuator/health/liveness
+  observability:
+    serviceName: orders-api
+  operations:
+    slo:
+      availability: 99.9
+      window: 30d
+    runbook: docs/runbook.md
+    contact: "#orders-eng"
+  journeys:
+    - Place an order
+    - Track an order
+  dependencies:
+    - pricing-engine
+    - name: postgres
+      kind: datastore
+    - name: payments.example.net
+      kind: external

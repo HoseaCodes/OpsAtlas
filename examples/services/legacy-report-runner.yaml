@@ -1,0 +1,13 @@
+# Unowned, tier 3, minimal. Registers successfully and scores badly. The SLO and
+# journeys checks report NOT_APPLICABLE at tier 3 rather than FAIL, so the score
+# denominator shrinks instead of the service looking worse than it is.
+apiVersion: opsatlas.ambitiousconcepts.io/v1
+kind: Service
+metadata:
+  name: legacy-report-runner
+  repository: ambitious-concepts/legacy-report-runner
+spec:
+  tier: 3
+  runtime: node
+  environments:
+    - name: production

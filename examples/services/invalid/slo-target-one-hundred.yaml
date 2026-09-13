@@ -1,0 +1,15 @@
+# A 100% target leaves no error budget, which makes every burn-rate alert
+# threshold a division by zero. Rejected at the schema, not at runtime.
+apiVersion: opsatlas.ambitiousconcepts.io/v1
+kind: Service
+metadata:
+  name: orders-api
+  repository: ambitious-concepts/orders-api
+spec:
+  tier: 1
+  environments:
+    - name: production
+  operations:
+    slo:
+      availability: 100
+      window: 30d

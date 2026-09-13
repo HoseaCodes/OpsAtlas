@@ -1,0 +1,10 @@
+# Underscores and capitals are not DNS labels, and the name becomes one.
+apiVersion: opsatlas.ambitiousconcepts.io/v1
+kind: Service
+metadata:
+  name: Orders_API
+  repository: ambitious-concepts/orders-api
+spec:
+  tier: 1
+  environments:
+    - name: production

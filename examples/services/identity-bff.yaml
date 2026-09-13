@@ -1,0 +1,29 @@
+# Dependencies are absent rather than empty. "Not stated" and "stated: none"
+# are different answers, and the dependencies-declared check distinguishes them.
+apiVersion: opsatlas.ambitiousconcepts.io/v1
+kind: Service
+metadata:
+  name: identity-bff
+  displayName: Identity BFF
+  owner: ambitious-concepts
+  repository: ambitious-concepts/identity-bff
+spec:
+  tier: 1
+  runtime: node
+  environments:
+    - name: production
+      url: https://identity.example.com
+    - name: staging
+      url: https://identity.staging.example.com
+  health:
+    readiness: /readyz
+    liveness: /healthz
+  observability:
+    serviceName: identity-bff
+  operations:
+    slo:
+      availability: 99.95
+      window: 30d
+    runbook: docs/runbook.md
+  journeys:
+    - Sign in

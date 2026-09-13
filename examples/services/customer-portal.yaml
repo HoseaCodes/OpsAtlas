@@ -1,0 +1,31 @@
+# Front end with no observability.serviceName, so its traces cannot be joined
+# to this catalog entry.
+apiVersion: opsatlas.ambitiousconcepts.io/v1
+kind: Service
+metadata:
+  name: customer-portal
+  displayName: Customer Portal
+  owner: ambitious-concepts
+  repository: ambitious-concepts/customer-portal
+spec:
+  tier: 2
+  runtime: static
+  environments:
+    - name: production
+      url: https://portal.example.com
+    - name: preview
+      url: http://portal.preview.example.internal
+  health:
+    readiness: /healthz.json
+    liveness: /healthz.json
+  operations:
+    slo:
+      availability: 99.9
+      window: 30d
+    runbook: https://example.com/runbooks/customer-portal
+  journeys:
+    - Sign in
+    - View order history
+  dependencies:
+    - orders-api
+    - identity-bff

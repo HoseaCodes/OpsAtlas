@@ -1,0 +1,32 @@
+# Tier 1 with no runbook and no declared journeys: two checks fail, and the
+# service still registers. That is the point - the catalog records what is
+# missing rather than refusing the entry.
+apiVersion: opsatlas.ambitiousconcepts.io/v1
+kind: Service
+metadata:
+  name: pricing-engine
+  displayName: Pricing Engine
+  owner: ambitious-concepts
+  repository: ambitious-concepts/pricing-engine
+spec:
+  tier: 1
+  runtime: spring-boot
+  environments:
+    - name: production
+      url: https://pricing.example.com
+    - name: staging
+      url: https://pricing.staging.example.com
+  health:
+    readiness: /actuator/health/readiness
+    liveness: /actuator/health/liveness
+  observability:
+    serviceName: pricing-engine
+  operations:
+    slo:
+      availability: 99.9
+      window: 30d
+  dependencies:
+    - name: postgres
+      kind: datastore
+    - name: redis
+      kind: datastore

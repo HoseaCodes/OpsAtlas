@@ -1,0 +1,31 @@
+# A queue consumer. It has no inbound URL and no HTTP health paths, which is
+# honest for a worker and still fails the probe checks - a hung consumer and a
+# healthy one look identical to the platform until it declares a readiness
+# endpoint. The scorecard says so rather than exempting workers silently.
+apiVersion: opsatlas.ambitiousconcepts.io/v1
+kind: Service
+metadata:
+  name: billing-worker
+  displayName: Billing Worker
+  owner: ambitious-concepts
+  repository: ambitious-concepts/billing-worker
+spec:
+  tier: 2
+  runtime: node
+  environments:
+    - name: production
+    - name: staging
+  observability:
+    serviceName: billing-worker
+  operations:
+    slo:
+      availability: 99.5
+      window: 30d
+    runbook: docs/runbook.md
+  journeys:
+    - Receive an invoice
+  dependencies:
+    - name: postgres
+      kind: datastore
+    - name: rabbitmq
+      kind: datastore
