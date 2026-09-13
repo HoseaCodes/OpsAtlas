@@ -1,5 +1,6 @@
 package com.ambitiousconcepts.opsatlas.catalog.internal.domain;
 
+import com.ambitiousconcepts.opsatlas.shared.Ids;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
@@ -54,6 +55,34 @@ public class EnvironmentEntity {
 
     protected EnvironmentEntity() {
         // for JPA
+    }
+
+    public static EnvironmentEntity create(
+            UUID orgId, UUID serviceId, String name, String url, String readinessPath, String livenessPath,
+            Instant now) {
+        EnvironmentEntity entity = new EnvironmentEntity();
+        entity.id = Ids.newRowId();
+        entity.orgId = orgId;
+        entity.serviceId = serviceId;
+        entity.name = name;
+        entity.createdAt = now;
+        entity.apply(url, readinessPath, livenessPath, now);
+        return entity;
+    }
+
+    /**
+     * Update an environment in place, keeping its id.
+     *
+     * <p>Re-registration matches environments by name and updates them rather
+     * than deleting and re-inserting. Once the observer attaches observations to
+     * an environment id, churning those ids on every manifest edit would throw
+     * away the history attached to them.
+     */
+    public void apply(String url, String readinessPath, String livenessPath, Instant now) {
+        this.url = url;
+        this.readinessPath = readinessPath;
+        this.livenessPath = livenessPath;
+        this.updatedAt = now;
     }
 
     public UUID getId() {

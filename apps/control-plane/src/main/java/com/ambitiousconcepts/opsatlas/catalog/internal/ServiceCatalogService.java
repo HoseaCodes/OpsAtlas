@@ -1,9 +1,11 @@
 package com.ambitiousconcepts.opsatlas.catalog.internal;
 
 import com.ambitiousconcepts.opsatlas.catalog.api.ServiceCatalog;
+import com.ambitiousconcepts.opsatlas.catalog.api.ServiceDetail;
 import com.ambitiousconcepts.opsatlas.catalog.api.ServiceSummary;
 import com.ambitiousconcepts.opsatlas.catalog.internal.domain.ServiceEntity;
 import com.ambitiousconcepts.opsatlas.shared.Cursor;
+import com.ambitiousconcepts.opsatlas.shared.NotFoundException;
 import com.ambitiousconcepts.opsatlas.shared.PageResponse;
 import java.util.List;
 import java.util.UUID;
@@ -15,9 +17,11 @@ import org.springframework.transaction.annotation.Transactional;
 class ServiceCatalogService implements ServiceCatalog {
 
     private final ServiceRepository services;
+    private final ServiceDetailAssembler assembler;
 
-    ServiceCatalogService(ServiceRepository services) {
+    ServiceCatalogService(ServiceRepository services, ServiceDetailAssembler assembler) {
         this.services = services;
+        this.assembler = assembler;
     }
 
     @Override
@@ -39,6 +43,14 @@ class ServiceCatalogService implements ServiceCatalog {
         String nextCursor = hasMore ? Cursor.encode(page.get(page.size() - 1).getId()) : null;
 
         return PageResponse.of(items, nextCursor);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public ServiceDetail get(UUID orgId, String slug) {
+        return services.findByOrgIdAndSlug(orgId, slug)
+                .map(service -> assembler.assemble(orgId, service))
+                .orElseThrow(() -> new NotFoundException("Service", slug));
     }
 
     private static ServiceSummary toSummary(ServiceEntity entity) {

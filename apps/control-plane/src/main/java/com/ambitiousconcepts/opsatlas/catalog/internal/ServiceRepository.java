@@ -31,5 +31,14 @@ public interface ServiceRepository extends JpaRepository<ServiceEntity, UUID> {
 
     Optional<ServiceEntity> findByOrgIdAndSlug(UUID orgId, String slug);
 
+    /**
+     * The registration key: a service is identified for re-registration by where
+     * its manifest lives, not by the name inside it. That is what makes a
+     * repeated POST from one repository an update to one row rather than a
+     * second service, and it matches the service_source_unique_per_org
+     * constraint.
+     */
+    Optional<ServiceEntity> findByOrgIdAndRepositoryAndSourcePath(UUID orgId, String repository, String sourcePath);
+
     Optional<ServiceEntity> findByOrgIdAndId(UUID orgId, UUID id);
 }

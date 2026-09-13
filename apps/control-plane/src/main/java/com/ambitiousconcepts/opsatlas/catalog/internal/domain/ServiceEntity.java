@@ -1,5 +1,6 @@
 package com.ambitiousconcepts.opsatlas.catalog.internal.domain;
 
+import com.ambitiousconcepts.opsatlas.shared.Ids;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
@@ -81,6 +82,46 @@ public class ServiceEntity {
 
     protected ServiceEntity() {
         // for JPA
+    }
+
+    /**
+     * Register a new service.
+     *
+     * <p>The id is a UUIDv7 assigned here rather than by the database, so it is
+     * available before insert and so that ordering by id is ordering by
+     * registration time - which is what the catalog's keyset pagination relies
+     * on.
+     */
+    public static ServiceEntity register(UUID orgId, ServiceFields fields, Instant now) {
+        ServiceEntity entity = new ServiceEntity();
+        entity.id = Ids.newRowId();
+        entity.orgId = orgId;
+        entity.createdAt = now;
+        entity.apply(fields, now);
+        return entity;
+    }
+
+    /**
+     * Apply a newly ingested manifest to an existing service.
+     *
+     * <p>{@code orgId}, {@code id} and {@code createdAt} are deliberately not
+     * touched: a re-registration replaces what the manifest says, not which
+     * organization the row belongs to or when it first appeared.
+     */
+    public void apply(ServiceFields fields, Instant now) {
+        this.teamId = fields.teamId();
+        this.slug = fields.slug();
+        this.displayName = fields.displayName();
+        this.repository = fields.repository();
+        this.tier = fields.tier();
+        this.runtime = fields.runtime();
+        this.lifecycle = fields.lifecycle();
+        this.schemaVersion = fields.schemaVersion();
+        this.manifest = fields.manifest();
+        this.manifestDigest = fields.manifestDigest();
+        this.sourcePath = fields.sourcePath();
+        this.sourceRef = fields.sourceRef();
+        this.updatedAt = now;
     }
 
     public UUID getId() {

@@ -58,6 +58,74 @@ public class ApiExceptionHandler {
         return problem(HttpStatus.NOT_FOUND, "not-found", "Not found", e.getMessage());
     }
 
+    /**
+     * The document is fine; what it asks for conflicts with what is stored.
+     *
+     * <p>Always carries the route forward in {@code detail} - which endpoint to
+     * call, or what to change. A 409 that only says "conflict" leaves the caller
+     * to guess whether to retry, rename, or give up.
+     */
+    @ExceptionHandler(ConflictException.class)
+    public ProblemDetail onConflict(ConflictException e) {
+        ProblemDetail problem = problem(HttpStatus.CONFLICT, "conflict", "Conflicts with what is stored", e.getMessage());
+        e.violation().ifPresent(violation -> problem.setProperty("violations", List.of(violation)));
+        return problem;
+    }
+
+    /**
+     * Optimistic locking, in its two distinct failures.
+     *
+     * <p>428 and 412 are different situations and are kept apart: "you did not
+     * say which version you read" is a client that needs to send a header,
+     * "the version you read is stale" is a client that needs to re-read and
+     * retry. Collapsing them into one status would leave the caller unable to
+     * tell which.
+     */
+    @ExceptionHandler(PreconditionException.class)
+    public ProblemDetail onPrecondition(PreconditionException e) {
+        return switch (e.kind()) {
+            case REQUIRED -> problem(
+                    HttpStatus.PRECONDITION_REQUIRED, "precondition-required", "If-Match required", e.getMessage());
+            case FAILED -> problem(
+                    HttpStatus.PRECONDITION_FAILED, "precondition-failed", "If-Match did not match", e.getMessage());
+        };
+    }
+
+    /**
+     * A concurrent writer won the race between the If-Match check and the
+     * commit. Reported identically to a failed If-Match, because from the
+     * caller's side it is the same event: what you read is no longer current.
+     */
+    @ExceptionHandler(org.springframework.orm.ObjectOptimisticLockingFailureException.class)
+    public ProblemDetail onOptimisticLockFailure(org.springframework.orm.ObjectOptimisticLockingFailureException e) {
+        return problem(
+                HttpStatus.PRECONDITION_FAILED,
+                "precondition-failed",
+                "If-Match did not match",
+                "This resource was changed by someone else while your update was in flight. "
+                        + "Re-read it, reapply your change, and retry.");
+    }
+
+    /**
+     * The body arrived with a content type this endpoint does not accept.
+     *
+     * <p>Worth its own handler because the manifest endpoints take YAML, and the
+     * default 415 body would not tell a caller which types are acceptable.
+     */
+    @ExceptionHandler(org.springframework.web.HttpMediaTypeNotSupportedException.class)
+    public ProblemDetail onUnsupportedMediaType(org.springframework.web.HttpMediaTypeNotSupportedException e) {
+        String supported = e.getSupportedMediaTypes().stream()
+                .map(Object::toString)
+                .collect(java.util.stream.Collectors.joining(", "));
+        return problem(
+                HttpStatus.UNSUPPORTED_MEDIA_TYPE,
+                "unsupported-media-type",
+                "Unsupported content type",
+                "This endpoint takes the service.yaml document as the request body."
+                        + (supported.isBlank() ? "" : " Send one of: " + supported + ".")
+                        + " For example: curl -H 'Content-Type: application/yaml' --data-binary @service.yaml");
+    }
+
     @ExceptionHandler(Cursor.InvalidCursorException.class)
     public ProblemDetail onInvalidCursor(Cursor.InvalidCursorException e) {
         ProblemDetail problem =
@@ -93,7 +161,7 @@ public class ApiExceptionHandler {
      */
     @ExceptionHandler(HandlerMethodValidationException.class)
     public ProblemDetail onParameterConstraintViolation(HandlerMethodValidationException e) {
-        List<Violation> violations = e.getAllValidationResults().stream()
+        List<Violation> violations = e.getParameterValidationResults().stream()
                 .flatMap(result -> result.getResolvableErrors().stream()
                         .map(error -> new Violation(
                                 "/" + result.getMethodParameter().getParameterName(),
