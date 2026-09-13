@@ -27,6 +27,7 @@ dependencies {
     implementation(libs.uuid.generator)
     implementation(libs.snakeyaml.engine)
     implementation(libs.json.schema.validator)
+    implementation(libs.springdoc.openapi)
 
     // Spring Security is in the fixed stack but is deliberately absent until
     // authentication is a phase. Adding the starter now would put every
@@ -67,6 +68,24 @@ tasks.withType<JavaCompile>().configureEach {
     options.compilerArgs.addAll(listOf("-Xlint:all", "-parameters"))
 }
 
+// The OpenAPI generator boots the application to write the document. It is not
+// a behaviour test, so it is excluded from `test` and run explicitly by
+// `make openapi`, which keeps `make test` from writing into the working tree.
+val openApiGenerator = "com.ambitiousconcepts.opsatlas.contracts.OpenApiDocumentGenerator"
+
+tasks.register<Test>("generateOpenApiDocument") {
+    description = "Writes packages/contracts/openapi/control-plane.json from the running application."
+    group = "documentation"
+    testClassesDirs = sourceSets["test"].output.classesDirs
+    classpath = sourceSets["test"].runtimeClasspath
+    filter { includeTestsMatching(openApiGenerator) }
+    outputs.upToDateWhen { false }
+}
+
+tasks.named<Test>("test") {
+    filter { excludeTestsMatching(openApiGenerator) }
+}
+
 tasks.withType<Test>().configureEach {
     useJUnitPlatform()
 
@@ -75,6 +94,7 @@ tasks.withType<Test>().configureEach {
     // is the single source of truth shared with the Node checker; a copy here
     // would let the two drift silently.
     systemProperty("opsatlas.examples.dir", rootProject.file("examples/services").absolutePath)
+    systemProperty("opsatlas.contracts.dir", rootProject.file("packages/contracts").absolutePath)
 
     testLogging {
         events("passed", "skipped", "failed")

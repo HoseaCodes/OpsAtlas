@@ -5,11 +5,19 @@
   "description": "Versioned service.yaml JSON Schema, the generated OpenAPI document, and the TypeScript client for the control plane.",
   "type": "module",
   "scripts": {
-    "check:examples": "node scripts/validate-examples.mjs"
+    "check:examples": "node scripts/validate-examples.mjs",
+    "generate:types": "openapi-typescript openapi/control-plane.json -o src/generated/api.ts",
+    "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
     "ajv": "^8.17.1",
     "ajv-formats": "^3.0.1",
-    "yaml": "^2.6.1"
+    "yaml": "^2.6.1",
+    "openapi-typescript": "^7.5.0",
+    "typescript": "^5.7.2"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./schema": "./schemas/service.v1.schema.json"
   }
 }

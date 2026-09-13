@@ -1,0 +1,554 @@
+{
+  "openapi" : "3.1.0",
+  "info" : {
+    "title" : "OpenAPI definition",
+    "version" : "v0"
+  },
+  "servers" : [ {
+    "url" : "http://localhost:59625",
+    "description" : "Generated server url"
+  } ],
+  "paths" : {
+    "/api/v1/services/{slug}" : {
+      "get" : {
+        "tags" : [ "service-controller" ],
+        "operationId" : "get",
+        "parameters" : [ {
+          "name" : "slug",
+          "in" : "path",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ServiceDetail"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put" : {
+        "tags" : [ "service-controller" ],
+        "operationId" : "update",
+        "parameters" : [ {
+          "name" : "slug",
+          "in" : "path",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "name" : "If-Match",
+          "in" : "header",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "name" : "sourceRef",
+          "in" : "query",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/yaml" : {
+              "schema" : {
+                "type" : "string"
+              }
+            },
+            "text/yaml" : {
+              "schema" : {
+                "type" : "string"
+              }
+            },
+            "application/x-yaml" : {
+              "schema" : {
+                "type" : "string"
+              }
+            },
+            "text/plain" : {
+              "schema" : {
+                "type" : "string"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ServiceDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/services" : {
+      "get" : {
+        "tags" : [ "service-controller" ],
+        "operationId" : "list",
+        "parameters" : [ {
+          "name" : "cursor",
+          "in" : "query",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "name" : "limit",
+          "in" : "query",
+          "required" : false,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int32",
+            "default" : 25,
+            "maximum" : 100,
+            "minimum" : 1
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/PageResponseServiceSummary"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post" : {
+        "tags" : [ "service-controller" ],
+        "operationId" : "register",
+        "parameters" : [ {
+          "name" : "sourcePath",
+          "in" : "query",
+          "required" : false,
+          "schema" : {
+            "type" : "string",
+            "default" : "service.yaml",
+            "pattern" : "^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$"
+          }
+        }, {
+          "name" : "sourceRef",
+          "in" : "query",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/yaml" : {
+              "schema" : {
+                "type" : "string"
+              }
+            },
+            "text/yaml" : {
+              "schema" : {
+                "type" : "string"
+              }
+            },
+            "application/x-yaml" : {
+              "schema" : {
+                "type" : "string"
+              }
+            },
+            "text/plain" : {
+              "schema" : {
+                "type" : "string"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ServiceDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/services/{slug}/scorecard" : {
+      "get" : {
+        "tags" : [ "scorecard-controller" ],
+        "operationId" : "forService",
+        "parameters" : [ {
+          "name" : "slug",
+          "in" : "path",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/Scorecard"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/policy/rules" : {
+      "get" : {
+        "tags" : [ "scorecard-controller" ],
+        "operationId" : "rules",
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/PolicyRules"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/audit-events" : {
+      "get" : {
+        "tags" : [ "audit-controller" ],
+        "operationId" : "list_1",
+        "parameters" : [ {
+          "name" : "cursor",
+          "in" : "query",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "name" : "limit",
+          "in" : "query",
+          "required" : false,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int32",
+            "default" : 50,
+            "maximum" : 200,
+            "minimum" : 1
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/PageResponseAuditEntry"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components" : {
+    "schemas" : {
+      "EnvironmentView" : {
+        "type" : "object",
+        "properties" : {
+          "id" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "name" : {
+            "type" : "string"
+          },
+          "url" : {
+            "type" : "string"
+          },
+          "readinessPath" : {
+            "type" : "string"
+          },
+          "livenessPath" : {
+            "type" : "string"
+          },
+          "lastObservedAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          }
+        }
+      },
+      "JsonNode" : {
+        "type" : "object"
+      },
+      "ServiceDetail" : {
+        "type" : "object",
+        "properties" : {
+          "id" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "slug" : {
+            "type" : "string"
+          },
+          "displayName" : {
+            "type" : "string"
+          },
+          "repository" : {
+            "type" : "string"
+          },
+          "tier" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "runtime" : {
+            "type" : "string"
+          },
+          "lifecycle" : {
+            "type" : "string"
+          },
+          "owner" : {
+            "type" : "string"
+          },
+          "schemaVersion" : {
+            "type" : "string"
+          },
+          "manifestDigest" : {
+            "type" : "string"
+          },
+          "sourcePath" : {
+            "type" : "string"
+          },
+          "sourceRef" : {
+            "type" : "string"
+          },
+          "environments" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/EnvironmentView"
+            }
+          },
+          "manifest" : {
+            "$ref" : "#/components/schemas/JsonNode"
+          },
+          "registeredAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "updatedAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "version" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        }
+      },
+      "PageResponseServiceSummary" : {
+        "type" : "object",
+        "properties" : {
+          "items" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/ServiceSummary"
+            }
+          },
+          "nextCursor" : {
+            "type" : "string"
+          }
+        }
+      },
+      "ServiceSummary" : {
+        "type" : "object",
+        "properties" : {
+          "id" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "slug" : {
+            "type" : "string"
+          },
+          "displayName" : {
+            "type" : "string"
+          },
+          "repository" : {
+            "type" : "string"
+          },
+          "tier" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "runtime" : {
+            "type" : "string"
+          },
+          "lifecycle" : {
+            "type" : "string"
+          },
+          "owned" : {
+            "type" : "boolean"
+          },
+          "registeredAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "version" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        }
+      },
+      "CheckResult" : {
+        "type" : "object",
+        "properties" : {
+          "checkId" : {
+            "type" : "string"
+          },
+          "title" : {
+            "type" : "string"
+          },
+          "status" : {
+            "type" : "string"
+          },
+          "detail" : {
+            "type" : "string"
+          }
+        }
+      },
+      "Scorecard" : {
+        "type" : "object",
+        "properties" : {
+          "serviceId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "policySetVersion" : {
+            "type" : "string"
+          },
+          "evaluatedAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "checksPassed" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "checksApplicable" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "checks" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/CheckResult"
+            }
+          }
+        }
+      },
+      "PolicyRuleView" : {
+        "type" : "object",
+        "properties" : {
+          "id" : {
+            "type" : "string"
+          },
+          "title" : {
+            "type" : "string"
+          },
+          "rationale" : {
+            "type" : "string"
+          },
+          "declarationOnly" : {
+            "type" : "boolean"
+          }
+        }
+      },
+      "PolicyRules" : {
+        "type" : "object",
+        "properties" : {
+          "policySetVersion" : {
+            "type" : "string"
+          },
+          "rules" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/PolicyRuleView"
+            }
+          },
+          "declarationOnlyNotice" : {
+            "type" : "string"
+          }
+        }
+      },
+      "AuditEntry" : {
+        "type" : "object",
+        "properties" : {
+          "id" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "occurredAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "actor" : {
+            "type" : "string"
+          },
+          "action" : {
+            "type" : "string"
+          },
+          "subjectType" : {
+            "type" : "string"
+          },
+          "subjectId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "correlationId" : {
+            "type" : "string"
+          },
+          "payload" : {
+            "$ref" : "#/components/schemas/JsonNode"
+          }
+        }
+      },
+      "PageResponseAuditEntry" : {
+        "type" : "object",
+        "properties" : {
+          "items" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/AuditEntry"
+            }
+          },
+          "nextCursor" : {
+            "type" : "string"
+          }
+        }
+      }
+    }
+  }
+}
