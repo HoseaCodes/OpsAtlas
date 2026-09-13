@@ -4,10 +4,10 @@ A service operations control plane: it catalogs services, records who owns them,
 checks whether they are healthy, and scores them against production-readiness
 policy.
 
-> **Status: phase 0 of slice one.** There is no running application yet. One
-> thing works and is verifiable today — the `service.yaml` contract and its
-> validation fixtures. Everything else in this README is described as what it
-> will be, and is labelled as such. The
+> **Status: phase 1 of slice one.** The control plane runs and serves an API,
+> against a real PostgreSQL. The catalog it serves is **empty** — registration
+> arrives in phase 2. Everything else in this README is described as what it
+> will be, and labelled as such. The
 > [what actually works](#what-actually-works-today) table below is the
 > authoritative answer.
 
@@ -64,8 +64,13 @@ jobs — selection, focus ring, error-budget fill, open-incident emphasis. See
 | Semantic validation — duplicate environment names | **Real** | same |
 | Architecture decisions, phases 0–10 | **Real** (written down) | [`docs/adr/`](docs/adr/), [`docs/roadmap.md`](docs/roadmap.md) |
 | Design system extracted from the prototype | **Real** (written down) | [`docs/design/tokens.md`](docs/design/tokens.md) |
-| Control plane (Java 21 / Spring Boot) | **Not built** | phase 1 |
-| PostgreSQL, Flyway migrations | **Not built** | phase 1 |
+| Control plane (Java 21 / Spring Boot) | **Real** | `make test` — 31 tests |
+| PostgreSQL schema and Flyway migrations | **Real** | `SeedConsistencyIT`, and Hibernate `ddl-auto: validate` refuses to start on drift |
+| `GET /api/v1/services` with cursor pagination | **Real, and returns an empty page** | `CatalogApiIT`, plus curl against a running server |
+| RFC 9457 problem responses with `correlationId` and `violations[]` | **Real** | `CatalogApiIT` |
+| Correlation ID accepted, generated, echoed | **Real** | `CatalogApiIT` |
+| Module boundaries between `catalog`, `identity`, `shared` | **Real, enforced** | `ArchitectureTest` — 6 rules |
+| Org scoping via stub `PrincipalResolver` | **Real, but unauthenticated** | `SeedConsistencyIT`; cross-org isolation is **not yet tested** (phase 3) |
 | Service registration API | **Not built** | phase 2 |
 | Scorecard evaluation | **Not built** | phase 3 |
 | Web console | **Not built** | phase 4 |
@@ -140,19 +145,27 @@ contents yet. See [ADR 0001](docs/adr/0001-modular-monolith-as-one-gradle-module
 
 ## Stack
 
-**Control plane** — Java 21, Spring Boot 3, Gradle, Spring Web, Validation,
-Security, Data JPA, PostgreSQL, Flyway, Actuator, Micrometer, OpenTelemetry,
-Springdoc OpenAPI, Testcontainers.
+The target stack is fixed for the life of the project. What is **wired today** is
+marked; the rest is listed so the direction is clear, not to imply it is present.
+
+**Control plane** — Java 21 ✓, Spring Boot 3 ✓, Gradle ✓, Spring Web ✓, Spring
+Validation ✓, Spring Data JPA ✓, PostgreSQL ✓, Flyway ✓, Actuator ✓,
+Testcontainers ✓, ArchUnit ✓. Not yet added: Spring Security (deliberately — the
+starter would put every endpoint behind a generated password, which is a security
+posture the project does not actually have), Micrometer, OpenTelemetry, Springdoc
+OpenAPI (phase 4).
 
 **Console** — Next.js App Router, React, TypeScript in strict mode, Tailwind,
 TanStack Query, TanStack Table, Recharts, and a TypeScript client generated from
-the backend's OpenAPI document. Authorization, policy evaluation and scorecard
-computation live in the control plane, never in the console.
+the backend's OpenAPI document. Phase 4; none of it exists yet. Authorization,
+policy evaluation and scorecard computation live in the control plane, never in
+the console.
 
-**Observer** (phase 7) — Go.
+**Observer** — Go. Phase 7.
 
-**Contract tooling** — Ajv for schema validation, snakeyaml-engine and
-networknt/json-schema-validator on the JVM side.
+**Contract tooling** — Ajv ✓ for schema validation in the workspace.
+snakeyaml-engine and networknt/json-schema-validator join on the JVM side in
+phase 2, when there is something to ingest.
 
 ---
 
@@ -162,20 +175,39 @@ networknt/json-schema-validator on the JVM side.
 
 | Tool | Version | Needed for |
 |---|---|---|
-| Node | ≥ 20.11 | everything in phase 0 |
-| pnpm | 10.x | everything in phase 0 |
+| Node | ≥ 20.11 | the contract checks |
+| pnpm | 10.x | the contract checks |
 | GNU Make | 3.81+ | the entry point |
+| Docker | any recent | PostgreSQL, and the integration tests |
+| Java | **none required** | Gradle provisions a Temurin 21 toolchain itself |
 
-Java, Docker and PostgreSQL are **not** required yet. They become requirements at
-phase 1, and the Gradle build will provision a Java 21 toolchain itself rather
-than asking you to install one.
+You do not need a JDK installed. The build declares a Java 21 toolchain and
+Gradle downloads one on first use — verified on a machine with only JDK 17 and
+25 present.
 
-### Running what exists
+### Running it
 
 ```bash
-make install          # install workspace dependencies
-make check-examples   # validate every example and fixture manifest
-make                  # list the targets that exist
+make install    # install workspace dependencies
+make up         # start PostgreSQL and wait until it is accepting connections
+make dev        # start the database, then run the control plane on :8080
+make test       # every test there is: schema fixtures + 31 JVM tests
+make            # list the targets that exist
+```
+
+Then:
+
+```bash
+curl -s localhost:8080/api/v1/services
+# {"items":[],"nextCursor":null}
+```
+
+That empty array is the honest current state, not a failure. Registration lands
+in phase 2.
+
+```bash
+# The error shape, which is real now and will not change:
+curl -s 'localhost:8080/api/v1/services?cursor=nope' | jq
 ```
 
 `make check-examples` validates the six example manifests, then asserts that each
@@ -193,7 +225,13 @@ Only directories with real contents exist. The full target layout is in
 
 ```text
 OpsAtlas/
+├── apps/control-plane/     Java 21 / Spring Boot 3 modular monolith
+│   └── src/main/java/com/ambitiousconcepts/opsatlas/
+│       ├── shared/         errors, pagination, correlation — depends on nothing
+│       ├── identity/       the org-scoping stub
+│       └── catalog/        services and environments
 ├── packages/contracts/     service.yaml JSON Schema and the fixture validator
+├── deploy/compose/         local PostgreSQL
 ├── examples/services/      six valid manifests, eight invalid fixtures
 └── docs/
     ├── adr/                0001–0006
@@ -210,8 +248,8 @@ Slice one is the catalog vertical slice, and nothing else.
 | Phase | What | State |
 |---|---|---|
 | 0 | Foundation, `service.yaml` contract, fixtures | **complete** |
-| 1 | Control plane skeleton, PostgreSQL, empty catalog endpoint | next — `make dev` starts working here |
-| 2 | Ingestion and registration |  |
+| 1 | Control plane skeleton, PostgreSQL, empty catalog endpoint | **complete** — `make dev` works |
+| 2 | Ingestion and registration | next |
 | 3 | Scorecard and audit |  |
 | 4 | OpenAPI client and the web console |  |
 | 5 | CI and documentation close-out |  |

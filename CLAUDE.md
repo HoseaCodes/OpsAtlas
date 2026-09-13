@@ -27,16 +27,23 @@ worse than no `terraform/` directory.
 > Update this section whenever it becomes inaccurate. It is the first thing
 > future sessions read.
 
-- **Phase:** slice one, phase 0 complete. Phase 1 (control plane skeleton) is next.
-  The phase list is in `docs/roadmap.md`.
-- **What exists:** the `service.yaml` v1 JSON Schema in `packages/contracts/`,
-  six valid example manifests and eight invalid fixtures in `examples/services/`,
-  ADRs 0001–0006, and `docs/design/tokens.md`.
-- **Build:** pnpm workspace, `make` as the entry point. No JVM build yet.
-- **Tests:** `make check-examples` — validates every example manifest and asserts
-  every invalid fixture fails at its stated JSON Pointer. Verified passing, and
-  verified to fail on a deliberate regression in both directions.
-- **Database:** none. Arrives in phase 1.
+- **Phase:** slice one, phases 0 and 1 complete. Phase 2 (ingestion and
+  registration) is next. The phase list is in `docs/roadmap.md`.
+- **What exists:** the `service.yaml` v1 JSON Schema and fixtures; a running
+  control plane serving `GET /api/v1/services` (an empty page — registration is
+  phase 2) with cursor pagination, RFC 9457 problem responses, correlation IDs
+  and the org-scoping stub; Flyway schema for `organization`, `team`, `service`,
+  `environment`; ADRs 0001–0006; `docs/design/tokens.md`.
+- **Build:** pnpm workspace plus Gradle, `make` as the single entry point.
+  `make dev` runs the control plane on :8080 against compose PostgreSQL.
+  **No JDK needs to be installed** — the build declares a Java 21 toolchain and
+  Gradle provisions Temurin 21 itself (this machine has only 17 and 25).
+- **Tests:** `make test` — 14 schema fixtures plus 31 JVM tests, all passing.
+  Integration tests use Testcontainers and need a running Docker daemon.
+- **Database:** PostgreSQL 16 via `deploy/compose`. Flyway owns the schema;
+  Hibernate runs `ddl-auto: validate` so entity/migration drift fails startup.
+- **Unverified, and described as such:** cross-organization isolation. The design
+  is in ADR 0003; `OrgIsolationIT` cannot exist until registration does.
 - **The v3 HTML prototype is no longer in the repository.** Its design decisions
   were extracted to `docs/design/tokens.md`; work from that note. It is
   gitignored because its seeded data uses insurance-domain service names, which

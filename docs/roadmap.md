@@ -9,40 +9,42 @@ here.
 
 ## Target repository layout
 
-Directories marked **✓ exists** are real today. Everything else is here and
-nowhere else.
+**✓ = exists on disk today.** Everything unmarked is recorded here and nowhere
+else, per §3 rule 3 — the phase it arrives in is noted beside it.
 
 ```text
 OpsAtlas/
 ├── Makefile                       ✓ exists
 ├── README.md                      ✓ exists
+├── settings.gradle.kts            ✓ exists
+├── gradle/libs.versions.toml      ✓ exists
 ├── apps/
-│   ├── control-plane/             ✓ phase 1 — Java 21 / Spring Boot 3 modular monolith
+│   ├── control-plane/             ✓ Java 21 / Spring Boot 3 modular monolith
 │   │   └── src/main/java/com/ambitiousconcepts/opsatlas/
-│   │       ├── shared/            ✓ phase 1 — errors, pagination, correlation, time
-│   │       ├── identity/          ✓ phase 1 — organizations, teams, principals
-│   │       ├── catalog/           ✓ phase 2 — services, environments, ingestion
-│   │       ├── governance/        ✓ phase 3 — policies, scorecards, audit
+│   │       ├── shared/            ✓ errors, pagination, correlation
+│   │       ├── identity/          ✓ the org-scoping stub
+│   │       ├── catalog/           ✓ services and environments; ingestion in phase 2
+│   │       ├── governance/          phase 3 — policies, scorecards, audit
 │   │       ├── operations/          phase 7 — desired state, observations, deployments
 │   │       └── integrations/        phase 6 — GitHub, CI, cloud
-│   ├── web/                       ✓ phase 4 — Next.js App Router console
+│   ├── web/                         phase 4 — Next.js App Router console
 │   └── observer/                    phase 7 — Go prober
 ├── packages/
-│   ├── contracts/                 ✓ phase 0 — service.yaml schema, OpenAPI, TS client
+│   ├── contracts/                 ✓ service.yaml schema; OpenAPI and TS client in phase 4
 │   └── ui/                          not planned; extract only if a second consumer appears
 ├── deploy/
-│   ├── compose/                   ✓ phase 1 — local environment
+│   ├── compose/                   ✓ local PostgreSQL
 │   ├── k8s/                         phase 10
 │   └── helm/                        phase 10
 ├── examples/
-│   └── services/                  ✓ phase 0 — example and fixture manifests
+│   └── services/                  ✓ example and fixture manifests
 ├── docs/
-│   ├── adr/                       ✓ phase 0
-│   ├── architecture/              ✓ phase 5 — Mermaid diagrams
-│   ├── design/                    ✓ phase 0 — tokens.md
+│   ├── adr/                       ✓ 0001-0006
+│   ├── architecture/                phase 5 — Mermaid diagrams
+│   ├── design/                    ✓ tokens.md
 │   └── roadmap.md                 ✓ this file
 ├── terraform/                       phase 10
-└── .github/workflows/             ✓ phase 5
+└── .github/workflows/               phase 5
 ```
 
 `packages/ui` is listed as *not planned* rather than as a later phase. A shared
@@ -63,15 +65,24 @@ manifests, eight invalid fixtures with stated expected violations, ADRs 0001–0
 
 **Verified by:** `make check-examples`. Runs with no JVM, no database, no network.
 
-### Phase 1 — Control plane skeleton and database — *`make dev` first works here*
+### Phase 1 — Control plane skeleton and database ✓ **complete** — `make dev` works
 
-Gradle build with a Java 21 toolchain, Spring Boot application, compose
-PostgreSQL, Flyway `V1` plus the seeded organization, Actuator, correlation-ID
-filter, org-context filter, RFC 9457 problem responses, cursor pagination,
-`GET /api/v1/services` returning an empty page, `ArchitectureTest`.
+Gradle build with an auto-provisioned Java 21 toolchain, Spring Boot application,
+compose PostgreSQL, Flyway `V1` plus the seeded organization, Actuator,
+correlation-ID filter, org-context filter, RFC 9457 problem responses, cursor
+pagination, `GET /api/v1/services` returning an empty page, `ArchitectureTest`.
 
-**Verified by:** `CatalogApiIT` against a Testcontainers PostgreSQL asserting the
-empty page and the echoed correlation ID.
+**Verified by:** 31 tests, all passing — `CatalogApiIT` (10) against a
+Testcontainers PostgreSQL, `ArchitectureTest` (6), `CursorTest` (9),
+`ViolationTest` (4), `SeedConsistencyIT` (2). Additionally verified by curl
+against a running server on the compose database: the empty page body, a
+generated and an echoed correlation ID, the problem document for a bad cursor,
+and the named-parameter error for an out-of-range limit.
+
+**Known gap carried into phase 3:** cross-organization isolation is designed but
+not yet tested. `OrgIsolationIT` needs a second organization to exist, which
+needs registration. Until that test exists, the isolation is unverified and is
+described that way.
 
 ### Phase 2 — Ingestion and registration
 
