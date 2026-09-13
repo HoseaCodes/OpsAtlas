@@ -17,6 +17,10 @@ export type AuditEntry = components["schemas"]["AuditEntry"];
 export type PolicyRules = components["schemas"]["PolicyRules"];
 export type EnvironmentView = components["schemas"]["EnvironmentView"];
 export type SourceView = components["schemas"]["SourceView"];
+export type EnvironmentHealth = components["schemas"]["EnvironmentHealth"];
+export type DailyAvailability = components["schemas"]["DailyAvailability"];
+export type HealthSummary = components["schemas"]["HealthSummary"];
+export type ServiceHealth = components["schemas"]["ServiceHealth"];
 
 export interface Page<T> {
   items: T[];
@@ -104,6 +108,27 @@ export class OpsAtlasClient {
     if (params.cursor) query.set("cursor", params.cursor);
     if (params.limit) query.set("limit", String(params.limit));
     return this.request<Page<AuditEntry>>(`/api/v1/audit-events?${query}`, init);
+  }
+
+  /**
+   * Worst status per service, for the catalog list.
+   *
+   * Served separately from the catalog so the two modules stay acyclic
+   * (ADR 0010). The practical benefit here: a slow or failing health read does
+   * not slow or fail the service list, and the page says which half is missing.
+   *
+   * A service absent from `statuses` has never been probed - which is not the
+   * same as being healthy.
+   */
+  getHealthSummary(serviceIds: string[], init?: RequestInit) {
+    const query = new URLSearchParams();
+    for (const id of serviceIds) query.append("serviceIds", id);
+    return this.request<HealthSummary>(`/api/v1/health?${query}`, init);
+  }
+
+  /** Per-environment state and daily history for one service. */
+  getServiceHealth(slug: string, init?: RequestInit) {
+    return this.request<ServiceHealth>(`/api/v1/services/${encodeURIComponent(slug)}/health`, init);
   }
 
   /** Repositories OpsAtlas watches. Read-only against the provider; see ADR 0008. */

@@ -37,3 +37,6 @@ service-operations-platform-v3.html
 
 # ── Playwright ───────────────────────────────────────────────────────────
 apps/web/test-results/
+
+# ── Observer ─────────────────────────────────────────────────────────────
+apps/observer/observer

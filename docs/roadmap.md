@@ -25,10 +25,10 @@ OpsAtlas/
 │   │       ├── identity/          ✓ the org-scoping stub
 │   │       ├── catalog/           ✓ services, environments, service.yaml ingestion
 │   │       ├── governance/        ✓ policy rules, scorecards, audit
-│   │       ├── operations/          phase 7 — desired state, observations, deployments
+│   │       ├── operations/        ✓ observations, rolled up; health read model
 │   │       └── integrations/        phase 6 — GitHub, CI, cloud
 │   ├── web/                       ✓ Next.js App Router console
-│   └── observer/                    phase 7 — Go prober
+│   └── observer/                  ✓ Go prober
 ├── packages/
 │   ├── contracts/                 ✓ service.yaml schema; OpenAPI and TS client in phase 4
 │   └── ui/                          not planned; extract only if a second consumer appears
@@ -146,6 +146,33 @@ console, over the current page only, because the control plane has no search
 endpoint. The empty state says so rather than implying a fleet-wide search.
 Server-side filtering is the obvious next API change.
 
+### Phase 7 — The observer ✓ **complete**
+
+A Go binary that pulls the service list, probes every declared health endpoint
+with bounded concurrency, jitter and retries, and reports results back in
+idempotent batches. An `operations` module folds those into counters per
+environment and per UTC day (ADR 0009), and serves them through their own
+endpoints rather than through the catalog (ADR 0010).
+
+**Verified by:** 26 Go tests, race-clean, driving real HTTP servers rather than
+mocked transports - concurrency bounds, ordering, redirect refusal, retry
+policy, idempotency key stability. 238 JVM tests including `ObservationIngestIT`
+(23), which holds time still with a fixed clock. 19 Playwright tests, five of
+them on health. Additionally verified by running the observer live against the
+control plane: two environments, one real and one with nothing listening,
+produced HEALTHY at 100% and DOWN at 0% with "connection refused", and eight
+probes became two state rows plus two daily rows.
+
+**Deferred, with reasons:**
+
+- **Drift detection.** CLAUDE.md §5 lists it as the observer's job. It needs a
+  declared version to compare a running one against, and there is no deployment
+  concept yet. A failed probe is an outage, not a drift.
+- **Percentiles.** Deliberately impossible from what is stored (ADR 0009), and
+  belong with the telemetry pipeline.
+- **Multiple vantage points.** One observer means one network position, so
+  "available" means "available from here".
+
 ### Phase 6 — GitHub sync ✓ **complete**
 
 `integrations` module, `source` table, a read-only GitHub Contents reader with
@@ -189,7 +216,7 @@ expanding scope.
 | Phase | What | Why it waits |
 |---|---|---|
 | ~~6~~ | ~~GitHub sync~~ — **done**, by polling rather than webhooks (ADR 0008). A GitHub App is still deferred: it needs a registered application, a private key, an installation flow and somewhere to keep per-installation tokens, and identity is still a stub. | |
-| 7 | Go observer, `operations` module, health probing, 30-day attainment | Everything health-shaped in the console depends on this and on nothing else |
+| ~~7~~ | ~~Go observer~~ — **done**. Drift detection is deferred: it needs a deployment concept to compare a declared version against a running one. | |
 | 8 | OpenTelemetry pipeline, Prometheus, Loki, Tempo, Grafana | Needs services actually running to observe |
 | 9 | Transactional outbox, platform events, Redis read models | Only once there is a demonstrated need (§6) |
 | 10 | Terraform, Kubernetes, Helm, k6 load tests | Nothing to deploy until there is something to run |
@@ -222,5 +249,8 @@ expanding scope.
 - **A vanished repository is never retired** — a deleted repository and an outage
   both surface as a failing sync, and deciding that a service is gone is not a
   decision a poll timeout should make.
+- **Observer high availability** — one observer is a single point of blindness,
+  and two would double-count into the same counters. Reconciling that needs
+  per-observer attribution the schema does not have.
 - **Offset pagination** — never. §9 requires cursor pagination for every
   collection, and slice one sets that precedent with the first endpoint.

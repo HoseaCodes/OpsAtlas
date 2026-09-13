@@ -10,11 +10,11 @@ COMPOSE := docker compose -f deploy/compose/docker-compose.yml
 GRADLE  := ./gradlew --console=plain
 
 .DEFAULT_GOAL := help
-.PHONY: help install check-examples typecheck test test-all test-java test-web check dev dev-web e2e up down logs psql clean clean-db openapi check-openapi
+.PHONY: help install check-examples typecheck test test-all test-java test-web test-observer check dev dev-web dev-observer e2e up down logs psql clean clean-db openapi check-openapi
 
 help: ## Show the targets that exist today
 	@echo ""
-	@echo "  OpsAtlas — slice one, phase 4 (see docs/roadmap.md)"
+	@echo "  OpsAtlas — phase 7 (see docs/roadmap.md)"
 	@echo ""
 	@grep -E '^[a-z-]+:.*?## .*$$' $(MAKEFILE_LIST) \
 		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[1m%-16s\033[0m %s\n", $$1, $$2}'
@@ -53,6 +53,13 @@ dev: up ## Start the database, then run the control plane on :8080
 dev-web: ## Run the console on :3000 (needs the control plane running)
 	pnpm --filter @opsatlas/web dev
 
+dev-observer: ## Run the observer (needs the control plane running; Go 1.27+)
+	@echo ""
+	@echo "  Probing every environment the catalog declares."
+	@echo "  Metrics on http://localhost:9090/metrics"
+	@echo ""
+	cd apps/observer && go run ./cmd/observer
+
 # -- Contracts --------------------------------------------------------------
 
 openapi: ## Regenerate the OpenAPI document and the TypeScript types
@@ -85,10 +92,13 @@ typecheck: ## Type-check the workspace
 test-web: ## Run the console component tests
 	pnpm --filter @opsatlas/web test
 
+test-observer: ## Run the observer tests, with the race detector
+	cd apps/observer && go test ./... -race
+
 e2e: ## Run the browser smoke test (needs the control plane running)
 	pnpm --filter @opsatlas/web e2e
 
-test: check-examples typecheck test-web test-java ## Every test that needs no running server
+test: check-examples typecheck test-web test-observer test-java ## Every test that needs no running server
 
 test-all: test e2e ## Everything, including the browser smoke test
 
@@ -99,6 +109,7 @@ check: test ## Alias for test
 clean: ## Remove build output and installed dependencies
 	$(GRADLE) clean
 	rm -rf apps/web/.next apps/web/test-results
+	cd apps/observer && go clean -cache -testcache
 	rm -rf node_modules packages/*/node_modules apps/web/node_modules
 
 clean-db: ## Destroy the local database and its data

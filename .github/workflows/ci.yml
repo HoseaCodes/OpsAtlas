@@ -91,6 +91,32 @@ jobs:
       - name: Regenerate and fail on any difference
         run: make check-openapi
 
+  observer:
+    name: Observer
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: apps/observer/go.mod
+          cache-dependency-path: apps/observer/go.sum
+      - name: Formatting
+        working-directory: apps/observer
+        # gofmt is not a style opinion here: an unformatted file is the one
+        # diff nobody reviews properly.
+        run: test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
+      - name: Vet
+        working-directory: apps/observer
+        run: go vet ./...
+      - name: Test
+        working-directory: apps/observer
+        # The observer is concurrent by design - bounded parallel probes over
+        # shared state - so the race detector is the point, not an extra.
+        run: go test ./... -race
+      - name: Build
+        working-directory: apps/observer
+        run: go build ./...
+
   console:
     name: Console
     runs-on: ubuntu-latest

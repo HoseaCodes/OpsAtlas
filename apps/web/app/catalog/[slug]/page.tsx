@@ -1,9 +1,15 @@
 import type { Route } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ApiError, type Scorecard, type ServiceDetail } from "@opsatlas/contracts";
+import {
+  ApiError,
+  type EnvironmentHealth,
+  type Scorecard,
+  type ServiceDetail,
+  type ServiceHealth,
+} from "@opsatlas/contracts";
 import { CheckMark, type CheckStatus } from "@/components/CheckMark";
-import { HealthMeter } from "@/components/HealthMeter";
+import { HealthMeter, toHealthState } from "@/components/HealthMeter";
 import { NotObservedBadge } from "@/components/MockedBadge";
 import { Ribbon } from "@/components/Ribbon";
 import { ServiceTabs } from "@/components/ServiceTabs";
@@ -31,9 +37,10 @@ export default async function ServicePage({
   // plane: if the scorecard cannot be read, the service detail is still worth
   // showing, and the page says which half is missing instead of failing whole.
   const api = controlPlane();
-  const [detailResult, scorecardResult] = await Promise.allSettled([
+  const [detailResult, scorecardResult, healthResult] = await Promise.allSettled([
     api.getService(slug, noStore),
     api.getScorecard(slug, noStore),
+    api.getServiceHealth(slug, noStore),
   ]);
 
   if (detailResult.status === "rejected") {
@@ -58,6 +65,19 @@ export default async function ServicePage({
   const scorecard: Scorecard | null = scorecardResult.status === "fulfilled" ? scorecardResult.value : null;
   const scorecardError = scorecardResult.status === "rejected" ? scorecardResult.reason : null;
 
+  const health: ServiceHealth | null = healthResult.status === "fulfilled" ? healthResult.value : null;
+  const healthError = healthResult.status === "rejected" ? healthResult.reason : null;
+
+  // Keyed by environment so the overview can join without a second pass.
+  // Absent means this environment has never been probed.
+  const healthByEnvironment = new Map<string, EnvironmentHealth>(
+    (health?.environments ?? []).map((entry) => [entry.environmentId, entry]),
+  );
+
+  // The header shows the worst environment, the same rollup the list uses: a
+  // service whose production is down is down, whatever staging is doing.
+  const worst = worstStatus(health);
+
   return (
     <>
       <div className="px-4 pt-5 md:px-6">
@@ -76,8 +96,8 @@ export default async function ServicePage({
             </p>
           </div>
           <div className="flex items-center gap-2.5">
-            <HealthMeter state="unobserved" />
-            <NotObservedBadge />
+            <HealthMeter state={toHealthState(worst)} />
+            {health?.neverObserved !== false ? <NotObservedBadge /> : null}
           </div>
         </div>
 
@@ -105,9 +125,27 @@ export default async function ServicePage({
       ) : tab === "manifest" ? (
         <ManifestPane service={service} />
       ) : (
-        <OverviewPane service={service} scorecard={scorecard} scorecardError={scorecardError} />
+        <OverviewPane
+          service={service}
+          scorecard={scorecard}
+          scorecardError={scorecardError}
+          health={health}
+          healthByEnvironment={healthByEnvironment}
+          healthError={healthError}
+        />
       )}
     </>
+  );
+}
+
+/** Worst across environments, or null when none has been probed. */
+function worstStatus(health: ServiceHealth | null): string | null {
+  if (!health || health.environments.length === 0) return null;
+  const order = ["DOWN", "DEGRADED", "HEALTHY"];
+  return (
+    health.environments
+      .map((entry) => entry.status)
+      .sort((a, b) => order.indexOf(a) - order.indexOf(b))[0] ?? null
   );
 }
 
@@ -115,10 +153,16 @@ function OverviewPane({
   service,
   scorecard,
   scorecardError,
+  health,
+  healthByEnvironment,
+  healthError,
 }: {
   service: ServiceDetail;
   scorecard: Scorecard | null;
   scorecardError: unknown;
+  health: ServiceHealth | null;
+  healthByEnvironment: Map<string, EnvironmentHealth>;
+  healthError: unknown;
 }) {
   return (
     <div className="flex flex-col gap-7 px-4 py-5 md:px-6">
@@ -157,40 +201,74 @@ function OverviewPane({
           <thead>
             <tr>
               <th>Environment</th>
+              <th>Health</th>
               <th>URL</th>
-              <th>Readiness</th>
-              <th>Last observed</th>
+              <th>Probe availability</th>
+              <th>Last probed</th>
             </tr>
           </thead>
           <tbody>
-            {service.environments.map((environment) => (
-              <tr key={environment.id}>
-                <td className="mono text-[12.5px]">{environment.name}</td>
-                <td className="mono break-all text-[12.5px]">
-                  {environment.url ?? <span className="text-ink-3">none declared</span>}
-                </td>
-                <td className="mono text-[12.5px]">
-                  {environment.readinessPath ?? <span className="text-ink-3">none declared</span>}
-                </td>
-                <td>
-                  {/* Always absent in this phase, and labelled rather than left
-                      blank: a blank cell reads as a rendering bug, a label reads
-                      as a capability that does not exist yet. */}
-                  <NotYetMeasured>never — no observer</NotYetMeasured>
-                </td>
-              </tr>
-            ))}
+            {service.environments.map((environment) => {
+              const state = healthByEnvironment.get(environment.id);
+              return (
+                <tr key={environment.id}>
+                  <td className="mono text-[12.5px]">{environment.name}</td>
+                  <td>
+                    <HealthMeter state={toHealthState(state?.status)} detail={state?.detail} />
+                  </td>
+                  <td className="mono break-all text-[12.5px]">
+                    {environment.url ?? <span className="text-ink-3">none declared</span>}
+                  </td>
+                  <td className="mono text-[12.5px]">
+                    {state?.probeAvailability == null ? (
+                      // A blank cell reads as a rendering bug; a label reads as
+                      // a measurement that has not been taken.
+                      <NotYetMeasured>not probed</NotYetMeasured>
+                    ) : (
+                      `${(state.probeAvailability * 100).toFixed(2)}%`
+                    )}
+                  </td>
+                  <td className="text-[12.5px]">
+                    {state ? (
+                      <span title={absoluteTime(state.lastProbeAt)}>{relativeTime(state.lastProbeAt)}</span>
+                    ) : (
+                      <NotYetMeasured>never</NotYetMeasured>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </section>
 
       <section>
         <h2 className="mb-2.5 text-[13px] font-semibold">Last 30 days</h2>
-        <Ribbon />
-        <p className="mt-2 max-w-[64ch] text-[12.5px] text-ink-2">
-          Each bar would be one day of SLO attainment. There are none: nothing in this system probes
-          anything yet, so no day has been measured. The column exists so the shape of what is missing is
-          visible rather than implied.
+
+        {healthError ? (
+          <PartialFailure
+            what="The 30-day history"
+            detail={healthError instanceof ApiError ? healthError.detail : "The health read did not complete."}
+            correlationId={healthError instanceof ApiError ? healthError.correlationId : undefined}
+          />
+        ) : (
+          <div className="flex flex-col gap-3">
+            {service.environments.map((environment) => (
+              <div key={environment.id} className="flex flex-wrap items-center gap-3">
+                <span className="mono w-[110px] shrink-0 text-[12px] text-ink-2">{environment.name}</span>
+                <Ribbon days={healthByEnvironment.get(environment.id)?.days ?? []} />
+              </div>
+            ))}
+          </div>
+        )}
+
+        <p className="mt-2.5 max-w-[68ch] text-[12.5px] text-ink-2">
+          Each bar is one UTC day. Height encodes the share of probes that succeeded; an outlined bar is a
+          day nobody probed, which is not the same as a day the service was down.
+        </p>
+        <p className="mt-1.5 max-w-[68ch] text-[12.5px] text-ink-3">
+          {health?.notice ??
+            "This is probe availability from one vantage point against a health endpoint, not an SLO."}
         </p>
       </section>
 

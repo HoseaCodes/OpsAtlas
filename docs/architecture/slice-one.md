@@ -21,19 +21,22 @@ flowchart LR
     cp -->|"polls, read-only, every 5m"| repo
     cp --> db
 
-    observer["Observer<br/><i>Go · phase 7</i>"]
+    observer["Observer<br/><i>Go</i>"]
     services["Monitored services"]
-    observer -. "not built" .-> cp
-    observer -. "not built" .-> services
-
-    style observer stroke-dasharray: 4 3
-    style services stroke-dasharray: 4 3
+    observer -->|"reads the service list"| cp
+    observer -->|"probes health endpoints"| services
+    observer -->|"reports observations"| cp
 ```
 
-The dashed boxes are the reason nothing in this system reports health. The
-observer is what would probe a service and publish an observation; it does not
-exist, so every health field is null and the console says **never observed**
-rather than showing a number nobody measured.
+The observer is the only thing here that measures anything. It reads the
+catalog, probes what the manifests declare, and reports results back; the
+control plane folds them into counters rather than storing a row per probe
+(ADR 0009).
+
+An environment the observer has not reached has **no health record at all**,
+and the console renders that as an outline rather than a reading. Never
+observed and observed-and-broken are different facts, and the absence of a row
+is what keeps them apart.
 
 A manifest reaches the catalog two ways, and both end in the same ingestion
 path: an operator pastes it, or the control plane polls a watched repository for
@@ -53,6 +56,7 @@ wrong.
 flowchart TD
     subgraph cp["Control plane — one deployable, five modules"]
         direction TB
+        operations["<b>operations</b><br/>observations · rollups<br/>health read model"]
         integrations["<b>integrations</b><br/>watched sources · polling<br/><i>read-only, outbound</i>"]
         catalog["<b>catalog</b><br/>services · environments<br/>service.yaml ingestion"]
         governance["<b>governance</b><br/>policy rules · scorecards<br/>audit"]
@@ -62,10 +66,13 @@ flowchart TD
 
     integrations -->|"catalog.api"| catalog
     integrations -->|"identity.api"| identity
+    operations -->|"catalog.api"| catalog
+    operations -->|"identity.api"| identity
     catalog -->|"governance.api"| governance
     catalog -->|"identity.api"| identity
     governance -->|"identity.api"| identity
     integrations --> shared
+    operations --> shared
     catalog --> shared
     governance --> shared
     identity --> shared
@@ -240,7 +247,9 @@ Three things in that diagram are load-bearing and easy to miss:
 
 | Not present | Why | Phase |
 |---|---|---|
-| Health, SLO attainment, 30-day history | needs the observer to probe something | 7 |
+| Real-user SLO measurement | probe availability is not an SLO; this needs traffic data | 8 |
+| Latency percentiles | a sum, a min and a max are not a distribution (ADR 0009) | 8 |
+| Desired-versus-observed drift | needs a deployment concept to compare against | later |
 | Dependency graph, blast radius | needs the observer and trace data | 7 |
 | Authentication and authorization | stubbed by design — [ADR 0003](../adr/0003-org-scoping-stub.md) | later |
 | Policy exceptions | need an approver, which needs identity | later |

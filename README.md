@@ -4,9 +4,10 @@ A service operations control plane: it catalogs services, records who owns them,
 checks whether they are healthy, and scores them against production-readiness
 policy.
 
-> **Status: slice one complete, phase 6 (GitHub sync) done.** A watched
-> repository's `service.yaml` is read on a schedule and registered automatically.
-> The catalog vertical slice works end to end:
+> **Status: phase 7 done — the system now measures something.** A Go observer
+> probes every declared health endpoint, and the catalog reports what it found.
+> A watched repository's `service.yaml` is read on a schedule and registered
+> automatically. The catalog vertical slice works end to end:
 > a `service.yaml` is submitted through the console, validated, stored, scored
 > against ten policy rules and audited, and the result is browsable. **Nothing in
 > this system observes anything** — there is no health monitoring, and there will
@@ -68,7 +69,7 @@ jobs — selection, focus ring, error-budget fill, open-incident emphasis. See
 | Semantic validation — duplicate environment names | **Real** | same |
 | Architecture decisions, phases 0–10 | **Real** (written down) | [`docs/adr/`](docs/adr/), [`docs/roadmap.md`](docs/roadmap.md) |
 | Design system extracted from the prototype | **Real** (written down) | [`docs/design/tokens.md`](docs/design/tokens.md) |
-| Control plane (Java 21 / Spring Boot) | **Real** | `make test` — 219 JVM tests |
+| Control plane (Java 21 / Spring Boot) | **Real** | `make test` — 238 JVM tests |
 | PostgreSQL schema and Flyway migrations | **Real** | `SeedConsistencyIT`, and Hibernate `ddl-auto: validate` refuses to start on drift |
 | `POST /api/v1/services` — register from a `service.yaml` | **Real** | `RegistrationApiIT`, plus 13 curl assertions against a running server |
 | Safe YAML ingestion — size cap, no alias expansion, no type construction | **Real** | `ManifestValidationTest` — billion-laughs, `!!java` tags, duplicate keys and a 70 KiB body are all refused |
@@ -88,6 +89,11 @@ jobs — selection, focus ring, error-budget fill, open-incident emphasis. See
 | A failing sync leaves the registered service untouched | **Real, and verified** | `SourceSyncIT` — seven failure modes, each asserting the service survives |
 | Read-only by construction — no webhook, no write scope | **Real, enforced** | `ArchitectureTest` — only `integrations` may make outbound HTTP calls |
 | Sources page with sync status and per-source explanations | **Real** | 4 component tests, 5 Playwright tests |
+| **Go observer** — probes health endpoints, bounded concurrency, jitter, retries | **Real** | 26 Go tests, race-clean; run live against the control plane |
+| Probe availability, per environment and per UTC day | **Real** | `ObservationIngestIT` (23 tests), 5 Playwright tests |
+| Health meter and 30-day ribbon rendering real measurements | **Real** | verified in a browser |
+| Idempotent observation ingestion | **Real** | a replayed batch applies nothing; counters are where a double-write is silent |
+| Prometheus metrics and `/healthz` on the observer | **Real** | served on `:9090`; verified live |
 | CI pipeline | **Written, never executed** | `.github/workflows/ci.yml` — there is no remote to run it |
 | Scorecard — ten declaration rules, tier-conditional | **Real** | `PolicyCheckTest` (49), `ScorecardApiIT` (12) |
 | `NOT_APPLICABLE` as a real outcome, with a moving denominator | **Real** | a tier 3 service is scored out of 7, not 10 |
@@ -96,10 +102,11 @@ jobs — selection, focus ring, error-budget fill, open-incident emphasis. See
 | `GET /api/v1/policy/rules` — the rule set and its rationale | **Real** | `ScorecardApiIT` |
 | RFC 9457 problem responses with `correlationId` and `violations[]` | **Real** | `CatalogApiIT` |
 | Correlation ID accepted, generated, echoed | **Real** | `CatalogApiIT` |
-| Module boundaries between `catalog`, `governance`, `identity`, `integrations`, `shared` | **Real, enforced** | `ArchitectureTest` — 13 rules |
+| Module boundaries across all five modules | **Real, enforced** | `ArchitectureTest` — 15 rules |
 | Org scoping via stub `PrincipalResolver` | **Real, but unauthenticated** | `SeedConsistencyIT`, `OrgIsolationIT` |
-| Health monitoring, SLO attainment, 30-day history | **Not built** | phase 7 — needs the Go observer |
-| Dependency graph and blast radius | **Not built** | phase 7 |
+| Dependency graph and blast radius | **Not built** | needs trace data |
+| Real-user SLO measurement | **Not built** | probe availability is not an SLO — see below |
+| Latency percentiles | **Not built** | needs the telemetry pipeline; means and maxima only |
 | Cost attribution | **Not planned for slice one** | — |
 | Incidents | **Not planned for slice one** | — |
 
@@ -166,6 +173,8 @@ contents yet. See [ADR 0001](docs/adr/0001-modular-monolith-as-one-gradle-module
 | [0006](docs/adr/0006-prototype-is-not-committed.md) | The v3 HTML prototype stays out of the repository |
 | [0007](docs/adr/0007-service-identity-and-re-registration.md) | Registration is keyed by where the manifest lives; idempotency by content digest; POST never overwrites |
 | [0008](docs/adr/0008-polled-sources-not-webhooks.md) | Manifests are polled, never pushed by webhook, so OpsAtlas never holds write access to a monitored repository |
+| [0009](docs/adr/0009-observations-are-rolled-up-not-a-time-series.md) | Observations are counters, never a row per probe; storage is bounded and independent of probe frequency |
+| [0010](docs/adr/0010-health-is-served-separately-from-the-catalog.md) | Health is served by its own endpoints so `catalog` and `operations` stay acyclic |
 
 Diagrams of what exists — context, modules, the registration sequence and the
 data model — are in [`docs/architecture/slice-one.md`](docs/architecture/slice-one.md).
@@ -201,6 +210,37 @@ Two limits worth knowing before pointing this at anything:
 - **A failing sync never erases what is known.** If GitHub is unreachable or a
   manifest stops validating, the registered service stays exactly as it was and
   the source records why it is no longer current. Stale, never blank.
+
+### The observer, and what "healthy" actually means
+
+```bash
+make dev            # control plane on :8080
+make dev-observer   # probes every declared health endpoint
+```
+
+The observer pulls the service list, probes each environment's readiness
+endpoint with bounded concurrency, timeouts and jitter, and reports what it
+found. The control plane folds those results into counters — never a row per
+probe. Eight probes of two environments produce **two state rows and two daily
+rows**, and that stays true at any probe frequency
+([ADR 0009](docs/adr/0009-observations-are-rolled-up-not-a-time-series.md)).
+
+**`probeAvailability` is not an SLO, and the API says so in its own payload.**
+It is the share of probes that succeeded, from one vantage point, against a
+health endpoint. A service can serve errors to every real user while its
+readiness endpoint answers happily. Nothing in this repository calls it an SLO
+measurement.
+
+Three more things it deliberately does not do:
+
+- **No percentiles.** A p95 needs the distribution; a sum, a min and a max are
+  not one. You get mean and max, called mean and max.
+- **No finer resolution than a day**, beyond the current state. "What did this
+  look like at 14:20 last Tuesday" is a metrics system's question.
+- **No drift detection.** `CLAUDE.md` §5 lists desired-versus-observed drift as
+  the observer's job. It needs a declared version to compare a running one
+  against, and no deployment concept exists yet. Calling a failed probe a
+  "drift" would be calling an outage something it is not.
 
 ### The scorecard, and what it does not check
 
@@ -252,7 +292,9 @@ the backend's OpenAPI document. Phase 4; none of it exists yet. Authorization,
 policy evaluation and scorecard computation live in the control plane, never in
 the console.
 
-**Observer** — Go. Phase 7.
+**Observer** — Go 1.27 ✓, `prometheus/client_golang` ✓ for metrics. Standard
+library for everything else: HTTP, JSON, concurrency and scheduling are all
+stdlib, so the binary has one direct dependency.
 
 **Contract tooling** — Ajv ✓ for schema validation in the workspace,
 snakeyaml-engine ✓ and networknt/json-schema-validator ✓ on the JVM side. The
@@ -272,6 +314,7 @@ the control-plane jar so both sides validate against identical bytes.
 | GNU Make | 3.81+ | the entry point |
 | Docker | any recent | PostgreSQL, and the integration tests |
 | Java | **none required** | Gradle provisions a Temurin 21 toolchain itself |
+| Go | 1.27+ | the observer (`apps/observer`) |
 
 You do not need a JDK installed. The build declares a Java 21 toolchain and
 Gradle downloads one on first use — verified on a machine with only JDK 17 and
@@ -371,13 +414,15 @@ OpsAtlas/
 │       ├── identity/       the org-scoping stub
 │       ├── catalog/        services, environments, service.yaml ingestion
 │       ├── governance/     policy rules, scorecards, audit
-│       └── integrations/   polling watched repositories (read-only)
+│       ├── integrations/   polling watched repositories (read-only)
+│       └── operations/     observations, rolled up; health read model
+├── apps/observer/          Go — probes health endpoints, reports back
 ├── apps/web/               Next.js console — catalog, scorecard, register
 ├── packages/contracts/     service.yaml JSON Schema and the fixture validator
 ├── deploy/compose/         local PostgreSQL
 ├── examples/services/      six valid manifests, eight invalid fixtures
 └── docs/
-    ├── adr/                0001–0008
+    ├── adr/                0001–0010
     ├── architecture/       what exists, in Mermaid
     ├── design/tokens.md    the design system, extracted from the prototype
     └── roadmap.md          phases, target layout, deferred decisions
@@ -398,7 +443,8 @@ Slice one is the catalog vertical slice, and nothing else.
 | 4 | OpenAPI client and the web console | **complete** |
 | 5 | CI and documentation close-out | **complete** |
 | 6 | GitHub sync — poll watched repositories | **complete** |
-| 7 | The Go observer, and everything health-shaped | next |
+| 7 | The Go observer, and everything health-shaped | **complete** |
+| 8 | OpenTelemetry pipeline — traces, real percentiles | next |
 
 After slice one: GitHub sync, the Go observer, the telemetry pipeline, events,
 and deployment. Details and the reasoning for the ordering are in

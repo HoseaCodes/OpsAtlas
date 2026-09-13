@@ -27,9 +27,11 @@ worse than no `terraform/` directory.
 > Update this section whenever it becomes inaccurate. It is the first thing
 > future sessions read.
 
-- **Phase:** **slice one complete (0–5), and phase 6 (GitHub sync) done.** Next
-  is phase 7, the Go observer — everything health-shaped waits on it. The phase
-  list, and what each later phase is waiting on, is in `docs/roadmap.md`.
+- **Phase:** **phases 0–7 done.** The system now measures something: a Go
+  observer probes declared health endpoints and the catalog reports what it
+  found. Next is phase 8, the OpenTelemetry pipeline — which is where real
+  latency percentiles and trace-derived dependencies come from. The phase list
+  is in `docs/roadmap.md`.
 - **What exists:** the `service.yaml` v1 JSON Schema and fixtures; a running
   control plane that registers services from a real manifest and serves them —
   `POST`, `GET /{slug}`, `GET` (cursor-paged), `PUT` with `If-Match` — with the
@@ -41,15 +43,18 @@ worse than no `terraform/` directory.
   document with a typed TypeScript client; a Next.js console (catalog, detail,
   scorecard, register by paste, sources); an `integrations` module that polls
   watched GitHub repositories read-only and registers what they declare, with
-  conditional requests and a `source` table recording sync state; ADRs 0001–0008;
+  conditional requests and a `source` table recording sync state; an
+  `operations` module folding probe results into per-environment and per-day
+  counters; a Go observer in `apps/observer`; ADRs 0001–0010;
   `docs/design/tokens.md`; `docs/architecture/slice-one.md`.
 - **Build:** pnpm workspace plus Gradle, `make` as the single entry point.
   `make dev` runs the control plane on :8080 against compose PostgreSQL.
   **No JDK needs to be installed** — the build declares a Java 21 toolchain and
-  Gradle provisions Temurin 21 itself (this machine has only 17 and 25).
-- **Tests:** `make test` — 14 schema fixtures, 33 console component tests and
-  219 JVM tests, all passing. `make test-all` adds 14 Playwright tests against
-  the real stack. Integration tests use Testcontainers and need a running Docker
+  Gradle provisions Temurin 21 itself. Go 1.27+ **is** required for
+  `apps/observer`; it is installed here via Homebrew.
+- **Tests:** `make test` — 14 schema fixtures, 37 console component tests,
+  26 Go tests (race-clean) and 238 JVM tests, all passing. `make test-all` adds
+  19 Playwright tests against the real stack. Integration tests use Testcontainers and need a running Docker
   daemon; the smoke test needs the control plane running.
 - **CI is written but has never run.** There is no remote configured. Do not
   describe the pipeline as passing.
@@ -58,9 +63,23 @@ worse than no `terraform/` directory.
 - **Cross-organization isolation is verified** by `OrgIsolationIT` (14 tests).
   That test must grow whenever an endpoint is added — an endpoint it does not
   cover has unverified isolation and must be described that way.
-- **Nothing observes anything.** There is no health, no SLO attainment and no
-  30-day history, and there will not be until the observer (phase 7). Any field
-  shaped like a status is null and labelled "never observed".
+- **Health is probe availability, and never an SLO.** It is the share of probes
+  that succeeded from one vantage point against a health endpoint. A service can
+  serve errors to every real user while its readiness endpoint answers happily.
+  The field is `probeAvailability`, the API says so in its payload, and no
+  document here may call it an SLO measurement.
+- **An environment with no health record has never been probed**, which is not
+  the same as being healthy. Absence is rendered as an outline, never as a
+  reading. Do not default it.
+- **There are no percentiles and cannot be**, from what is stored: a sum, a min
+  and a max are not a distribution (ADR 0009). Report mean and max, called mean
+  and max. Percentiles arrive with the telemetry pipeline.
+- **Observations are counters, never rows per probe.** Storage is environments ×
+  retained days and must stay independent of probe frequency. The retention job
+  is what makes that true, so it is not optional.
+- **The observer detects no drift.** §5 lists it as its job; it needs a
+  deployment concept that does not exist. A failed probe is an outage, not a
+  drift, and must not be described as one.
 - **The scorecard scores manifests, not running systems.** All ten rules are
   declaration checks. `GET /api/v1/policy/rules` says so in its payload; do not
   describe them as production-readiness checks.

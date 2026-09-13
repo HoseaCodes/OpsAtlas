@@ -1,8 +1,9 @@
 import type { Route } from "next";
 import Link from "next/link";
-import { ApiError, type ServiceSummary } from "@opsatlas/contracts";
+import { ApiError, type HealthSummary, type ServiceSummary } from "@opsatlas/contracts";
 import { CatalogFilters } from "@/components/CatalogFilters";
-import { HealthMeter } from "@/components/HealthMeter";
+import { HealthMeter, toHealthState } from "@/components/HealthMeter";
+import { PartialFailure } from "@/components/states";
 import { Ribbon } from "@/components/Ribbon";
 import { Empty, ErrorState } from "@/components/states";
 import { controlPlane, noStore } from "@/lib/api";
@@ -15,9 +16,11 @@ type Search = { q?: string; tier?: string; cursor?: string };
 export default async function CatalogPage({ searchParams }: { searchParams: Promise<Search> }) {
   const params = await searchParams;
 
+  const api = controlPlane();
+
   let page: { items: ServiceSummary[]; nextCursor: string | null };
   try {
-    page = await controlPlane().listServices({ cursor: params.cursor, limit: 25 }, noStore);
+    page = await api.listServices({ cursor: params.cursor, limit: 25 }, noStore);
   } catch (error) {
     const problem = error instanceof ApiError ? error : null;
     return (
@@ -31,6 +34,23 @@ export default async function CatalogPage({ searchParams }: { searchParams: Prom
       />
     );
   }
+
+  // Health is a second request, joined here by service id. That is the cost of
+  // keeping catalog and operations acyclic (ADR 0010), and the benefit is
+  // visible right below: if this read fails, the catalog still lists every
+  // service and the page says health is missing rather than showing nothing.
+  let health: HealthSummary | null = null;
+  let healthError: unknown = null;
+  if (page.items.length > 0) {
+    const settled = await Promise.allSettled([
+      api.getHealthSummary(page.items.map((service) => service.id), noStore),
+    ]);
+    const result = settled[0]!;
+    if (result.status === "fulfilled") health = result.value;
+    else healthError = result.reason;
+  }
+
+  const statuses: Record<string, string> = health?.statuses ?? {};
 
   // Search and tier filtering are applied here rather than in the API because
   // the control plane does not offer them yet. That is a real limitation and it
@@ -46,6 +66,10 @@ export default async function CatalogPage({ searchParams }: { searchParams: Prom
   });
 
   const unowned = page.items.filter((service) => !service.owned).length;
+  const unhealthy = page.items.filter((service) => {
+    const status = statuses[service.id];
+    return status === "DOWN" || status === "DEGRADED";
+  }).length;
 
   return (
     <>
@@ -53,6 +77,11 @@ export default async function CatalogPage({ searchParams }: { searchParams: Prom
         <h1 className="max-w-[26ch] text-[clamp(21px,2.6vw,31px)] font-semibold leading-[1.22] tracking-[-0.022em]">
           <span className="mono font-medium tracking-[-0.03em]">{page.items.length}</span>
           {page.items.length === 1 ? " service registered" : " services registered"}
+          {unhealthy > 0 ? (
+            <>
+              , <span className="mono font-medium tracking-[-0.03em]">{unhealthy}</span> not healthy
+            </>
+          ) : null}
           {unowned > 0 ? (
             <>
               , <span className="mono font-medium tracking-[-0.03em]">{unowned}</span> unowned.
@@ -65,13 +94,27 @@ export default async function CatalogPage({ searchParams }: { searchParams: Prom
           Every entry was read from a <span className="mono">service.yaml</span> submitted by the owning
           team. Nothing here is maintained by hand.{" "}
           <span className="text-ink-3">
-            Health and 30-day history are not shown because nothing observes them yet — the observer is a
-            later phase.
+            Health comes from probing a declared health endpoint on an interval. A service with no reading
+            has never been probed, which is not the same as being healthy.
           </span>
         </p>
 
         <CatalogFilters />
       </header>
+
+      {healthError ? (
+        <div className="px-4 pt-4 md:px-6">
+          <PartialFailure
+            what="Health"
+            detail={
+              healthError instanceof ApiError
+                ? healthError.detail
+                : "The health read did not complete."
+            }
+            correlationId={healthError instanceof ApiError ? healthError.correlationId : undefined}
+          />
+        </div>
+      ) : null}
 
       {filtered.length === 0 ? (
         page.items.length === 0 ? (
@@ -123,10 +166,14 @@ export default async function CatalogPage({ searchParams }: { searchParams: Prom
                   </span>
 
                   <span className="md:block">
-                    <HealthMeter state="unobserved" />
+                    {/* Absent from the map means never probed, which the meter
+                        renders as an outline rather than as healthy. */}
+                    <HealthMeter state={toHealthState(statuses[service.id])} />
                   </span>
 
                   <span className="hidden md:block">
+                    {/* The list carries no daily history - that is a per-environment
+                        read, and the detail page is where it belongs. */}
                     <Ribbon />
                   </span>
 
