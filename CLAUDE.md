@@ -27,8 +27,9 @@ worse than no `terraform/` directory.
 > Update this section whenever it becomes inaccurate. It is the first thing
 > future sessions read.
 
-- **Phase:** slice one, phases 0–3 complete. Phase 4 (OpenAPI client and the web
-  console) is next. The phase list is in `docs/roadmap.md`.
+- **Phase:** **slice one complete** (phases 0–5). The next work is phase 6
+  onward — GitHub sync, then the Go observer. The phase list, and what each
+  later phase is waiting on, is in `docs/roadmap.md`.
 - **What exists:** the `service.yaml` v1 JSON Schema and fixtures; a running
   control plane that registers services from a real manifest and serves them —
   `POST`, `GET /{slug}`, `GET` (cursor-paged), `PUT` with `If-Match` — with the
@@ -36,13 +37,20 @@ worse than no `terraform/` directory.
   the org-scoping stub; a `governance` module scoring ten declaration rules and
   auditing every change, both inside the registration transaction; Flyway schema
   for `organization`, `team`, `service`, `environment`, `policy_result`,
-  `policy_result_check`, `audit_event`; ADRs 0001–0007; `docs/design/tokens.md`.
+  `policy_result_check`, `audit_event`; a generated-and-drift-checked OpenAPI
+  document with a typed TypeScript client; a Next.js console (catalog, detail,
+  scorecard, register by paste); ADRs 0001–0007; `docs/design/tokens.md`;
+  `docs/architecture/slice-one.md`.
 - **Build:** pnpm workspace plus Gradle, `make` as the single entry point.
   `make dev` runs the control plane on :8080 against compose PostgreSQL.
   **No JDK needs to be installed** — the build declares a Java 21 toolchain and
   Gradle provisions Temurin 21 itself (this machine has only 17 and 25).
-- **Tests:** `make test` — 14 schema fixtures plus 162 JVM tests, all passing.
-  Integration tests use Testcontainers and need a running Docker daemon.
+- **Tests:** `make test` — 14 schema fixtures, 16 console component tests and
+  162 JVM tests, all passing. `make test-all` adds 8 Playwright tests against the
+  real stack. Integration tests use Testcontainers and need a running Docker
+  daemon; the smoke test needs the control plane running.
+- **CI is written but has never run.** There is no remote configured. Do not
+  describe the pipeline as passing.
 - **Database:** PostgreSQL 16 via `deploy/compose`. Flyway owns the schema;
   Hibernate runs `ddl-auto: validate` so entity/migration drift fails startup.
 - **Cross-organization isolation is now verified** by `OrgIsolationIT` (7 tests).
@@ -57,6 +65,13 @@ worse than no `terraform/` directory.
 - **Bump `PolicyCatalog.VERSION`** whenever a rule is added, removed, or changed
   in a way that alters its verdict. It is what keeps an old score readable as
   what it meant when it was computed.
+- **Run `make openapi` after any controller or response-shape change**, and
+  commit the result. CI fails on the difference otherwise (ADR 0005).
+- **Extend `OrgIsolationIT` whenever an endpoint is added.** An endpoint it does
+  not cover has unverified isolation and must be described that way.
+- **Catalog search and tier filtering happen in the console**, over one page
+  only, because the control plane has no search endpoint. Do not describe it as
+  fleet-wide search.
 - **The v3 HTML prototype is no longer in the repository.** Its design decisions
   were extracted to `docs/design/tokens.md`; work from that note. It is
   gitignored because its seeded data uses insurance-domain service names, which

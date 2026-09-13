@@ -27,7 +27,7 @@ OpsAtlas/
 │   │       ├── governance/        ✓ policy rules, scorecards, audit
 │   │       ├── operations/          phase 7 — desired state, observations, deployments
 │   │       └── integrations/        phase 6 — GitHub, CI, cloud
-│   ├── web/                         phase 4 — Next.js App Router console
+│   ├── web/                       ✓ Next.js App Router console
 │   └── observer/                    phase 7 — Go prober
 ├── packages/
 │   ├── contracts/                 ✓ service.yaml schema; OpenAPI and TS client in phase 4
@@ -40,11 +40,11 @@ OpsAtlas/
 │   └── services/                  ✓ example and fixture manifests
 ├── docs/
 │   ├── adr/                       ✓ 0001-0007
-│   ├── architecture/                phase 5 — Mermaid diagrams
+│   ├── architecture/              ✓ slice-one.md
 │   ├── design/                    ✓ tokens.md
 │   └── roadmap.md                 ✓ this file
 ├── terraform/                       phase 10
-└── .github/workflows/               phase 5
+└── .github/workflows/             ✓ ci.yml
 ```
 
 `packages/ui` is listed as *not planned* rather than as a later phase. A shared
@@ -124,26 +124,40 @@ request that caused them.
 **Deliberately not built here:** policy exceptions. They need an approver, an
 approver needs identity, and identity is stubbed (ADR 0003, ADR 0004).
 
-### Phase 4 — Contracts and console
+### Phase 4 — Contracts and console ✓ **complete**
 
 `make openapi`, generated TypeScript types, the typed fetch client. Next.js
-console: catalog list with search, tier and runtime filters and cursor paging;
-detail with Overview, Scorecard and service.yaml tabs; register-by-paste with
-inline violations. Design tokens from `docs/design/tokens.md`. Loading, empty,
-stale, partial-failure, error and never-observed states.
+console: catalog list with search, tier filter and cursor paging; detail with
+Overview, Scorecard and service.yaml tabs; register-by-paste with inline
+violations. Design tokens from `docs/design/tokens.md`, dark by default.
+Loading, empty, partial-failure, error and never-observed states.
 
 Navigation contains **Catalog and nothing else.**
 
-**Verified by:** component tests queried by role and accessible name, and a
-Playwright smoke test that registers a fixture, finds it in the list and opens its
-scorecard.
+**Verified by:** 16 component tests and 8 Playwright tests driving a real
+browser against a real console, control plane and PostgreSQL. Queries are by
+role and accessible name, so they fail if the page stops being navigable by a
+screen reader. The honesty properties are asserted directly: "Never observed"
+appears, the declaration-only notice appears, the navigation has exactly one
+link, and 375px does not scroll horizontally.
 
-### Phase 5 — CI and documentation close-out
+**Known limitation:** catalog search and tier filtering are applied in the
+console, over the current page only, because the control plane has no search
+endpoint. The empty state says so rather than implying a fleet-wide search.
+Server-side filtering is the obvious next API change.
 
-`.github/workflows/ci.yml` running Gradle with Testcontainers, pnpm lint,
-typecheck and build, the OpenAPI drift check, and the Playwright smoke. README
-mocked-versus-real table finalised, `docs/architecture/` diagrams, `CLAUDE.md` §2
-rewritten to match reality.
+### Phase 5 — CI and documentation close-out ✓ **complete**
+
+`.github/workflows/ci.yml` with five jobs: contract fixtures, control-plane
+tests, the OpenAPI drift check, the console build and component tests, and the
+browser smoke test. README table finalised, `docs/architecture/slice-one.md`
+written, `CLAUDE.md` §2 rewritten.
+
+**Not verified:** the workflow has never run. There is no remote configured, so
+CI is written-and-unexecuted and is described that way in the README. The
+commands it runs are the same ones `make` runs locally, and those do pass — but
+that is not the same as the pipeline being green, and it should not be reported
+as if it were.
 
 ---
 

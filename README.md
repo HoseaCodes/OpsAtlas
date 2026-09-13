@@ -4,11 +4,12 @@ A service operations control plane: it catalogs services, records who owns them,
 checks whether they are healthy, and scores them against production-readiness
 policy.
 
-> **Status: phase 3 of slice one.** The control plane runs. Services register
-> from a real `service.yaml`, are scored against ten policy rules, and every
-> change is audited. There is no console yet (phase 4) and **no health monitoring
-> at all** (phase 7) — nothing in this system observes anything. Everything else
-> in this README is described as what it will be, and labelled as such. The
+> **Status: slice one complete.** The catalog vertical slice works end to end:
+> a `service.yaml` is submitted through the console, validated, stored, scored
+> against ten policy rules and audited, and the result is browsable. **Nothing in
+> this system observes anything** — there is no health monitoring, and there will
+> not be until the observer (phase 7). Everything else in this README is described
+> as what it will be, and labelled as such. The
 > [what actually works](#what-actually-works-today) table below is the
 > authoritative answer.
 
@@ -74,6 +75,11 @@ jobs — selection, focus ring, error-budget fill, open-incident emphasis. See
 | `PUT` with `If-Match` optimistic locking (428 / 412) | **Real** | `RegistrationApiIT` |
 | `GET /api/v1/services` and `/{slug}` with cursor pagination | **Real** | `CatalogApiIT`, `RegistrationApiIT` |
 | Cross-organization isolation | **Real, and verified** | `OrgIsolationIT` — 7 tests, including one proving the database refuses a cross-org reference |
+| OpenAPI document generated from the code, drift-checked | **Real** | `make check-openapi` fails the build on any difference |
+| Typed TypeScript client, no hand-written API types | **Real** | `make typecheck` |
+| Web console — catalog, detail, scorecard, register by paste | **Real** | 16 component tests, 8 Playwright tests against the real stack |
+| Loading / empty / partial-failure / error / never-observed states | **Real** | `states.test.tsx`, and the detail page settles its two requests independently |
+| CI pipeline | **Written, never executed** | `.github/workflows/ci.yml` — there is no remote to run it |
 | Scorecard — ten declaration rules, tier-conditional | **Real** | `PolicyCheckTest` (49), `ScorecardApiIT` (12) |
 | `NOT_APPLICABLE` as a real outcome, with a moving denominator | **Real** | a tier 3 service is scored out of 7, not 10 |
 | Scorecard + audit written in the registration transaction | **Real, and verified** | `ScorecardApiIT` — a forced mid-registration failure leaves no service, no scorecard and no audit row |
@@ -83,7 +89,6 @@ jobs — selection, focus ring, error-budget fill, open-incident emphasis. See
 | Correlation ID accepted, generated, echoed | **Real** | `CatalogApiIT` |
 | Module boundaries between `catalog`, `governance`, `identity`, `shared` | **Real, enforced** | `ArchitectureTest` — 9 rules |
 | Org scoping via stub `PrincipalResolver` | **Real, but unauthenticated** | `SeedConsistencyIT`, `OrgIsolationIT` |
-| Web console | **Not built** | phase 4 |
 | Health monitoring, SLO attainment, 30-day history | **Not built** | phase 7 — needs the Go observer |
 | Dependency graph and blast radius | **Not built** | phase 7 |
 | Cost attribution | **Not planned for slice one** | — |
@@ -151,6 +156,9 @@ contents yet. See [ADR 0001](docs/adr/0001-modular-monolith-as-one-gradle-module
 | [0005](docs/adr/0005-openapi-generated-committed-drift-checked.md) | OpenAPI generated from code, committed, and drift-checked in CI |
 | [0006](docs/adr/0006-prototype-is-not-committed.md) | The v3 HTML prototype stays out of the repository |
 | [0007](docs/adr/0007-service-identity-and-re-registration.md) | Registration is keyed by where the manifest lives; idempotency by content digest; POST never overwrites |
+
+Diagrams of what exists — context, modules, the registration sequence and the
+data model — are in [`docs/architecture/slice-one.md`](docs/architecture/slice-one.md).
 
 ### The scorecard, and what it does not check
 
@@ -232,10 +240,15 @@ Gradle downloads one on first use — verified on a machine with only JDK 17 and
 ```bash
 make install    # install workspace dependencies
 make up         # start PostgreSQL and wait until it is accepting connections
-make dev        # start the database, then run the control plane on :8080
-make test       # every test there is: schema fixtures + 31 JVM tests
+make dev        # database + control plane on :8080
+make dev-web    # in another terminal: the console on :3000
+make test       # everything that needs no running server
+make test-all   # the above, plus the browser smoke test
 make            # list the targets that exist
 ```
+
+Then open <http://localhost:3000>. The catalog is empty until you register
+something — `examples/services/` has six manifests to paste in.
 
 Then:
 
@@ -294,11 +307,13 @@ OpsAtlas/
 │       ├── identity/       the org-scoping stub
 │       ├── catalog/        services, environments, service.yaml ingestion
 │       └── governance/     policy rules, scorecards, audit
+├── apps/web/               Next.js console — catalog, scorecard, register
 ├── packages/contracts/     service.yaml JSON Schema and the fixture validator
 ├── deploy/compose/         local PostgreSQL
 ├── examples/services/      six valid manifests, eight invalid fixtures
 └── docs/
     ├── adr/                0001–0007
+    ├── architecture/       what exists, in Mermaid
     ├── design/tokens.md    the design system, extracted from the prototype
     └── roadmap.md          phases, target layout, deferred decisions
 ```
@@ -315,8 +330,8 @@ Slice one is the catalog vertical slice, and nothing else.
 | 1 | Control plane skeleton, PostgreSQL, empty catalog endpoint | **complete** — `make dev` works |
 | 2 | Ingestion and registration | **complete** |
 | 3 | Scorecard and audit | **complete** |
-| 4 | OpenAPI client and the web console | next |
-| 5 | CI and documentation close-out |  |
+| 4 | OpenAPI client and the web console | **complete** |
+| 5 | CI and documentation close-out | **complete** |
 
 After slice one: GitHub sync, the Go observer, the telemetry pipeline, events,
 and deployment. Details and the reasoning for the ordering are in
