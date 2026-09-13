@@ -32,7 +32,13 @@ json-schema-validator = { module = "com.networknt:json-schema-validator", versio
 # Justification: CLAUDE.md section 5 names Springdoc OpenAPI in the fixed stack,
 # and section 9 requires the OpenAPI document to be generated from the code
 # rather than hand-maintained. See ADR 0005.
-springdoc-openapi = { module = "org.springdoc:springdoc-openapi-starter-webmvc-api", version.ref = "springdoc" }
+#
+# This is the -ui starter rather than -api: it depends on -api, so the generated
+# document is produced exactly as before, and it additionally serves Swagger UI
+# so the contract can be read and exercised in a browser instead of only as
+# JSON. Whether that UI is served is a configuration decision, not a build one -
+# see springdoc.swagger-ui in application.yaml.
+springdoc-openapi = { module = "org.springdoc:springdoc-openapi-starter-webmvc-ui", version.ref = "springdoc" }
 
 # Justification: test scope only. This is the mechanism that makes the module
 # boundaries in ADR 0001 real rather than aspirational.

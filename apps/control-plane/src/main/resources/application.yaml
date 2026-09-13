@@ -47,6 +47,24 @@ server:
     include-binding-errors: never
   shutdown: graceful
 
+springdoc:
+  # /v3/api-docs is the contract and is always served: it is what `make openapi`
+  # captures and what the TypeScript client is generated from (ADR 0005). This
+  # block only controls the browsable UI over that same document, which adds no
+  # endpoint and changes no response.
+  #
+  # It defaults on because today the control plane runs only on a developer's
+  # machine. Nothing authenticates a request yet (ADR 0003), so wherever this is
+  # genuinely exposed, set OPSATLAS_SWAGGER_UI=false or put it behind the
+  # authentication that arrives with the identity phase - a try-it-out console
+  # over unauthenticated write endpoints is not something to publish by accident.
+  swagger-ui:
+    enabled: ${OPSATLAS_SWAGGER_UI:true}
+    # Land on a list of operations rather than every schema expanded at once,
+    # and show how long a try-it-out call took.
+    doc-expansion: none
+    display-request-duration: true
+
 management:
   endpoints:
     web:

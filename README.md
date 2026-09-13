@@ -76,6 +76,7 @@ jobs — selection, focus ring, error-budget fill, open-incident emphasis. See
 | `GET /api/v1/services` and `/{slug}` with cursor pagination | **Real** | `CatalogApiIT`, `RegistrationApiIT` |
 | Cross-organization isolation | **Real, and verified** | `OrgIsolationIT` — 7 tests, including one proving the database refuses a cross-org reference |
 | OpenAPI document generated from the code, drift-checked | **Real** | `make check-openapi` fails the build on any difference |
+| Swagger UI over that document, at `/swagger-ui.html` | **Real** | served by springdoc; on by default locally, off when `OPSATLAS_SWAGGER_UI=false` |
 | Typed TypeScript client, no hand-written API types | **Real** | `make typecheck` |
 | Web console — catalog, detail, scorecard, register by paste | **Real** | 16 component tests, 8 Playwright tests against the real stack |
 | Loading / empty / partial-failure / error / never-observed states | **Real** | `states.test.tsx`, and the detail page settles its two requests independently |
@@ -249,6 +250,18 @@ make            # list the targets that exist
 
 Then open <http://localhost:3000>. The catalog is empty until you register
 something — `examples/services/` has six manifests to paste in.
+
+#### Browsing the API
+
+With the control plane running, the API is browsable at
+<http://localhost:8080/swagger-ui.html>, which reads the same generated document
+the TypeScript client is built from. The document itself is at
+<http://localhost:8080/v3/api-docs>, and its committed copy is
+`packages/contracts/openapi/control-plane.json`.
+
+The UI is a local-development convenience. Nothing authenticates a request yet,
+so wherever the control plane is genuinely exposed, turn it off with
+`OPSATLAS_SWAGGER_UI=false`; `/v3/api-docs` is unaffected either way.
 
 Then:
 
