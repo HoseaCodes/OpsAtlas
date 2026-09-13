@@ -1,7 +1,8 @@
-# Slice one architecture
+# Architecture — what exists today
 
-What exists today, not the target. The target layout and the phases after this
-one are in [`../roadmap.md`](../roadmap.md).
+Slice one plus phase 6. Deliberately a description of what is built, not of what
+is planned; the target layout and the remaining phases are in
+[`../roadmap.md`](../roadmap.md).
 
 ---
 
@@ -15,9 +16,9 @@ flowchart LR
     cp["Control plane<br/><i>Java 21 · Spring Boot</i>"]
     db[("PostgreSQL<br/><i>platform metadata</i>")]
 
-    repo -. "copied by hand<br/>(GitHub sync is phase 6)" .-> operator
     operator -->|"pastes the manifest"| console
     console -->|"HTTP · server-side only"| cp
+    cp -->|"polls, read-only, every 5m"| repo
     cp --> db
 
     observer["Observer<br/><i>Go · phase 7</i>"]
@@ -34,6 +35,11 @@ observer is what would probe a service and publish an observation; it does not
 exist, so every health field is null and the console says **never observed**
 rather than showing a number nobody measured.
 
+A manifest reaches the catalog two ways, and both end in the same ingestion
+path: an operator pastes it, or the control plane polls a watched repository for
+it. The arrow to the repository points outward and only outward — OpsAtlas reads
+and never writes, which is what ADR 0008 trades webhook latency for.
+
 The console never talks to the control plane from the browser. Reads happen in
 Server Components and the single write goes through a Next route handler, so the
 control plane's address stays server-side and there is no CORS policy to get
@@ -45,25 +51,27 @@ wrong.
 
 ```mermaid
 flowchart TD
-    subgraph cp["Control plane — one deployable, four modules"]
+    subgraph cp["Control plane — one deployable, five modules"]
         direction TB
+        integrations["<b>integrations</b><br/>watched sources · polling<br/><i>read-only, outbound</i>"]
         catalog["<b>catalog</b><br/>services · environments<br/>service.yaml ingestion"]
         governance["<b>governance</b><br/>policy rules · scorecards<br/>audit"]
         identity["<b>identity</b><br/>organizations · principals<br/><i>auth is stubbed</i>"]
         shared["<b>shared</b><br/>errors · pagination · correlation<br/><i>depends on nothing</i>"]
     end
 
+    integrations -->|"catalog.api"| catalog
+    integrations -->|"identity.api"| identity
     catalog -->|"governance.api"| governance
     catalog -->|"identity.api"| identity
     governance -->|"identity.api"| identity
+    integrations --> shared
     catalog --> shared
     governance --> shared
     identity --> shared
 
     ops["operations<br/><i>phase 7</i>"]
-    integrations["integrations<br/><i>phase 6</i>"]
     style ops stroke-dasharray: 4 3
-    style integrations stroke-dasharray: 4 3
 ```
 
 Each module exposes an `api` package and hides an `internal` one. `ArchitectureTest`
@@ -73,9 +81,14 @@ catalog, or when a package appears for a phase that is not active. Those rules
 are what make this a modular monolith rather than a monolith with some packages —
 see [ADR 0001](../adr/0001-modular-monolith-as-one-gradle-module.md).
 
-**The catalog → governance dependency runs one way.** Catalog calls governance
-when it registers something; governance never calls back. If it did, the two
-would be one module wearing two names.
+**The dependencies run one way: integrations → catalog → governance.** Catalog
+calls governance when it registers something, and never calls back. Catalog also
+does not know that `integrations` exists — it accepts a document from anywhere,
+which is precisely why a polled manifest and a pasted one cannot be treated
+differently. Both directions are enforced by `ArchitectureTest`, as is the rule
+that **only `integrations` may make an outbound HTTP call at all** — that is ADR
+0008's "OpsAtlas never writes to a repository" expressed as something the build
+can check.
 
 ---
 
@@ -145,6 +158,8 @@ erDiagram
     service ||--o{ policy_result : "scored by"
     policy_result ||--o{ policy_result_check : "one row per rule"
     organization ||--o{ audit_event : "scopes"
+    organization ||--o{ source : "scopes"
+    source |o--o| service : "produces (nullable)"
 
     organization {
         uuid id PK
@@ -188,6 +203,17 @@ erDiagram
         text correlation_id "ties to the request's log lines"
         jsonb payload
     }
+    source {
+        uuid id PK
+        uuid org_id FK
+        text repository "with path, unique per org"
+        text etag "replayed as If-None-Match"
+        text last_outcome "REGISTERED · UNCHANGED · REJECTED · ..."
+        text last_detail "required when not a success"
+        timestamptz last_attempt_at
+        timestamptz last_success_at "how current the catalog is"
+        uuid service_id FK "set once, never cleared"
+    }
 ```
 
 Three things in that diagram are load-bearing and easy to miss:
@@ -202,6 +228,11 @@ Three things in that diagram are load-bearing and easy to miss:
   `OrgIsolationIT` proves it does.
 - **`audit_event` has no foreign key to `service`.** An audit entry must outlive
   what it describes; a cascade would erase exactly the record worth keeping.
+- **`source` carries two timestamps, not one.** `last_attempt_at` and
+  `last_success_at` together answer "how current is what I am looking at", which
+  is the question a reader of a failing source actually has. Neither answers it
+  alone, and `service_id` is set once and never cleared so a failing source can
+  still say which service has gone stale.
 
 ---
 
@@ -213,6 +244,6 @@ Three things in that diagram are load-bearing and easy to miss:
 | Dependency graph, blast radius | needs the observer and trace data | 7 |
 | Authentication and authorization | stubbed by design — [ADR 0003](../adr/0003-org-scoping-stub.md) | later |
 | Policy exceptions | need an approver, which needs identity | later |
-| Reading `service.yaml` from GitHub | needs an App identity and permission model | 6 |
+| A GitHub App (higher rate limits, no personal credential) | needs a registered application, a private key and an installation flow | later |
 | Redis, Kafka, outbox | only once there is a demonstrated need (§6) | 9 |
 | Terraform, Kubernetes, Helm | nothing to deploy until there is something to run | 10 |

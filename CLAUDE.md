@@ -27,9 +27,9 @@ worse than no `terraform/` directory.
 > Update this section whenever it becomes inaccurate. It is the first thing
 > future sessions read.
 
-- **Phase:** **slice one complete** (phases 0–5). The next work is phase 6
-  onward — GitHub sync, then the Go observer. The phase list, and what each
-  later phase is waiting on, is in `docs/roadmap.md`.
+- **Phase:** **slice one complete (0–5), and phase 6 (GitHub sync) done.** Next
+  is phase 7, the Go observer — everything health-shaped waits on it. The phase
+  list, and what each later phase is waiting on, is in `docs/roadmap.md`.
 - **What exists:** the `service.yaml` v1 JSON Schema and fixtures; a running
   control plane that registers services from a real manifest and serves them —
   `POST`, `GET /{slug}`, `GET` (cursor-paged), `PUT` with `If-Match` — with the
@@ -39,21 +39,23 @@ worse than no `terraform/` directory.
   for `organization`, `team`, `service`, `environment`, `policy_result`,
   `policy_result_check`, `audit_event`; a generated-and-drift-checked OpenAPI
   document with a typed TypeScript client; a Next.js console (catalog, detail,
-  scorecard, register by paste); ADRs 0001–0007; `docs/design/tokens.md`;
-  `docs/architecture/slice-one.md`.
+  scorecard, register by paste, sources); an `integrations` module that polls
+  watched GitHub repositories read-only and registers what they declare, with
+  conditional requests and a `source` table recording sync state; ADRs 0001–0008;
+  `docs/design/tokens.md`; `docs/architecture/slice-one.md`.
 - **Build:** pnpm workspace plus Gradle, `make` as the single entry point.
   `make dev` runs the control plane on :8080 against compose PostgreSQL.
   **No JDK needs to be installed** — the build declares a Java 21 toolchain and
   Gradle provisions Temurin 21 itself (this machine has only 17 and 25).
-- **Tests:** `make test` — 14 schema fixtures, 16 console component tests and
-  162 JVM tests, all passing. `make test-all` adds 8 Playwright tests against the
-  real stack. Integration tests use Testcontainers and need a running Docker
+- **Tests:** `make test` — 14 schema fixtures, 33 console component tests and
+  219 JVM tests, all passing. `make test-all` adds 14 Playwright tests against
+  the real stack. Integration tests use Testcontainers and need a running Docker
   daemon; the smoke test needs the control plane running.
 - **CI is written but has never run.** There is no remote configured. Do not
   describe the pipeline as passing.
 - **Database:** PostgreSQL 16 via `deploy/compose`. Flyway owns the schema;
   Hibernate runs `ddl-auto: validate` so entity/migration drift fails startup.
-- **Cross-organization isolation is now verified** by `OrgIsolationIT` (7 tests).
+- **Cross-organization isolation is verified** by `OrgIsolationIT` (14 tests).
   That test must grow whenever an endpoint is added — an endpoint it does not
   cover has unverified isolation and must be described that way.
 - **Nothing observes anything.** There is no health, no SLO attainment and no
@@ -72,6 +74,17 @@ worse than no `terraform/` directory.
 - **Catalog search and tier filtering happen in the console**, over one page
   only, because the control plane has no search endpoint. Do not describe it as
   fleet-wide search.
+- **OpsAtlas never writes to a monitored repository.** It polls; it registers no
+  webhooks and needs no write scope. `ArchitectureTest` enforces that only
+  `integrations` makes outbound HTTP calls at all. Never add a write path, and
+  never ask for a token scope beyond reading contents (ADR 0008).
+- **Polling does not scale on the unauthenticated rate limit** — 60 requests an
+  hour per IP means roughly five sources at a five-minute interval. Say so rather
+  than letting someone discover it when syncs start failing.
+- **Scheduled work runs as an explicit principal** (`PrincipalScope`), never by
+  letting `CurrentPrincipal` fall back to a default. The guard that throws when
+  no principal is bound is what catches a *request* losing its principal, and it
+  must stay able to.
 - **The v3 HTML prototype is no longer in the repository.** Its design decisions
   were extracted to `docs/design/tokens.md`; work from that note. It is
   gitignored because its seeded data uses insurance-domain service names, which

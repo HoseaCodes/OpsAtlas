@@ -146,6 +146,25 @@ console, over the current page only, because the control plane has no search
 endpoint. The empty state says so rather than implying a fleet-wide search.
 Server-side filtering is the obvious next API change.
 
+### Phase 6 — GitHub sync ✓ **complete**
+
+`integrations` module, `source` table, a read-only GitHub Contents reader with
+conditional requests, a five-minute poller, `POST/GET/DELETE /api/v1/sources`
+plus sync, enable and disable, and a console page. ADR 0008 records why this
+polls rather than registering webhooks.
+
+**Verified by:** 219 JVM tests. `SourceSyncIT` covers the happy path and seven
+failure modes, each asserting the registered service survives; `SourceRefTest`
+covers traversal, injection and malformed-repository refusals; `OrgIsolationIT`
+grew by seven tests covering every new endpoint. 14 Playwright tests against the
+real stack, five of them on the sources page. Additionally verified once against
+the real api.github.com, unauthenticated: content fetched, ETag returned, a
+conditional refetch answered 304, an unknown path answered 404.
+
+**Deferred, with reasons, in ADR 0008:** the GitHub App, and backoff on
+repeatedly failing sources (`consecutive_failures` is recorded but nothing reads
+it yet).
+
 ### Phase 5 — CI and documentation close-out ✓ **complete**
 
 `.github/workflows/ci.yml` with five jobs: contract fixtures, control-plane
@@ -169,7 +188,7 @@ expanding scope.
 
 | Phase | What | Why it waits |
 |---|---|---|
-| 6 | GitHub App, webhooks, automatic `service.yaml` sync | Slice one registers by paste; sync needs an App identity and a permission model |
+| ~~6~~ | ~~GitHub sync~~ — **done**, by polling rather than webhooks (ADR 0008). A GitHub App is still deferred: it needs a registered application, a private key, an installation flow and somewhere to keep per-installation tokens, and identity is still a stub. | |
 | 7 | Go observer, `operations` module, health probing, 30-day attainment | Everything health-shaped in the console depends on this and on nothing else |
 | 8 | OpenTelemetry pipeline, Prometheus, Loki, Tempo, Grafana | Needs services actually running to observe |
 | 9 | Transactional outbox, platform events, Redis read models | Only once there is a demonstrated need (§6) |
@@ -196,5 +215,12 @@ expanding scope.
 - **Service renames** — refused today. Supporting them means addressing services
   by UUID in URLs and carrying an alias, which is a migration feature rather than
   an edit.
+- **Sync backoff** — `source.consecutive_failures` is recorded and shown but
+  nothing throttles on it. A repository that has 404'd two hundred times is still
+  polled every five minutes, which is the rate limit being spent on a known-dead
+  source.
+- **A vanished repository is never retired** — a deleted repository and an outage
+  both surface as a failing sync, and deciding that a service is gone is not a
+  decision a poll timeout should make.
 - **Offset pagination** — never. §9 requires cursor pagination for every
   collection, and slice one sets that precedent with the first endpoint.

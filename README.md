@@ -4,7 +4,9 @@ A service operations control plane: it catalogs services, records who owns them,
 checks whether they are healthy, and scores them against production-readiness
 policy.
 
-> **Status: slice one complete.** The catalog vertical slice works end to end:
+> **Status: slice one complete, phase 6 (GitHub sync) done.** A watched
+> repository's `service.yaml` is read on a schedule and registered automatically.
+> The catalog vertical slice works end to end:
 > a `service.yaml` is submitted through the console, validated, stored, scored
 > against ten policy rules and audited, and the result is browsable. **Nothing in
 > this system observes anything** — there is no health monitoring, and there will
@@ -66,7 +68,7 @@ jobs — selection, focus ring, error-budget fill, open-incident emphasis. See
 | Semantic validation — duplicate environment names | **Real** | same |
 | Architecture decisions, phases 0–10 | **Real** (written down) | [`docs/adr/`](docs/adr/), [`docs/roadmap.md`](docs/roadmap.md) |
 | Design system extracted from the prototype | **Real** (written down) | [`docs/design/tokens.md`](docs/design/tokens.md) |
-| Control plane (Java 21 / Spring Boot) | **Real** | `make test` — 162 JVM tests |
+| Control plane (Java 21 / Spring Boot) | **Real** | `make test` — 219 JVM tests |
 | PostgreSQL schema and Flyway migrations | **Real** | `SeedConsistencyIT`, and Hibernate `ddl-auto: validate` refuses to start on drift |
 | `POST /api/v1/services` — register from a `service.yaml` | **Real** | `RegistrationApiIT`, plus 13 curl assertions against a running server |
 | Safe YAML ingestion — size cap, no alias expansion, no type construction | **Real** | `ManifestValidationTest` — billion-laughs, `!!java` tags, duplicate keys and a 70 KiB body are all refused |
@@ -81,6 +83,11 @@ jobs — selection, focus ring, error-budget fill, open-incident emphasis. See
 | Web console — catalog, detail, scorecard, register by paste | **Real** | 29 component tests, 9 Playwright tests against the real stack |
 | A copyable prompt on `/register`, generated from the schema and the live rules | **Real** | `manifestPrompt.test.ts` walks the real schema and fails if a field is missing from the prompt; a Playwright test reads the clipboard |
 | Loading / empty / partial-failure / error / never-observed states | **Real** | `states.test.tsx`, and the detail page settles its two requests independently |
+| Polling a GitHub repository for its `service.yaml` | **Real** | `SourceSyncIT`, `SourceApiIT`, and a one-off check against the real api.github.com |
+| Conditional requests — an unchanged manifest costs a 304 and no ingestion | **Real** | `SourceSyncIT`; verified against real GitHub |
+| A failing sync leaves the registered service untouched | **Real, and verified** | `SourceSyncIT` — seven failure modes, each asserting the service survives |
+| Read-only by construction — no webhook, no write scope | **Real, enforced** | `ArchitectureTest` — only `integrations` may make outbound HTTP calls |
+| Sources page with sync status and per-source explanations | **Real** | 4 component tests, 5 Playwright tests |
 | CI pipeline | **Written, never executed** | `.github/workflows/ci.yml` — there is no remote to run it |
 | Scorecard — ten declaration rules, tier-conditional | **Real** | `PolicyCheckTest` (49), `ScorecardApiIT` (12) |
 | `NOT_APPLICABLE` as a real outcome, with a moving denominator | **Real** | a tier 3 service is scored out of 7, not 10 |
@@ -89,7 +96,7 @@ jobs — selection, focus ring, error-budget fill, open-incident emphasis. See
 | `GET /api/v1/policy/rules` — the rule set and its rationale | **Real** | `ScorecardApiIT` |
 | RFC 9457 problem responses with `correlationId` and `violations[]` | **Real** | `CatalogApiIT` |
 | Correlation ID accepted, generated, echoed | **Real** | `CatalogApiIT` |
-| Module boundaries between `catalog`, `governance`, `identity`, `shared` | **Real, enforced** | `ArchitectureTest` — 9 rules |
+| Module boundaries between `catalog`, `governance`, `identity`, `integrations`, `shared` | **Real, enforced** | `ArchitectureTest` — 13 rules |
 | Org scoping via stub `PrincipalResolver` | **Real, but unauthenticated** | `SeedConsistencyIT`, `OrgIsolationIT` |
 | Health monitoring, SLO attainment, 30-day history | **Not built** | phase 7 — needs the Go observer |
 | Dependency graph and blast radius | **Not built** | phase 7 |
@@ -158,9 +165,42 @@ contents yet. See [ADR 0001](docs/adr/0001-modular-monolith-as-one-gradle-module
 | [0005](docs/adr/0005-openapi-generated-committed-drift-checked.md) | OpenAPI generated from code, committed, and drift-checked in CI |
 | [0006](docs/adr/0006-prototype-is-not-committed.md) | The v3 HTML prototype stays out of the repository |
 | [0007](docs/adr/0007-service-identity-and-re-registration.md) | Registration is keyed by where the manifest lives; idempotency by content digest; POST never overwrites |
+| [0008](docs/adr/0008-polled-sources-not-webhooks.md) | Manifests are polled, never pushed by webhook, so OpsAtlas never holds write access to a monitored repository |
 
 Diagrams of what exists — context, modules, the registration sequence and the
 data model — are in [`docs/architecture/slice-one.md`](docs/architecture/slice-one.md).
+
+### Watching a repository
+
+```bash
+# Start watching. Public repositories need no credentials.
+curl -X POST localhost:8080/api/v1/sources \
+  -H 'Content-Type: application/json' \
+  -d '{"repository":"ambitious-concepts/orders-api","ref":"main"}'
+
+# Sync now rather than waiting for the next pass
+curl -X POST localhost:8080/api/v1/sources/<id>/sync | jq
+```
+
+OpsAtlas reads `service.yaml` from each watched repository every five minutes and
+registers what it finds, through exactly the same validation, scoring and audit
+path a pasted manifest takes.
+
+**It only ever reads.** No webhook is registered and no write scope is held or
+needed — [ADR 0008](docs/adr/0008-polled-sources-not-webhooks.md) explains why
+that is worth giving up webhook latency for, and what it costs. The short version:
+registering a webhook needs write access to every monitored repository, which is
+a large permanent permission bought to remove a few minutes of visible, labelled
+staleness.
+
+Two limits worth knowing before pointing this at anything:
+
+- **Rate limit.** Unauthenticated GitHub allows 60 requests an hour per IP, so at
+  a five-minute interval roughly **five sources saturate it** — a 304 still counts.
+  A contents-read token in `OPSATLAS_GITHUB_TOKEN` raises it to 5,000.
+- **A failing sync never erases what is known.** If GitHub is unreachable or a
+  manifest stops validating, the registered service stays exactly as it was and
+  the source records why it is no longer current. Stale, never blank.
 
 ### The scorecard, and what it does not check
 
@@ -330,13 +370,14 @@ OpsAtlas/
 │       ├── shared/         errors, pagination, correlation — depends on nothing
 │       ├── identity/       the org-scoping stub
 │       ├── catalog/        services, environments, service.yaml ingestion
-│       └── governance/     policy rules, scorecards, audit
+│       ├── governance/     policy rules, scorecards, audit
+│       └── integrations/   polling watched repositories (read-only)
 ├── apps/web/               Next.js console — catalog, scorecard, register
 ├── packages/contracts/     service.yaml JSON Schema and the fixture validator
 ├── deploy/compose/         local PostgreSQL
 ├── examples/services/      six valid manifests, eight invalid fixtures
 └── docs/
-    ├── adr/                0001–0007
+    ├── adr/                0001–0008
     ├── architecture/       what exists, in Mermaid
     ├── design/tokens.md    the design system, extracted from the prototype
     └── roadmap.md          phases, target layout, deferred decisions
@@ -356,6 +397,8 @@ Slice one is the catalog vertical slice, and nothing else.
 | 3 | Scorecard and audit | **complete** |
 | 4 | OpenAPI client and the web console | **complete** |
 | 5 | CI and documentation close-out | **complete** |
+| 6 | GitHub sync — poll watched repositories | **complete** |
+| 7 | The Go observer, and everything health-shaped | next |
 
 After slice one: GitHub sync, the Go observer, the telemetry pipeline, events,
 and deployment. Details and the reasoning for the ordering are in
