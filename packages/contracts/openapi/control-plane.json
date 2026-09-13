@@ -1,11 +1,12 @@
 {
   "openapi" : "3.1.0",
   "info" : {
-    "title" : "OpenAPI definition",
-    "version" : "v0"
+    "title" : "OpsAtlas control plane",
+    "description" : "The control plane for the OpsAtlas service catalog.\n\nConventions that hold for every endpoint: collections are cursor-paginated and never offset-paginated; failures are RFC 9457 problem documents carrying a correlationId and, for validation failures, a violations array locating each problem by JSON Pointer; a correlation id is accepted on X-Correlation-Id or generated, and echoed on every response.\n\nNothing in this API reports observed health. No field describes a measurement the platform has taken, because nothing probes anything yet.\n",
+    "version" : "v1"
   },
   "servers" : [ {
-    "url" : "http://localhost:59625",
+    "url" : "http://localhost:59841",
     "description" : "Generated server url"
   } ],
   "paths" : {
@@ -300,7 +301,8 @@
             "type" : "string",
             "format" : "date-time"
           }
-        }
+        },
+        "required" : [ "id", "name" ]
       },
       "JsonNode" : {
         "type" : "object"
@@ -367,7 +369,8 @@
             "type" : "integer",
             "format" : "int64"
           }
-        }
+        },
+        "required" : [ "environments", "id", "lifecycle", "manifest", "manifestDigest", "registeredAt", "repository", "schemaVersion", "slug", "sourcePath", "tier", "updatedAt", "version" ]
       },
       "PageResponseServiceSummary" : {
         "type" : "object",
@@ -381,7 +384,8 @@
           "nextCursor" : {
             "type" : "string"
           }
-        }
+        },
+        "required" : [ "items" ]
       },
       "ServiceSummary" : {
         "type" : "object",
@@ -420,7 +424,8 @@
             "type" : "integer",
             "format" : "int64"
           }
-        }
+        },
+        "required" : [ "id", "lifecycle", "owned", "registeredAt", "repository", "slug", "tier", "version" ]
       },
       "CheckResult" : {
         "type" : "object",
@@ -437,7 +442,8 @@
           "detail" : {
             "type" : "string"
           }
-        }
+        },
+        "required" : [ "checkId", "status", "title" ]
       },
       "Scorecard" : {
         "type" : "object",
@@ -467,7 +473,8 @@
               "$ref" : "#/components/schemas/CheckResult"
             }
           }
-        }
+        },
+        "required" : [ "checks", "checksApplicable", "checksPassed", "evaluatedAt", "policySetVersion", "serviceId" ]
       },
       "PolicyRuleView" : {
         "type" : "object",
@@ -484,7 +491,8 @@
           "declarationOnly" : {
             "type" : "boolean"
           }
-        }
+        },
+        "required" : [ "declarationOnly", "id", "rationale", "title" ]
       },
       "PolicyRules" : {
         "type" : "object",
@@ -501,7 +509,8 @@
           "declarationOnlyNotice" : {
             "type" : "string"
           }
-        }
+        },
+        "required" : [ "declarationOnlyNotice", "policySetVersion", "rules" ]
       },
       "AuditEntry" : {
         "type" : "object",
@@ -533,7 +542,8 @@
           "payload" : {
             "$ref" : "#/components/schemas/JsonNode"
           }
-        }
+        },
+        "required" : [ "action", "actor", "correlationId", "id", "occurredAt", "payload", "subjectId", "subjectType" ]
       },
       "PageResponseAuditEntry" : {
         "type" : "object",
@@ -547,7 +557,8 @@
           "nextCursor" : {
             "type" : "string"
           }
-        }
+        },
+        "required" : [ "items" ]
       }
     }
   }

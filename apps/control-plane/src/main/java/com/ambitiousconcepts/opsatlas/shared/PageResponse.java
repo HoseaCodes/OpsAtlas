@@ -1,5 +1,6 @@
 package com.ambitiousconcepts.opsatlas.shared;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.List;
 
 /**
@@ -12,7 +13,7 @@ import java.util.List;
  * @param items    the rows in this page, in stable order
  * @param nextCursor pass back as {@code ?cursor=} to fetch the next page, or null
  */
-public record PageResponse<T>(List<T> items, String nextCursor) {
+public record PageResponse<T>(List<T> items, @Schema(nullable = true) String nextCursor) {
 
     public static <T> PageResponse<T> of(List<T> items, String nextCursor) {
         return new PageResponse<>(List.copyOf(items), nextCursor);

@@ -1,4 +1,4 @@
-import type { components } from "./generated/api.js";
+import type { components } from "./generated/api";
 
 /**
  * A typed fetch wrapper over the control plane.

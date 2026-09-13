@@ -1,5 +1,6 @@
 package com.ambitiousconcepts.opsatlas.governance.api;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -24,7 +25,7 @@ public record Scorecard(
      * @param status PASS, FAIL or NOT_APPLICABLE
      * @param detail why it failed; null when it passed or does not apply
      */
-    public record CheckResult(String checkId, String title, String status, String detail) {}
+    public record CheckResult(String checkId, String title, String status, @Schema(nullable = true) String detail) {}
 
     /**
      * Percentage of applicable checks passed, 0-100.

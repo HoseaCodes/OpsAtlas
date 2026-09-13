@@ -1,5 +1,6 @@
 package com.ambitiousconcepts.opsatlas.catalog.api;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import com.fasterxml.jackson.databind.JsonNode;
 import java.time.Instant;
 import java.util.List;
@@ -25,15 +26,19 @@ import java.util.UUID;
 public record ServiceDetail(
         UUID id,
         String slug,
+        @Schema(nullable = true)
         String displayName,
         String repository,
         int tier,
+        @Schema(nullable = true)
         String runtime,
         String lifecycle,
+        @Schema(nullable = true)
         String owner,
         String schemaVersion,
         String manifestDigest,
         String sourcePath,
+        @Schema(nullable = true)
         String sourceRef,
         List<EnvironmentView> environments,
         JsonNode manifest,
@@ -48,5 +53,10 @@ public record ServiceDetail(
      *     than inferring absence from a missing key.
      */
     public record EnvironmentView(
-            UUID id, String name, String url, String readinessPath, String livenessPath, Instant lastObservedAt) {}
+            UUID id,
+            String name,
+            @Schema(nullable = true) String url,
+            @Schema(nullable = true) String readinessPath,
+            @Schema(nullable = true) String livenessPath,
+            @Schema(nullable = true) Instant lastObservedAt) {}
 }

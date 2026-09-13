@@ -1,5 +1,6 @@
 package com.ambitiousconcepts.opsatlas.catalog.api;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -26,9 +27,11 @@ import java.util.UUID;
 public record ServiceSummary(
         UUID id,
         String slug,
+        @Schema(nullable = true)
         String displayName,
         String repository,
         int tier,
+        @Schema(nullable = true)
         String runtime,
         String lifecycle,
         boolean owned,

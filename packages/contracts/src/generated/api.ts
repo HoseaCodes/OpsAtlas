@@ -90,8 +90,8 @@ export interface components {
     schemas: {
         EnvironmentView: {
             /** Format: uuid */
-            id?: string;
-            name?: string;
+            id: string;
+            name: string;
             url?: string;
             readinessPath?: string;
             livenessPath?: string;
@@ -101,92 +101,92 @@ export interface components {
         JsonNode: Record<string, never>;
         ServiceDetail: {
             /** Format: uuid */
-            id?: string;
-            slug?: string;
+            id: string;
+            slug: string;
             displayName?: string;
-            repository?: string;
+            repository: string;
             /** Format: int32 */
-            tier?: number;
+            tier: number;
             runtime?: string;
-            lifecycle?: string;
+            lifecycle: string;
             owner?: string;
-            schemaVersion?: string;
-            manifestDigest?: string;
-            sourcePath?: string;
+            schemaVersion: string;
+            manifestDigest: string;
+            sourcePath: string;
             sourceRef?: string;
-            environments?: components["schemas"]["EnvironmentView"][];
-            manifest?: components["schemas"]["JsonNode"];
+            environments: components["schemas"]["EnvironmentView"][];
+            manifest: components["schemas"]["JsonNode"];
             /** Format: date-time */
-            registeredAt?: string;
+            registeredAt: string;
             /** Format: date-time */
-            updatedAt?: string;
+            updatedAt: string;
             /** Format: int64 */
-            version?: number;
+            version: number;
         };
         PageResponseServiceSummary: {
-            items?: components["schemas"]["ServiceSummary"][];
+            items: components["schemas"]["ServiceSummary"][];
             nextCursor?: string;
         };
         ServiceSummary: {
             /** Format: uuid */
-            id?: string;
-            slug?: string;
+            id: string;
+            slug: string;
             displayName?: string;
-            repository?: string;
+            repository: string;
             /** Format: int32 */
-            tier?: number;
+            tier: number;
             runtime?: string;
-            lifecycle?: string;
-            owned?: boolean;
+            lifecycle: string;
+            owned: boolean;
             /** Format: date-time */
-            registeredAt?: string;
+            registeredAt: string;
             /** Format: int64 */
-            version?: number;
+            version: number;
         };
         CheckResult: {
-            checkId?: string;
-            title?: string;
-            status?: string;
+            checkId: string;
+            title: string;
+            status: string;
             detail?: string;
         };
         Scorecard: {
             /** Format: uuid */
-            serviceId?: string;
-            policySetVersion?: string;
+            serviceId: string;
+            policySetVersion: string;
             /** Format: date-time */
-            evaluatedAt?: string;
+            evaluatedAt: string;
             /** Format: int32 */
-            checksPassed?: number;
+            checksPassed: number;
             /** Format: int32 */
-            checksApplicable?: number;
-            checks?: components["schemas"]["CheckResult"][];
+            checksApplicable: number;
+            checks: components["schemas"]["CheckResult"][];
         };
         PolicyRuleView: {
-            id?: string;
-            title?: string;
-            rationale?: string;
-            declarationOnly?: boolean;
+            id: string;
+            title: string;
+            rationale: string;
+            declarationOnly: boolean;
         };
         PolicyRules: {
-            policySetVersion?: string;
-            rules?: components["schemas"]["PolicyRuleView"][];
-            declarationOnlyNotice?: string;
+            policySetVersion: string;
+            rules: components["schemas"]["PolicyRuleView"][];
+            declarationOnlyNotice: string;
         };
         AuditEntry: {
             /** Format: uuid */
-            id?: string;
+            id: string;
             /** Format: date-time */
-            occurredAt?: string;
-            actor?: string;
-            action?: string;
-            subjectType?: string;
+            occurredAt: string;
+            actor: string;
+            action: string;
+            subjectType: string;
             /** Format: uuid */
-            subjectId?: string;
-            correlationId?: string;
-            payload?: components["schemas"]["JsonNode"];
+            subjectId: string;
+            correlationId: string;
+            payload: components["schemas"]["JsonNode"];
         };
         PageResponseAuditEntry: {
-            items?: components["schemas"]["AuditEntry"][];
+            items: components["schemas"]["AuditEntry"][];
             nextCursor?: string;
         };
     };
