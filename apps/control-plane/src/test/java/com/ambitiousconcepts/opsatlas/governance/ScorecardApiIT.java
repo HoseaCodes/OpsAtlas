@@ -9,6 +9,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.ambitiousconcepts.opsatlas.catalog.api.ServiceRegistration;
+import com.ambitiousconcepts.opsatlas.identity.api.Principal;
+import com.ambitiousconcepts.opsatlas.identity.api.PrincipalScope;
 import com.ambitiousconcepts.opsatlas.support.PostgresTestBase;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -43,6 +45,9 @@ class ScorecardApiIT extends PostgresTestBase {
 
     @Autowired
     private ServiceRegistration registration;
+
+    @Autowired
+    private PrincipalScope principals;
 
     private static final UUID ORG = UUID.fromString("00000000-0000-4000-8000-000000000001");
 
@@ -209,28 +214,30 @@ class ScorecardApiIT extends PostgresTestBase {
     @DisplayName("a registration that fails leaves no service, no scorecard and no audit entry")
     void registration_is_all_or_nothing() {
         // CLAUDE.md section 8: the scorecard and the audit event are part of the
-        // same transaction as the service row. Forced here by a manifest that
-        // passes validation and then violates a database constraint - the slug
-        // is already taken by a row inserted directly, so the insert fails after
-        // the scorecard and audit writes have been issued.
-        jdbc.update(
-                """
-                insert into service (
-                    id, org_id, slug, repository, tier, lifecycle, schema_version,
-                    manifest, manifest_digest, source_path, version, created_at, updated_at)
-                values (?, ?, 'orders-api', 'ambitious-concepts/planted', 1, 'active',
-                    'opsatlas.ambitiousconcepts.io/v1', '{}'::jsonb, ?, 'planted.yaml', 0, now(), now())
-                """,
-                UUID.randomUUID(),
-                ORG,
-                "b".repeat(64));
+        // same transaction as the service row.
+        //
+        // Forcing a failure here is harder than it looks, and the first two
+        // attempts did not test what they claimed. A planted row with the same
+        // slug is caught by rejectIfSlugTaken before any write is issued, and so
+        // is a clash on (repository, source_path) - both unique constraints are
+        // pre-checked so the caller gets a 409 rather than a 500. Good design,
+        // useless for this test.
+        //
+        // So the failure is made to land at flush instead: an organization that
+        // does not exist passes every application-level check, then violates the
+        // foreign key when the inserts go to the database - by which point the
+        // service, its scorecard and its audit event have all been issued.
+        UUID missingOrg = UUID.fromString("00000000-0000-4000-8000-00000000dead");
 
-        assertThatThrownBy(() -> registration.register(ORG, fixture("orders-api.yaml"), "service.yaml", null))
-                .isInstanceOf(RuntimeException.class);
+        assertThatThrownBy(() -> principals.runAs(
+                        new Principal(missingOrg, "test", "Test"),
+                        () -> registration.register(missingOrg, fixture("orders-api.yaml"), "service.yaml", null)))
+                // The specific exception, so this cannot pass because something
+                // unrelated failed earlier - which is exactly how the previous
+                // version of this test passed while never reaching the database.
+                .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
 
-        assertThat(jdbc.queryForObject(
-                        "select count(*) from service where repository = 'ambitious-concepts/orders-api'",
-                        Integer.class))
+        assertThat(jdbc.queryForObject("select count(*) from service", Integer.class))
                 .isZero();
         assertThat(jdbc.queryForObject("select count(*) from policy_result", Integer.class))
                 .as("a scorecard must not survive a registration that did not happen")

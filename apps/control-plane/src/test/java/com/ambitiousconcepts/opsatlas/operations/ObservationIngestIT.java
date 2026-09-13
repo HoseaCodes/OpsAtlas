@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.ambitiousconcepts.opsatlas.catalog.api.ServiceRegistration;
+import com.ambitiousconcepts.opsatlas.identity.api.Principal;
+import com.ambitiousconcepts.opsatlas.identity.api.PrincipalScope;
 import com.ambitiousconcepts.opsatlas.operations.api.EnvironmentHealth;
 import com.ambitiousconcepts.opsatlas.operations.api.HealthReadModel;
 import com.ambitiousconcepts.opsatlas.operations.api.Observation;
@@ -15,8 +17,10 @@ import com.ambitiousconcepts.opsatlas.support.PostgresTestBase;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -26,6 +30,10 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
+import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 /**
@@ -38,10 +46,32 @@ import org.springframework.jdbc.core.JdbcTemplate;
  * numbers are simply wrong.
  */
 @SpringBootTest
+@Import(ObservationIngestIT.FixedClock.class)
 class ObservationIngestIT extends PostgresTestBase {
 
     private static final Path EXAMPLES = Path.of(System.getProperty("opsatlas.examples.dir"));
     private static final UUID ORG = UUID.fromString("00000000-0000-4000-8000-000000000001");
+
+    /** Noon UTC, so every timestamp below sits safely in the past. */
+    static final Instant NOW = Instant.parse("2026-09-13T12:00:00Z");
+
+    /**
+     * Time is held still for this suite.
+     *
+     * <p>Without it these tests depend on the hour they run at: the ingest
+     * clamps observations that claim to be in the future, so a hardcoded
+     * timestamp is in the past in the afternoon and clamped in the morning. That
+     * is a genuine property worth having, and a test that only passes after
+     * midday is not the way to demonstrate it.
+     */
+    @TestConfiguration
+    static class FixedClock {
+        @Bean
+        @Primary
+        Clock fixedClock() {
+            return Clock.fixed(NOW, ZoneOffset.UTC);
+        }
+    }
 
     @Autowired
     private ObservationIngest ingest;
@@ -51,6 +81,9 @@ class ObservationIngestIT extends PostgresTestBase {
 
     @Autowired
     private ServiceRegistration registration;
+
+    @Autowired
+    private PrincipalScope principals;
 
     @Autowired
     private JdbcTemplate jdbc;
@@ -71,7 +104,12 @@ class ObservationIngestIT extends PostgresTestBase {
         jdbc.update("delete from service");
         jdbc.update("delete from team");
 
-        var registered = registration.register(ORG, manifest("orders-api.yaml"), "service.yaml", "main");
+        // Registration writes an audit event, and an audit event needs an actor.
+        // Called outside a request there is none, so one is bound explicitly -
+        // which is what PrincipalScope exists for.
+        var registered = principals.runAs(
+                new Principal(ORG, "test", "Test"),
+                () -> registration.register(ORG, manifest("orders-api.yaml"), "service.yaml", "main"));
         serviceId = registered.service().id();
         productionId = registered.service().environments().stream()
                 .filter(environment -> environment.name().equals("production"))
@@ -120,7 +158,7 @@ class ObservationIngestIT extends PostgresTestBase {
     @Test
     @DisplayName("a first healthy probe creates state")
     void first_probe_creates_state() {
-        Instant now = Instant.parse("2026-09-13T10:00:00Z");
+        Instant now = NOW.minus(Duration.ofHours(2));
         send("batch-000000001", healthy(productionId, now, 42));
 
         EnvironmentHealth state = production();
@@ -136,7 +174,7 @@ class ObservationIngestIT extends PostgresTestBase {
     void a_blip_is_not_an_outage() {
         // Painting the catalog red for a single dropped probe teaches people to
         // ignore the signal.
-        Instant start = Instant.parse("2026-09-13T10:00:00Z");
+        Instant start = NOW.minus(Duration.ofHours(2));
         send("batch-000000001", failed(productionId, start, ProbeOutcome.TIMEOUT, "Timed out after 2s."));
         assertThat(production().status()).isEqualTo("DEGRADED");
 
@@ -151,7 +189,7 @@ class ObservationIngestIT extends PostgresTestBase {
     @Test
     @DisplayName("a success resets the failure run and clears the explanation")
     void recovery_resets() {
-        Instant start = Instant.parse("2026-09-13T10:00:00Z");
+        Instant start = NOW.minus(Duration.ofHours(2));
         send("batch-000000001", failed(productionId, start, ProbeOutcome.UNREACHABLE, "Connection refused."));
         send("batch-000000002", failed(productionId, start.plusSeconds(30), ProbeOutcome.UNREACHABLE, "Connection refused."));
 
@@ -166,7 +204,7 @@ class ObservationIngestIT extends PostgresTestBase {
     @Test
     @DisplayName("a failing environment keeps its last successful response time")
     void latency_survives_a_failure() {
-        Instant start = Instant.parse("2026-09-13T10:00:00Z");
+        Instant start = NOW.minus(Duration.ofHours(2));
         send("batch-000000001", healthy(productionId, start, 40));
         send("batch-000000002", failed(productionId, start.plusSeconds(30), ProbeOutcome.TIMEOUT, "Timed out."));
 
@@ -181,7 +219,7 @@ class ObservationIngestIT extends PostgresTestBase {
     void stale_results_are_ignored_for_state() {
         // Two observers, or one retrying, can deliver late. Letting a stale
         // probe win would make the catalog flap between two truths.
-        Instant now = Instant.parse("2026-09-13T10:00:00Z");
+        Instant now = NOW.minus(Duration.ofHours(2));
         send("batch-000000001", healthy(productionId, now, 20));
         send("batch-000000002", failed(productionId, now.minusSeconds(60), ProbeOutcome.TIMEOUT, "Timed out."));
 
@@ -199,7 +237,7 @@ class ObservationIngestIT extends PostgresTestBase {
         @Test
         @DisplayName("count probes and successes, and never store a row per probe")
         void counters_not_samples() {
-            Instant day = Instant.parse("2026-09-13T10:00:00Z");
+            Instant day = NOW.minus(Duration.ofHours(2));
             for (int i = 0; i < 20; i++) {
                 Observation observation = i % 5 == 0
                         ? failed(productionId, day.plusSeconds(i * 30L), ProbeOutcome.UNHEALTHY, "503 from readiness.")
@@ -231,7 +269,7 @@ class ObservationIngestIT extends PostgresTestBase {
         @Test
         @DisplayName("accumulate latency only from probes that answered")
         void timeouts_do_not_inflate_latency() {
-            Instant day = Instant.parse("2026-09-13T10:00:00Z");
+            Instant day = NOW.minus(Duration.ofHours(2));
             send("batch-000000001", healthy(productionId, day, 100));
             send("batch-000000002", healthy(productionId, day.plusSeconds(30), 200));
             // A timeout has no round trip to report. Folding the timeout value
@@ -248,7 +286,7 @@ class ObservationIngestIT extends PostgresTestBase {
         @Test
         @DisplayName("report probe availability over the window, or null when nothing was probed")
         void availability_is_counted_not_estimated() {
-            Instant day = Instant.parse("2026-09-13T10:00:00Z");
+            Instant day = NOW.minus(Duration.ofHours(2));
             send("batch-000000001", healthy(productionId, day, 10));
             send("batch-000000002", healthy(productionId, day.plusSeconds(30), 10));
             send("batch-000000003", failed(productionId, day.plusSeconds(60), ProbeOutcome.UNHEALTHY, "503."));
@@ -267,7 +305,7 @@ class ObservationIngestIT extends PostgresTestBase {
         @Test
         @DisplayName("a replayed batch applies nothing and returns the original counts")
         void replay_is_a_no_op() {
-            Instant now = Instant.parse("2026-09-13T10:00:00Z");
+            Instant now = NOW.minus(Duration.ofHours(2));
             var first = send("retried-batch-01", healthy(productionId, now, 25));
             assertThat(first.applied()).isEqualTo(1);
             assertThat(first.replayed()).isFalse();
@@ -288,7 +326,7 @@ class ObservationIngestIT extends PostgresTestBase {
         void distinct_batches_both_apply() {
             // Idempotency is per batch, not per observation: an observer that
             // genuinely probed twice reports two batches.
-            Instant now = Instant.parse("2026-09-13T10:00:00Z");
+            Instant now = NOW.minus(Duration.ofHours(2));
             send("batch-aaaaaaaa", healthy(productionId, now, 25));
             send("batch-bbbbbbbb", healthy(productionId, now.plusSeconds(30), 25));
 
@@ -298,7 +336,7 @@ class ObservationIngestIT extends PostgresTestBase {
         @Test
         @DisplayName("a batch with no key is refused, not accepted quietly")
         void a_key_is_required() {
-            assertThatThrownBy(() -> send("short", healthy(productionId, Instant.now(), 10)))
+            assertThatThrownBy(() -> send("short", healthy(productionId, NOW, 10)))
                     .isInstanceOf(ValidationFailedException.class)
                     .satisfies(e -> assertThat(((ValidationFailedException) e).violations())
                             .anyMatch(violation -> violation.pointer().equals("/idempotencyKey")));
@@ -313,7 +351,7 @@ class ObservationIngestIT extends PostgresTestBase {
         // An observer holding a slightly stale service list is normal. Failing
         // the whole batch over one retired environment would lose every other
         // result in it.
-        Instant now = Instant.parse("2026-09-13T10:00:00Z");
+        Instant now = NOW.minus(Duration.ofHours(2));
         var result = send(
                 "mixed-batch-01",
                 healthy(productionId, now, 30),
@@ -331,12 +369,12 @@ class ObservationIngestIT extends PostgresTestBase {
         // its results would make the catalog quietly blind rather than visibly
         // wrong; writing them would create a counter row for a day that has not
         // happened.
-        var result = send("skewed-batch-1", healthy(productionId, Instant.now().plus(Duration.ofDays(2)), 10));
+        var result = send("skewed-batch-1", healthy(productionId, NOW.plus(Duration.ofDays(2)), 10));
 
         assertThat(result.applied()).isEqualTo(1);
         assertThat(production().days()).hasSize(1);
         assertThat(production().days().get(0).day())
-                .isEqualTo(java.time.LocalDate.now(java.time.ZoneOffset.UTC).toString());
+                .isEqualTo(NOW.atZone(ZoneOffset.UTC).toLocalDate().toString());
     }
 
     @Test
@@ -359,7 +397,7 @@ class ObservationIngestIT extends PostgresTestBase {
                 : UUID.fromString(jdbc.queryForObject(
                         "select id::text from environment where name = 'staging'", String.class));
 
-        Instant now = Instant.parse("2026-09-13T10:00:00Z");
+        Instant now = NOW.minus(Duration.ofHours(2));
         send("batch-000000001", healthy(productionId, now, 20));
         send("batch-000000002", failed(stagingId, now, ProbeOutcome.UNREACHABLE, "Connection refused."));
 
