@@ -11,6 +11,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/ambitious-concepts/opsatlas/observer/internal/tracing"
 )
 
 // Observation is one probe result, in the shape the control plane accepts.
@@ -44,11 +46,18 @@ type Reporter struct {
 }
 
 // New returns a Reporter.
+//
+// The transport carries W3C trace context, which is what makes a probe and the
+// registration or state change it caused one trace rather than three
+// unconnected ones (ADR 0011).
 func New(baseURL, observerID string, timeout time.Duration) *Reporter {
 	return &Reporter{
 		baseURL:    strings.TrimRight(baseURL, "/"),
 		observerID: observerID,
-		http:       &http.Client{Timeout: timeout},
+		http: &http.Client{
+			Timeout:   timeout,
+			Transport: tracing.Transport(nil),
+		},
 	}
 }
 

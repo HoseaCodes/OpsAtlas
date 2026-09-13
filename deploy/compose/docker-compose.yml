@@ -36,6 +36,82 @@ services:
       start_period: 3s
     restart: unless-stopped
 
+  # ---------------------------------------------------------------------------
+  # Telemetry. Behind a profile, so `make up` still starts one container and
+  # `make up-telemetry` starts the rest. A developer working on the catalog
+  # should not have to run a collector, and four containers that nobody looks
+  # at is the placeholder architecture CLAUDE.md section 3 rule 3 rules out.
+  # ---------------------------------------------------------------------------
+  collector:
+    image: otel/opentelemetry-collector-contrib:0.115.1
+    container_name: opsatlas-collector
+    profiles: ["telemetry"]
+    command: ["--config=/etc/otel/config.yaml"]
+    volumes:
+      - ./telemetry/collector.yaml:/etc/otel/config.yaml:ro
+    ports:
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP - what both apps export to
+    depends_on:
+      - tempo
+    restart: unless-stopped
+
+  tempo:
+    image: grafana/tempo:2.6.1
+    container_name: opsatlas-tempo
+    profiles: ["telemetry"]
+    command: ["-config.file=/etc/tempo/config.yaml"]
+    volumes:
+      - ./telemetry/tempo.yaml:/etc/tempo/config.yaml:ro
+      - tempo-data:/var/tempo
+    ports:
+      - "3200:3200"   # query API, which is what the verification script reads
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v3.0.1
+    container_name: opsatlas-prometheus
+    profiles: ["telemetry"]
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=7d
+      - --web.enable-lifecycle
+    volumes:
+      - ./telemetry/prometheus.yaml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "9091:9090"   # 9090 is the observer's own metrics port
+    # host.docker.internal is how a container reaches the control plane and the
+    # observer, which run on the host rather than in compose.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.4.0
+    container_name: opsatlas-grafana
+    profiles: ["telemetry"]
+    environment:
+      # Local only. Anonymous admin because this is a developer's machine and a
+      # login prompt on every restart is friction for no security: nothing here
+      # is reachable from outside the host.
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_FEATURE_TOGGLES_ENABLE: traceqlEditor
+    volumes:
+      - ./telemetry/grafana-datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml:ro
+    ports:
+      - "3001:3000"   # 3000 is the console
+    depends_on:
+      - tempo
+      - prometheus
+    restart: unless-stopped
+
 volumes:
   postgres-data:
     name: opsatlas-postgres-data
+  tempo-data:
+    name: opsatlas-tempo-data
+  prometheus-data:
+    name: opsatlas-prometheus-data

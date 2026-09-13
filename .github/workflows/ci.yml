@@ -159,6 +159,11 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Start the control plane
+        # No collector runs here. Export is best-effort and would be dropped
+        # anyway, but a retrying exporter writes a warning every few seconds and
+        # buries whatever a failing smoke test was trying to say.
+        env:
+          OPSATLAS_TRACING_ENABLED: "false"
         run: |
           ./gradlew :control-plane:bootRun --console=plain > /tmp/control-plane.log 2>&1 &
           for i in $(seq 1 120); do

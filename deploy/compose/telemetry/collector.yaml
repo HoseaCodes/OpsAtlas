@@ -1,0 +1,48 @@
+# OpenTelemetry Collector.
+#
+# Both the control plane and the observer export here over OTLP/HTTP rather
+# than writing to Tempo directly, so neither application knows what the storage
+# backend is. Replacing Tempo is a change to this file.
+
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+      grpc:
+        endpoint: 0.0.0.0:4317
+
+processors:
+  batch:
+    # Small, because this is a local stack and a developer watching a trace
+    # appear should not wait ten seconds for a batch to fill.
+    timeout: 1s
+    send_batch_size: 256
+
+  memory_limiter:
+    # A collector that runs out of memory takes the telemetry down at exactly
+    # the moment there is something worth seeing.
+    check_interval: 1s
+    limit_percentage: 75
+    spike_limit_percentage: 15
+
+exporters:
+  otlp/tempo:
+    endpoint: tempo:4317
+    tls:
+      insecure: true
+
+  # Visible in `docker compose logs collector`, which is how you tell "nothing
+  # is being exported" apart from "nothing is being received".
+  debug:
+    verbosity: basic
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlp/tempo, debug]
+  telemetry:
+    logs:
+      level: info

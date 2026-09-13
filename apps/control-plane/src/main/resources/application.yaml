@@ -79,7 +79,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics
+        include: health,info,metrics,prometheus
   endpoint:
     health:
       probes:
@@ -88,6 +88,40 @@ management:
   health:
     db:
       enabled: true
+
+  # ---------------------------------------------------------------------------
+  # Telemetry (ADR 0011). Traces are exported over OTLP; metrics are scraped
+  # from /actuator/prometheus rather than pushed, so the control plane needs no
+  # knowledge of who is collecting.
+  # ---------------------------------------------------------------------------
+  tracing:
+    enabled: ${OPSATLAS_TRACING_ENABLED:true}
+    sampling:
+      # Everything. This system's traffic is a poll every five minutes and the
+      # occasional human request, and sampling would mean the one trace someone
+      # goes looking for is the one that was dropped - which would also make the
+      # correlation id unreliable, since it *is* the trace id. Recorded in ADR
+      # 0011 as the first thing to revisit if volume ever justifies it.
+      probability: ${OPSATLAS_TRACE_SAMPLE_RATE:1.0}
+    propagation:
+      # W3C traceparent, as CLAUDE.md section 9 requires. Named explicitly
+      # rather than left to a default, because the observer speaks W3C and a
+      # silent switch to B3 would break the join without breaking a build.
+      type: w3c
+
+  otlp:
+    tracing:
+      endpoint: ${OPSATLAS_OTLP_ENDPOINT:http://localhost:4318/v1/traces}
+      # A collector that is down must not slow down or fail a request. The
+      # exporter batches and drops on the floor; losing a trace is an
+      # acceptable outcome, delaying a response to deliver one is not.
+      timeout: 3s
+
+  observations:
+    key-values:
+      # Every span and metric carries these, so telemetry from two deployments
+      # is separable without guessing from hostnames.
+      deployment.environment: ${OPSATLAS_DEPLOYMENT_ENVIRONMENT:local}
 
 # ---------------------------------------------------------------------------
 # Repository sync (ADR 0008). OpsAtlas polls; it never registers a webhook and
@@ -123,6 +157,8 @@ logging:
   pattern:
     # Every line carries the correlation id and the organization, so a reported
     # failure and the log line that explains it are the same search.
+    # correlationId IS the trace id when a request is traced (ADR 0011), so one
+    # string in a log line searches the logs, the traces and the audit log.
     console: "%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %-5level [corr=%X{correlationId:-none} org=%X{orgId:-none}] %logger{36} - %msg%n"
   level:
     com.ambitiousconcepts.opsatlas: ${OPSATLAS_LOG_LEVEL:INFO}

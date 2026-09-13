@@ -1,0 +1,29 @@
+# Datasources, provisioned rather than clicked.
+#
+# A Grafana whose datasources are configured by hand is a Grafana that is
+# configured differently on every machine.
+
+apiVersion: 1
+
+datasources:
+  - name: Tempo
+    type: tempo
+    uid: tempo
+    access: proxy
+    url: http://tempo:3200
+    isDefault: true
+    jsonData:
+      # Links a span to the metrics for the same service, so "this request was
+      # slow" leads to "and here is what that service was doing".
+      tracesToMetrics:
+        datasourceUid: prometheus
+      serviceMap:
+        datasourceUid: prometheus
+
+  - name: Prometheus
+    type: prometheus
+    uid: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    jsonData:
+      httpMethod: POST

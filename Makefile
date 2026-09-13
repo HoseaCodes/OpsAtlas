@@ -10,11 +10,11 @@ COMPOSE := docker compose -f deploy/compose/docker-compose.yml
 GRADLE  := ./gradlew --console=plain
 
 .DEFAULT_GOAL := help
-.PHONY: help install check-examples typecheck test test-all test-java test-web test-observer check dev dev-web dev-observer e2e up down logs psql clean clean-db openapi check-openapi
+.PHONY: help install check-examples typecheck test test-all test-java test-web test-observer check dev dev-web dev-observer e2e up up-telemetry down down-telemetry logs psql clean clean-db openapi check-openapi
 
 help: ## Show the targets that exist today
 	@echo ""
-	@echo "  OpsAtlas — phase 7 (see docs/roadmap.md)"
+	@echo "  OpsAtlas — phase 8 (see docs/roadmap.md)"
 	@echo ""
 	@grep -E '^[a-z-]+:.*?## .*$$' $(MAKEFILE_LIST) \
 		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[1m%-16s\033[0m %s\n", $$1, $$2}'
@@ -34,8 +34,22 @@ up: ## Start PostgreSQL and wait until it is accepting connections
 	done; \
 	echo "PostgreSQL did not become healthy in 60s. Try: make logs"; exit 1
 
+up-telemetry: ## Start the collector, Tempo, Prometheus and Grafana
+	$(COMPOSE) --profile telemetry up -d
+	@echo ""
+	@echo "  Grafana     http://localhost:3001   (Tempo and Prometheus provisioned)"
+	@echo "  Tempo       http://localhost:3200"
+	@echo "  Prometheus  http://localhost:9091"
+	@echo ""
+	@echo "  Behind a profile on purpose: working on the catalog should not"
+	@echo "  require running four more containers."
+	@echo ""
+
 down: ## Stop PostgreSQL, keeping its data
 	$(COMPOSE) down
+
+down-telemetry: ## Stop the telemetry stack
+	$(COMPOSE) --profile telemetry down
 
 logs: ## Follow the PostgreSQL logs
 	$(COMPOSE) logs -f postgres

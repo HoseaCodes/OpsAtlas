@@ -4,17 +4,18 @@ A service operations control plane: it catalogs services, records who owns them,
 checks whether they are healthy, and scores them against production-readiness
 policy.
 
-> **Status: phase 7 done — the system now measures something.** A Go observer
-> probes every declared health endpoint, and the catalog reports what it found.
-> A watched repository's `service.yaml` is read on a schedule and registered
-> automatically. The catalog vertical slice works end to end:
-> a `service.yaml` is submitted through the console, validated, stored, scored
-> against ten policy rules and audited, and the result is browsable. **Nothing in
-> this system observes anything** — there is no health monitoring, and there will
-> not be until the observer (phase 7). Everything else in this README is described
-> as what it will be, and labelled as such. The
-> [what actually works](#what-actually-works-today) table below is the
-> authoritative answer.
+> **Status: phase 8 done — a request is explicable end to end.** The catalog
+> vertical slice works: a `service.yaml` is submitted through the console or read
+> from a watched repository, validated, stored, scored against ten policy rules
+> and audited, and the result is browsable. A Go observer probes every declared
+> health endpoint and the catalog reports what it found. As of phase 8 **a
+> request's correlation ID is its W3C trace ID**, so one string read off a failure
+> searches the logs, the traces and the audit log — and a probe, the report it
+> produced and the state change that followed are **one trace across two
+> processes** ([ADR 0011](docs/adr/0011-correlation-id-is-the-trace-id.md)).
+> The [what actually works](#what-actually-works-today) table below is the
+> authoritative answer, and it lists what is *not* built as carefully as what
+> is.
 
 ---
 
@@ -69,7 +70,7 @@ jobs — selection, focus ring, error-budget fill, open-incident emphasis. See
 | Semantic validation — duplicate environment names | **Real** | same |
 | Architecture decisions, phases 0–10 | **Real** (written down) | [`docs/adr/`](docs/adr/), [`docs/roadmap.md`](docs/roadmap.md) |
 | Design system extracted from the prototype | **Real** (written down) | [`docs/design/tokens.md`](docs/design/tokens.md) |
-| Control plane (Java 21 / Spring Boot) | **Real** | `make test` — 238 JVM tests |
+| Control plane (Java 21 / Spring Boot) | **Real** | `make test` — 243 JVM tests |
 | PostgreSQL schema and Flyway migrations | **Real** | `SeedConsistencyIT`, and Hibernate `ddl-auto: validate` refuses to start on drift |
 | `POST /api/v1/services` — register from a `service.yaml` | **Real** | `RegistrationApiIT`, plus 13 curl assertions against a running server |
 | Safe YAML ingestion — size cap, no alias expansion, no type construction | **Real** | `ManifestValidationTest` — billion-laughs, `!!java` tags, duplicate keys and a 70 KiB body are all refused |
@@ -81,7 +82,7 @@ jobs — selection, focus ring, error-budget fill, open-incident emphasis. See
 | OpenAPI document generated from the code, drift-checked | **Real** | `make check-openapi` fails the build on any difference |
 | Swagger UI over that document, at `/swagger-ui.html` | **Real** | served by springdoc; on by default locally, off when `OPSATLAS_SWAGGER_UI=false` |
 | Typed TypeScript client, no hand-written API types | **Real** | `make typecheck` |
-| Web console — catalog, detail, scorecard, register by paste | **Real** | 29 component tests, 9 Playwright tests against the real stack |
+| Web console — catalog, detail, scorecard, register by paste | **Real** | 37 component tests, 19 Playwright tests against the real stack |
 | A copyable prompt on `/register`, generated from the schema and the live rules | **Real** | `manifestPrompt.test.ts` walks the real schema and fails if a field is missing from the prompt; a Playwright test reads the clipboard |
 | Loading / empty / partial-failure / error / never-observed states | **Real** | `states.test.tsx`, and the detail page settles its two requests independently |
 | Polling a GitHub repository for its `service.yaml` | **Real** | `SourceSyncIT`, `SourceApiIT`, and a one-off check against the real api.github.com |
@@ -89,11 +90,18 @@ jobs — selection, focus ring, error-budget fill, open-incident emphasis. See
 | A failing sync leaves the registered service untouched | **Real, and verified** | `SourceSyncIT` — seven failure modes, each asserting the service survives |
 | Read-only by construction — no webhook, no write scope | **Real, enforced** | `ArchitectureTest` — only `integrations` may make outbound HTTP calls |
 | Sources page with sync status and per-source explanations | **Real** | 4 component tests, 5 Playwright tests |
-| **Go observer** — probes health endpoints, bounded concurrency, jitter, retries | **Real** | 26 Go tests, race-clean; run live against the control plane |
+| **Go observer** — probes health endpoints, bounded concurrency, jitter, retries | **Real** | 33 Go tests, race-clean; run live against the control plane |
 | Probe availability, per environment and per UTC day | **Real** | `ObservationIngestIT` (23 tests), 5 Playwright tests |
-| Health meter and 30-day ribbon rendering real measurements | **Real** | verified in a browser |
+| Health meter and 30-day ribbon rendering real measurements | **Real** | `health.spec.ts` — 5 Playwright tests driving a real browser against real observations |
 | Idempotent observation ingestion | **Real** | a replayed batch applies nothing; counters are where a double-write is silent |
-| Prometheus metrics and `/healthz` on the observer | **Real** | served on `:9090`; verified live |
+| Prometheus metrics and `/healthz` on the observer | **Real** | served on `:9090`; scraped live — the `observer` target reports `up` and `opsatlas_observer_probes_total` returns series |
+| Correlation ID **is** the W3C trace ID | **Real** | `TraceCorrelationIT` (5) — including an inbound `traceparent` being joined rather than replaced |
+| A caller's own `X-Correlation-Id` echoed unchanged, and tagged on the span | **Real** | `TraceCorrelationIT` |
+| W3C trace context propagated observer → control plane | **Real, and verified live** | one Tempo trace spanning both processes: `observer.pass` with the control plane's `POST /api/v1/observations` as a child |
+| Probes deliberately carry **no** trace context | **Real, enforced** | `tracing_test.go` — a probe that sent `traceparent` fails the test; verified by mutation |
+| OTLP export is best-effort — a collector that is down costs a request nothing | **Real** | `TraceCorrelationIT` points the exporter at a closed port and asserts requests still succeed |
+| Traces, metrics and dashboards locally (Tempo, Prometheus, Grafana) | **Real** | `make up-telemetry`; Prometheus scraping the control plane and the observer |
+| Logs shipped to a log store (Loki) | **Not built** | deferred with a reason — see below |
 | CI pipeline | **Written, never executed** | `.github/workflows/ci.yml` — there is no remote to run it |
 | Scorecard — ten declaration rules, tier-conditional | **Real** | `PolicyCheckTest` (49), `ScorecardApiIT` (12) |
 | `NOT_APPLICABLE` as a real outcome, with a moving denominator | **Real** | a tier 3 service is scored out of 7, not 10 |
@@ -106,7 +114,7 @@ jobs — selection, focus ring, error-budget fill, open-incident emphasis. See
 | Org scoping via stub `PrincipalResolver` | **Real, but unauthenticated** | `SeedConsistencyIT`, `OrgIsolationIT` |
 | Dependency graph and blast radius | **Not built** | needs trace data |
 | Real-user SLO measurement | **Not built** | probe availability is not an SLO — see below |
-| Latency percentiles | **Not built** | needs the telemetry pipeline; means and maxima only |
+| Latency percentiles over stored history | **Not built** | span durations are in Tempo; nothing aggregates them, and the rollups deliberately store mean and max only (ADR 0009) |
 | Cost attribution | **Not planned for slice one** | — |
 | Incidents | **Not planned for slice one** | — |
 
@@ -134,15 +142,15 @@ measurement will be labelled in the interface, not only in a comment.
 
 ## Architecture
 
-Six planes, of which slice one builds parts of two:
+Six planes. Five of them now have something real in them:
 
-| Plane | What | Slice one |
+| Plane | What | State |
 |---|---|---|
-| Presentation | Next.js console | phase 4 |
-| **Control** | catalog, ownership, policy, scorecards | **phases 1–3** |
-| Execution | Go observers, probes, reconciliation | phase 7 |
-| Event | durable normalized platform events | phase 9 |
-| Telemetry | metrics, logs, traces | phase 8 |
+| Presentation | Next.js console | **built** — phase 4 |
+| **Control** | catalog, ownership, policy, scorecards | **built** — phases 1–3, 6 |
+| Execution | Go observer, probes | **built** — phase 7; reconciliation is not, and needs a deployment concept |
+| Telemetry | traces and metrics | **built** — phase 8; logs are on stdout and shipped nowhere |
+| Event | durable normalized platform events | not built — phase 9, and §6 says it waits for a demonstrated need |
 | Data | the monitored applications themselves | — |
 
 The control plane is a **modular monolith**, not microservices:
@@ -151,15 +159,19 @@ The control plane is a **modular monolith**, not microservices:
 com.ambitiousconcepts.opsatlas
 ├── catalog        services, environments, registration, service.yaml ingestion
 ├── governance     policies, scorecards, audit events
+├── integrations   watched repositories, polled read-only
+├── operations     observations rolled up, the health read model
 ├── identity       organizations, teams, principals
-└── shared         errors, pagination, correlation, time — depends on nothing
+└── shared         errors, pagination, correlation, tracing — depends on nothing
 ```
 
 Modules talk through public interfaces in their own `api` package. Nothing
 reaches into another module's `internal` package, and a test fails the build if
-it does. `integrations` and `operations` are in
-[`docs/roadmap.md`](docs/roadmap.md) and not on disk, because they have no
-contents yet. See [ADR 0001](docs/adr/0001-modular-monolith-as-one-gradle-module.md).
+it does — `ArchitectureTest`, 15 rules. The dependencies run one way, and
+`operations` serving health through its own endpoints rather than through the
+catalog response is what keeps them acyclic
+([ADR 0010](docs/adr/0010-health-is-served-separately-from-the-catalog.md)). See
+[ADR 0001](docs/adr/0001-modular-monolith-as-one-gradle-module.md).
 
 ### Key decisions
 
@@ -175,9 +187,11 @@ contents yet. See [ADR 0001](docs/adr/0001-modular-monolith-as-one-gradle-module
 | [0008](docs/adr/0008-polled-sources-not-webhooks.md) | Manifests are polled, never pushed by webhook, so OpsAtlas never holds write access to a monitored repository |
 | [0009](docs/adr/0009-observations-are-rolled-up-not-a-time-series.md) | Observations are counters, never a row per probe; storage is bounded and independent of probe frequency |
 | [0010](docs/adr/0010-health-is-served-separately-from-the-catalog.md) | Health is served by its own endpoints so `catalog` and `operations` stay acyclic |
+| [0011](docs/adr/0011-correlation-id-is-the-trace-id.md) | The correlation ID *is* the trace ID, when there is one — one string searches the logs, the traces and the audit log |
 
-Diagrams of what exists — context, modules, the registration sequence and the
-data model — are in [`docs/architecture/slice-one.md`](docs/architecture/slice-one.md).
+Diagrams of what exists — context, modules, the registration sequence, one
+request traced across both processes, and the data model — are in
+[`docs/architecture/slice-one.md`](docs/architecture/slice-one.md).
 
 ### Watching a repository
 
@@ -242,6 +256,66 @@ Three more things it deliberately does not do:
   against, and no deployment concept exists yet. Calling a failed probe a
   "drift" would be calling an outage something it is not.
 
+### Seeing one request end to end
+
+```bash
+make up-telemetry   # collector, Tempo, Prometheus, Grafana
+make dev            # control plane on :8080
+make dev-observer   # in another terminal
+```
+
+| | |
+|---|---|
+| Grafana | <http://localhost:3001> — Tempo and Prometheus already provisioned |
+| Tempo | <http://localhost:3200> |
+| Prometheus | <http://localhost:9091> |
+| Collector | OTLP on 4317 (gRPC) and 4318 (HTTP) |
+
+**Every response carries one identifier that works everywhere.**
+
+```bash
+curl -si localhost:8080/api/v1/services | grep -i x-correlation-id
+# x-correlation-id: 9f3c1a2e5b7d4f60a8c9e1b2d3f40516
+```
+
+That is a W3C trace ID, and it is the same string in the log line, in the
+`audit_event` row, in any problem document the request produced, and in Tempo.
+Paste it into Grafana's Tempo search and you get the request. Send your own
+`X-Correlation-Id` instead and you get *yours* back unchanged — it is attached to
+the span as an attribute, so searching by it still finds the trace.
+[ADR 0011](docs/adr/0011-correlation-id-is-the-trace-id.md) has the reasoning and
+the costs.
+
+The observer propagates the same context, so a probe and the registration it
+causes are one trace rather than three unconnected ones:
+
+```text
+opsatlas-observer      observer.pass                      377ms
+opsatlas-control-plane └─ http post /api/v1/observations   39ms
+```
+
+**Probes deliberately carry no trace context.** A probe reaches a service
+OpsAtlas does not own, and injecting our identifiers into somebody else's request
+headers — and so into their logs — is not ours to decide. A test asserts a probe
+sends no `traceparent`, and it was checked by mutation: giving the prober the
+traced transport makes it fail.
+
+Sampling is 100%, which is right at this system's volume — a poll every five
+minutes and the occasional human request — and would be wrong at a hundred times
+it. Sampling at less would mean the one trace someone goes looking for is the one
+that was dropped, and would make the correlation ID unreliable exactly when it
+matters.
+
+**Logs are not shipped anywhere.** Loki is in the roadmap and is deliberately not
+done: the control plane already logs structured JSON carrying the correlation ID,
+and shipping it needs an agent, a retention policy and a second query language to
+beat what `docker logs | grep` already does locally. Deferred with that reason
+rather than half-built.
+
+Tracing is on by default and costs nothing when no collector is listening — the
+exporter batches and drops. `OPSATLAS_TRACING_ENABLED=false` turns it off on both
+processes; `OPSATLAS_OTLP_ENDPOINT` points them somewhere else.
+
 ### The scorecard, and what it does not check
 
 Registering a service evaluates ten rules and stores the result in the same
@@ -280,21 +354,24 @@ The target stack is fixed for the life of the project. What is **wired today** i
 marked; the rest is listed so the direction is clear, not to imply it is present.
 
 **Control plane** — Java 21 ✓, Spring Boot 3 ✓, Gradle ✓, Spring Web ✓, Spring
-Validation ✓, Spring Data JPA ✓, PostgreSQL ✓, Flyway ✓, Actuator ✓,
-Testcontainers ✓, ArchUnit ✓. Not yet added: Spring Security (deliberately — the
-starter would put every endpoint behind a generated password, which is a security
-posture the project does not actually have), Micrometer, OpenTelemetry, Springdoc
-OpenAPI (phase 4).
+Validation ✓, Spring Data JPA ✓, PostgreSQL ✓, Flyway ✓, Actuator ✓, Springdoc
+OpenAPI ✓, Micrometer ✓ (Prometheus registry and the Micrometer Tracing bridge),
+OpenTelemetry ✓ (OTLP over HTTP), Testcontainers ✓, ArchUnit ✓. Not added: Spring
+Security — deliberately, because the starter would put every endpoint behind a
+generated password, which is a security posture the project does not actually
+have.
 
-**Console** — Next.js App Router, React, TypeScript in strict mode, Tailwind,
-TanStack Query, TanStack Table, Recharts, and a TypeScript client generated from
-the backend's OpenAPI document. Phase 4; none of it exists yet. Authorization,
-policy evaluation and scorecard computation live in the control plane, never in
-the console.
+**Console** — Next.js App Router ✓, React ✓, TypeScript in strict mode ✓,
+Tailwind ✓, TanStack Query ✓, and a TypeScript client generated from the
+backend's OpenAPI document ✓. TanStack Table and Recharts are not used: the
+catalog table is a plain table and the health visualisations are hand-drawn
+because their shapes are the design (`docs/design/tokens.md`), and neither
+library would carry that. Authorization, policy evaluation and scorecard
+computation live in the control plane, never in the console.
 
-**Observer** — Go 1.27 ✓, `prometheus/client_golang` ✓ for metrics. Standard
-library for everything else: HTTP, JSON, concurrency and scheduling are all
-stdlib, so the binary has one direct dependency.
+**Observer** — Go 1.27 ✓, `prometheus/client_golang` ✓ for metrics, and the
+OpenTelemetry Go SDK ✓ with `otelhttp` for trace context on outbound calls.
+Everything else is standard library: HTTP, JSON, concurrency and scheduling.
 
 **Contract tooling** — Ajv ✓ for schema validation in the workspace,
 snakeyaml-engine ✓ and networknt/json-schema-validator ✓ on the JVM side. The
@@ -312,7 +389,7 @@ the control-plane jar so both sides validate against identical bytes.
 | Node | ≥ 20.11 | the contract checks |
 | pnpm | 10.x | the contract checks |
 | GNU Make | 3.81+ | the entry point |
-| Docker | any recent | PostgreSQL, and the integration tests |
+| Docker | any recent | PostgreSQL, the integration tests, and — optionally — the `telemetry` compose profile |
 | Java | **none required** | Gradle provisions a Temurin 21 toolchain itself |
 | Go | 1.27+ | the observer (`apps/observer`) |
 
@@ -325,6 +402,7 @@ Gradle downloads one on first use — verified on a machine with only JDK 17 and
 ```bash
 make install    # install workspace dependencies
 make up         # start PostgreSQL and wait until it is accepting connections
+make up-telemetry  # optional: collector, Tempo, Prometheus, Grafana
 make dev        # database + control plane on :8080
 make dev-web    # in another terminal: the console on :3000
 make test       # everything that needs no running server
@@ -419,10 +497,11 @@ OpsAtlas/
 ├── apps/observer/          Go — probes health endpoints, reports back
 ├── apps/web/               Next.js console — catalog, scorecard, register
 ├── packages/contracts/     service.yaml JSON Schema and the fixture validator
-├── deploy/compose/         local PostgreSQL
+├── deploy/compose/         local PostgreSQL; collector, Tempo, Prometheus,
+│                           Grafana behind a compose profile
 ├── examples/services/      six valid manifests, eight invalid fixtures
 └── docs/
-    ├── adr/                0001–0010
+    ├── adr/                0001–0011
     ├── architecture/       what exists, in Mermaid
     ├── design/tokens.md    the design system, extracted from the prototype
     └── roadmap.md          phases, target layout, deferred decisions
@@ -444,8 +523,9 @@ Slice one is the catalog vertical slice, and nothing else.
 | 5 | CI and documentation close-out | **complete** |
 | 6 | GitHub sync — poll watched repositories | **complete** |
 | 7 | The Go observer, and everything health-shaped | **complete** |
-| 8 | OpenTelemetry pipeline — traces, real percentiles | next |
+| 8 | OpenTelemetry — traces across both processes, Tempo, Prometheus, Grafana | **complete** |
+| 9 | Transactional outbox, platform events, Redis read models | not started |
+| 10 | Terraform, Kubernetes, Helm, k6 | not started |
 
-After slice one: GitHub sync, the Go observer, the telemetry pipeline, events,
-and deployment. Details and the reasoning for the ordering are in
-[`docs/roadmap.md`](docs/roadmap.md).
+Details, what each remaining phase is waiting on, and the decisions deferred
+rather than forgotten are in [`docs/roadmap.md`](docs/roadmap.md).

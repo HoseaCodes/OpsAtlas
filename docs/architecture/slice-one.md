@@ -1,7 +1,7 @@
 # Architecture — what exists today
 
-Slice one plus phase 6. Deliberately a description of what is built, not of what
-is planned; the target layout and the remaining phases are in
+Slice one plus phases 6, 7 and 8. Deliberately a description of what is built,
+not of what is planned; the target layout and the remaining phases are in
 [`../roadmap.md`](../roadmap.md).
 
 ---
@@ -54,7 +54,7 @@ wrong.
 
 ```mermaid
 flowchart TD
-    subgraph cp["Control plane — one deployable, five modules"]
+    subgraph cp["Control plane — one deployable, six modules"]
         direction TB
         operations["<b>operations</b><br/>observations · rollups<br/>health read model"]
         integrations["<b>integrations</b><br/>watched sources · polling<br/><i>read-only, outbound</i>"]
@@ -76,9 +76,6 @@ flowchart TD
     catalog --> shared
     governance --> shared
     identity --> shared
-
-    ops["operations<br/><i>phase 7</i>"]
-    style ops stroke-dasharray: 4 3
 ```
 
 Each module exposes an `api` package and hides an `internal` one. `ArchitectureTest`
@@ -167,6 +164,9 @@ erDiagram
     organization ||--o{ audit_event : "scopes"
     organization ||--o{ source : "scopes"
     source |o--o| service : "produces (nullable)"
+    environment ||--o| environment_state : "current health"
+    environment ||--o{ environment_day : "one row per UTC day"
+    organization ||--o{ observation_batch : "idempotency keys"
 
     organization {
         uuid id PK
@@ -204,6 +204,30 @@ erDiagram
         text status "PASS · FAIL · NOT_APPLICABLE"
         text detail "required when FAIL"
     }
+    environment_state {
+        uuid environment_id PK
+        text status "HEALTHY · DEGRADED · DOWN · UNREACHABLE"
+        integer probes "counters, never a row per probe"
+        integer successes
+        timestamptz last_probe_at
+        timestamptz last_healthy_at "null until one succeeds"
+        bigint version "optimistic lock"
+    }
+    environment_day {
+        uuid environment_id PK
+        date day PK
+        integer probes
+        integer successes
+        bigint response_ms_sum "with min and max — not a distribution"
+        integer response_ms_min
+        integer response_ms_max
+    }
+    observation_batch {
+        uuid org_id PK
+        text idempotency_key PK
+        jsonb response "replayed verbatim to a retry"
+        timestamptz received_at "pruned by the retention job"
+    }
     audit_event {
         uuid id PK
         text action
@@ -235,6 +259,15 @@ Three things in that diagram are load-bearing and easy to miss:
   `OrgIsolationIT` proves it does.
 - **`audit_event` has no foreign key to `service`.** An audit entry must outlive
   what it describes; a cascade would erase exactly the record worth keeping.
+- **`environment_day` stores a sum, a min and a max — and that is the ceiling.**
+  Storage is environments × retained days, independent of how often the observer
+  probes (ADR 0009). The deliberate cost is that no percentile can ever be
+  computed from it, which is why the API reports mean and max and calls them
+  mean and max.
+- **`observation_batch` stores the response, not just the key.** A retry replays
+  the first attempt's answer verbatim; recomputing it could return something
+  different once state has moved on, and a retry must not be able to observe
+  that. Counters are exactly the shape where a double-write is silent.
 - **`source` carries two timestamps, not one.** `last_attempt_at` and
   `last_success_at` together answer "how current is what I am looking at", which
   is the question a reader of a failing source actually has. Neither answers it
@@ -243,14 +276,70 @@ Three things in that diagram are load-bearing and easy to miss:
 
 ---
 
+## One request, end to end
+
+The decision this draws is [ADR 0011](../adr/0011-correlation-id-is-the-trace-id.md):
+**a request's correlation ID is its trace ID.** Without it, a log line says
+`correlationId=8f2c…` while the trace covering the same work says `traceId=a41b…`,
+and joining them means joining on timestamps — which is how a two-minute
+investigation becomes twenty.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Obs as Observer (Go)
+    participant Svc as A monitored service
+    participant CP as Control plane
+    participant Col as OTLP collector
+    participant T as Tempo
+
+    Note over Obs: span observer.pass — trace 4bf92f35…
+    Obs->>Svc: GET /actuator/health/readiness
+    Note right of Svc: no traceparent — we do not<br/>own this service's logs
+    Svc-->>Obs: 200
+
+    Obs->>CP: POST /api/v1/observations<br/>traceparent: 00-4bf92f35…-…-01
+    Note over CP: joins the trace<br/>correlationId = 4bf92f35…
+    CP-->>Obs: 202 · X-Correlation-Id: 4bf92f35…
+
+    CP-->>Col: spans (OTLP/HTTP, batched)
+    Obs-->>Col: spans (OTLP/HTTP, batched)
+    Col-->>T: one trace, two services
+```
+
+Four properties of that picture are the design, and each is asserted rather than
+asserted-in-prose:
+
+- **The observer's span and the control plane's are one trace.** `traceparent`
+  goes out on the catalog and reporter clients, and the control plane joins it
+  rather than starting a second trace — `TraceCorrelationIT`.
+- **The probe carries nothing.** It reaches a system OpsAtlas does not own, and
+  putting our identifiers in somebody else's headers and logs is not a decision a
+  monitoring tool gets to make unilaterally. A Go test fails if a probe sends
+  `traceparent`, and it was checked by mutation rather than trusted.
+- **A caller's own `X-Correlation-Id` wins**, and is tagged on the span. §9 says
+  the ID is accepted and echoed; a caller who sends one and gets a different one
+  back cannot correlate anything.
+- **Export is best-effort.** The collector being down is an ordinary condition
+  and must cost a request nothing — `TraceCorrelationIT` points the exporter at a
+  closed port and asserts the requests still succeed.
+
+Metrics go the other way: nothing is pushed. Prometheus scrapes
+`/actuator/prometheus` on the control plane and `:9090/metrics` on the observer,
+so neither process needs to know who is collecting, and neither fails if nobody
+is.
+
+---
+
 ## What is not here
 
 | Not present | Why | Phase |
 |---|---|---|
-| Real-user SLO measurement | probe availability is not an SLO; this needs traffic data | 8 |
-| Latency percentiles | a sum, a min and a max are not a distribution (ADR 0009) | 8 |
+| Real-user SLO measurement | probe availability is not an SLO; this needs real traffic, not a prober | later |
+| Latency percentiles | span durations are in Tempo, but nothing aggregates them, and the rollups store mean and max by design (ADR 0009) | later |
+| Log shipping (Loki) | stdout JSON already carries the correlation ID; an agent, a retention policy and a second query language is a lot to beat `docker logs \| grep` (ADR 0011) | later |
 | Desired-versus-observed drift | needs a deployment concept to compare against | later |
-| Dependency graph, blast radius | needs the observer and trace data | 7 |
+| Dependency graph, blast radius | the traces exist now, but deriving a graph from them is its own feature | later |
 | Authentication and authorization | stubbed by design — [ADR 0003](../adr/0003-org-scoping-stub.md) | later |
 | Policy exceptions | need an approver, which needs identity | later |
 | A GitHub App (higher rate limits, no personal credential) | needs a registered application, a private key and an installation flow | later |

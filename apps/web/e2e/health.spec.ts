@@ -47,7 +47,25 @@ test.beforeAll(async () => {
     headers: { "Content-Type": "application/yaml" },
     body: MANIFEST,
   });
-  if (registered.status !== 201 && registered.status !== 200) {
+  if (registered.status === 409) {
+    // An earlier run left a different manifest at this repository path. The
+    // API's own answer to a 409 is PUT with If-Match, so setup does that
+    // instead of requiring a clean database - CI gets one, a developer's
+    // machine does not.
+    const current = await fetch(`${API}/api/v1/services/probed-api`);
+    const etag = current.headers.get("etag");
+    if (!current.ok || !etag) {
+      throw new Error(`setup could not read probed-api after a 409: ${current.status}`);
+    }
+    const updated = await fetch(`${API}/api/v1/services/probed-api`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/yaml", "If-Match": etag },
+      body: MANIFEST,
+    });
+    if (!updated.ok) {
+      throw new Error(`setup failed to update probed-api: ${updated.status} ${await updated.text()}`);
+    }
+  } else if (registered.status !== 201 && registered.status !== 200) {
     throw new Error(`setup failed to register: ${registered.status} ${await registered.text()}`);
   }
 

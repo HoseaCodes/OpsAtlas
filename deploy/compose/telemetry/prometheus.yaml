@@ -1,0 +1,32 @@
+# Prometheus scrapes; nothing pushes to it.
+#
+# That is why neither application needs to know Prometheus exists: the control
+# plane exposes /actuator/prometheus and the observer exposes /metrics, and
+# both would be just as correct with nothing scraping them.
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    deployment_environment: local
+
+scrape_configs:
+  - job_name: control-plane
+    metrics_path: /actuator/prometheus
+    static_configs:
+      # Both run on the host rather than in compose, so they are reached
+      # through the gateway rather than by service name.
+      - targets: ["host.docker.internal:8080"]
+        labels:
+          service: opsatlas-control-plane
+
+  - job_name: observer
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["host.docker.internal:9090"]
+        labels:
+          service: opsatlas-observer
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

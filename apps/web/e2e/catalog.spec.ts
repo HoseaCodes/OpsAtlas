@@ -9,15 +9,46 @@ function manifest(name: string): string {
   return readFileSync(join(EXAMPLES, name), "utf8");
 }
 
-/** Registers a manifest directly against the control plane, for setup. */
+/**
+ * Ensures this manifest is what is registered, whatever was there before.
+ *
+ * A 409 means an earlier run left a different manifest at the same repository
+ * path, and the API's own answer to that is PUT with If-Match - so setup does
+ * that rather than requiring a clean database. CI gets a fresh one; a
+ * developer's machine does not, and a smoke test that only passes on an empty
+ * database is a smoke test that stops being run.
+ */
 async function register(name: string) {
+  const body = manifest(name);
   const response = await fetch(`${API}/api/v1/services`, {
     method: "POST",
     headers: { "Content-Type": "application/yaml" },
-    body: manifest(name),
+    body,
   });
-  if (!response.ok && response.status !== 200) {
+  if (response.ok) return;
+  if (response.status !== 409) {
     throw new Error(`Setup failed to register ${name}: ${response.status} ${await response.text()}`);
+  }
+  await replace(name.replace(/\.ya?ml$/, ""), body);
+}
+
+/** Updates an already-registered service to match the manifest. */
+async function replace(slug: string, body: string) {
+  const current = await fetch(`${API}/api/v1/services/${slug}`);
+  if (!current.ok) {
+    throw new Error(`Setup could not read ${slug} after a 409: ${current.status}`);
+  }
+  const etag = current.headers.get("etag");
+  if (!etag) {
+    throw new Error(`Setup needs an ETag to update ${slug}; the detail response carried none`);
+  }
+  const updated = await fetch(`${API}/api/v1/services/${slug}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/yaml", "If-Match": etag },
+    body,
+  });
+  if (!updated.ok) {
+    throw new Error(`Setup failed to update ${slug}: ${updated.status} ${await updated.text()}`);
   }
 }
 

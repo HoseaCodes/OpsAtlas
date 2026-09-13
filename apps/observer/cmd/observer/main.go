@@ -27,6 +27,10 @@ import (
 	"github.com/ambitious-concepts/opsatlas/observer/internal/metrics"
 	"github.com/ambitious-concepts/opsatlas/observer/internal/probe"
 	"github.com/ambitious-concepts/opsatlas/observer/internal/report"
+	"github.com/ambitious-concepts/opsatlas/observer/internal/tracing"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
 
 func main() {
@@ -59,6 +63,15 @@ func run(cfg config.Config, logger *slog.Logger) int {
 	// context, so a signal unwinds the whole thing rather than killing it.
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	shutdownTracing, err := tracing.Setup(ctx, "opsatlas-observer", cfg.ObserverID)
+	if err != nil {
+		// Not fatal. An observer that cannot export traces is still probing,
+		// and probing is the job; refusing to start would trade something
+		// useful for something merely visible.
+		logger.Warn("tracing is not configured; continuing without it", "error", err)
+		shutdownTracing = func(context.Context) error { return nil }
+	}
 
 	instruments := metrics.New()
 	catalogClient := catalog.New(cfg.APIURL, 30*time.Second)
@@ -119,6 +132,12 @@ loop:
 	if err := server.Shutdown(shutdownCtx); err != nil {
 		logger.Warn("metrics endpoint did not shut down cleanly", "error", err)
 	}
+	// Flush buffered spans before exiting, so the pass that was in flight when
+	// the signal arrived is still explicable afterwards.
+	if err := shutdownTracing(shutdownCtx); err != nil {
+		logger.Warn("tracing did not flush cleanly", "error", err)
+	}
+
 	wait.Wait()
 	return 0
 }
@@ -137,14 +156,27 @@ func pass(
 	}
 
 	started := time.Now()
+
+	// One span per pass. Everything below - the probes, reading the catalog,
+	// reporting the batch - hangs off it, so the control plane's registration
+	// of a state change is a child of the probe that caused it (ADR 0011).
+	ctx, span := tracing.Tracer().Start(ctx, "observer.pass",
+		trace.WithAttributes(attribute.Int("opsatlas.targets", len(targets))))
+	defer span.End()
+
 	observed := scheduler.Run(ctx, targets)
 	if len(observed) == 0 {
+		span.SetStatus(codes.Error, "no probes completed")
 		return
 	}
 
 	observations := make([]report.Observation, 0, len(observed))
+	unhealthy := 0
 	for _, entry := range observed {
 		outcome := string(entry.Result.Outcome)
+		if entry.Result.Outcome != "HEALTHY" {
+			unhealthy++
+		}
 		instruments.ProbesTotal.WithLabelValues(outcome).Inc()
 		instruments.ProbeAttempts.Observe(float64(entry.Result.Attempts))
 		if entry.Result.ResponseMs != nil {
@@ -178,6 +210,8 @@ func pass(
 			return
 		}
 		instruments.ReportsTotal.WithLabelValues("failed").Inc()
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "report rejected")
 		// Probing continues. The next pass carries fresh results, and
 		// last_successful_report_timestamp_seconds is what says how long this
 		// has been going on.
@@ -189,6 +223,12 @@ func pass(
 	instruments.ObservationsApplied.Add(float64(result.Applied))
 	instruments.ObservationsIgnored.Add(float64(result.Ignored))
 	instruments.MarkReported(time.Now())
+	span.SetAttributes(
+		attribute.Int("opsatlas.probed", len(observations)),
+		attribute.Int("opsatlas.unhealthy", unhealthy),
+		attribute.Int("opsatlas.applied", result.Applied),
+		attribute.Int("opsatlas.ignored", result.Ignored),
+	)
 
 	logger.Info("pass complete",
 		"probed", len(observations),

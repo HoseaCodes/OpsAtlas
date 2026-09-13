@@ -27,11 +27,12 @@ worse than no `terraform/` directory.
 > Update this section whenever it becomes inaccurate. It is the first thing
 > future sessions read.
 
-- **Phase:** **phases 0–7 done.** The system now measures something: a Go
-  observer probes declared health endpoints and the catalog reports what it
-  found. Next is phase 8, the OpenTelemetry pipeline — which is where real
-  latency percentiles and trace-derived dependencies come from. The phase list
-  is in `docs/roadmap.md`.
+- **Phase:** **phases 0–8 done.** The system measures something and can explain
+  it: a Go observer probes declared health endpoints, the catalog reports what it
+  found, and one identifier follows a request through the logs, the traces and
+  the audit log. Next is phase 9 — the transactional outbox and platform events —
+  which §6 says waits for a demonstrated need. The phase list is in
+  `docs/roadmap.md`.
 - **What exists:** the `service.yaml` v1 JSON Schema and fixtures; a running
   control plane that registers services from a real manifest and serves them —
   `POST`, `GET /{slug}`, `GET` (cursor-paged), `PUT` with `If-Match` — with the
@@ -45,17 +46,23 @@ worse than no `terraform/` directory.
   watched GitHub repositories read-only and registers what they declare, with
   conditional requests and a `source` table recording sync state; an
   `operations` module folding probe results into per-environment and per-day
-  counters; a Go observer in `apps/observer`; ADRs 0001–0010;
+  counters; a Go observer in `apps/observer`; W3C trace context across both
+  processes with OTLP export, and a collector, Tempo, Prometheus and Grafana
+  behind the compose `telemetry` profile; ADRs 0001–0011;
   `docs/design/tokens.md`; `docs/architecture/slice-one.md`.
 - **Build:** pnpm workspace plus Gradle, `make` as the single entry point.
-  `make dev` runs the control plane on :8080 against compose PostgreSQL.
+  `make dev` runs the control plane on :8080 against compose PostgreSQL,
+  `make dev-observer` the observer, and `make up-telemetry` the collector, Tempo
+  (:3200), Prometheus (:9091) and Grafana (:3001). The telemetry stack is a
+  compose profile, so plain `make up` stays a database and nothing else.
   **No JDK needs to be installed** — the build declares a Java 21 toolchain and
   Gradle provisions Temurin 21 itself. Go 1.27+ **is** required for
   `apps/observer`; it is installed here via Homebrew.
 - **Tests:** `make test` — 14 schema fixtures, 37 console component tests,
-  26 Go tests (race-clean) and 238 JVM tests, all passing. `make test-all` adds
-  19 Playwright tests against the real stack. Integration tests use Testcontainers and need a running Docker
-  daemon; the smoke test needs the control plane running.
+  33 Go tests (race-clean) and 243 JVM tests, all passing. `make test-all` adds
+  19 Playwright tests against the real stack. Integration tests use
+  Testcontainers and need a running Docker daemon; the Playwright tests need the
+  stack running.
 - **CI is written but has never run.** There is no remote configured. Do not
   describe the pipeline as passing.
 - **Database:** PostgreSQL 16 via `deploy/compose`. Flyway owns the schema;
@@ -73,13 +80,35 @@ worse than no `terraform/` directory.
   reading. Do not default it.
 - **There are no percentiles and cannot be**, from what is stored: a sum, a min
   and a max are not a distribution (ADR 0009). Report mean and max, called mean
-  and max. Percentiles arrive with the telemetry pipeline.
+  and max. Span durations are in Tempo after phase 8, but nothing aggregates
+  them, so there is still no percentile to quote.
 - **Observations are counters, never rows per probe.** Storage is environments ×
   retained days and must stay independent of probe frequency. The retention job
   is what makes that true, so it is not optional.
 - **The observer detects no drift.** §5 lists it as its job; it needs a
   deployment concept that does not exist. A failed probe is an outage, not a
   drift, and must not be described as one.
+- **The correlation ID is the trace ID** when a request is traced; a
+  caller-supplied `X-Correlation-Id` still wins over both and is tagged on the
+  span (ADR 0011). Two things there are load-bearing and fail *silently* if
+  disturbed: `CorrelationIdFilter` must stay ordered **after** Spring's
+  observation filter (`HIGHEST_PRECEDENCE + 5`), or there is no span to read and
+  every ID quietly becomes a generated UUID; and `TracingConfiguration` must stay
+  unconditional, because a `@ConditionalOnProperty` on it once stopped the class
+  loading and left a no-op propagator in place with nothing failing.
+- **Probes must never carry OpenTelemetry context.** A probe reaches a service
+  OpsAtlas does not own, and injecting our identifiers into their headers — and
+  so their logs — is not our decision to make. Only the catalog and reporter
+  clients use `tracing.Transport`; `apps/observer/internal/tracing/tracing_test.go`
+  fails if a probe sends `traceparent`.
+- **Traces are sampled at 100% and logs are not shipped.** Sampling is right at
+  this volume and wrong at a hundred times it; Loki is deferred because stdout
+  JSON already carries the correlation ID. Both are recorded in ADR 0011 rather
+  than left as silent gaps.
+- **Tests run with OTLP export off** (`src/test/resources/application.properties`).
+  An exporter retrying against a collector that is not there once turned a
+  20-second suite into four minutes. `TraceCorrelationIT` turns tracing back on
+  for itself, deliberately pointed at a closed port.
 - **The scorecard scores manifests, not running systems.** All ten rules are
   declaration checks. `GET /api/v1/policy/rules` says so in its payload; do not
   describe them as production-readiness checks.

@@ -26,20 +26,21 @@ OpsAtlas/
 │   │       ├── catalog/           ✓ services, environments, service.yaml ingestion
 │   │       ├── governance/        ✓ policy rules, scorecards, audit
 │   │       ├── operations/        ✓ observations, rolled up; health read model
-│   │       └── integrations/        phase 6 — GitHub, CI, cloud
+│   │       └── integrations/      ✓ watched repositories, polled read-only
 │   ├── web/                       ✓ Next.js App Router console
 │   └── observer/                  ✓ Go prober
 ├── packages/
-│   ├── contracts/                 ✓ service.yaml schema; OpenAPI and TS client in phase 4
+│   ├── contracts/                 ✓ service.yaml schema, OpenAPI document, TS client
 │   └── ui/                          not planned; extract only if a second consumer appears
 ├── deploy/
 │   ├── compose/                   ✓ local PostgreSQL
+│   │   └── telemetry/             ✓ collector, Tempo, Prometheus, Grafana
 │   ├── k8s/                         phase 10
 │   └── helm/                        phase 10
 ├── examples/
 │   └── services/                  ✓ example and fixture manifests
 ├── docs/
-│   ├── adr/                       ✓ 0001-0007
+│   ├── adr/                       ✓ 0001-0011
 │   ├── architecture/              ✓ slice-one.md
 │   ├── design/                    ✓ tokens.md
 │   └── roadmap.md                 ✓ this file
@@ -205,6 +206,58 @@ commands it runs are the same ones `make` runs locally, and those do pass — bu
 that is not the same as the pipeline being green, and it should not be reported
 as if it were.
 
+### Phase 8 — Telemetry ✓ **complete**
+
+W3C trace context on both processes, OTLP export to a collector, and Tempo,
+Prometheus and Grafana behind a compose profile so the default `make up` stays a
+database and nothing else. The decision that shapes it is ADR 0011: **a request's
+correlation ID is its trace ID**, so the string a failure hands you searches the
+logs, the traces and the audit log rather than requiring a join on timestamps.
+
+**Verified by:** 243 JVM tests including `TraceCorrelationIT` (5) — a traced
+request's correlation ID is a trace ID, an inbound `traceparent` is joined rather
+than replaced, a caller's own ID is echoed unchanged, an error response carries
+the same identifier, and an unreachable collector neither fails nor slows a
+request. 33 Go tests, race-clean, three of them new and covering the propagator,
+`traceparent` on control-plane calls, and its deliberate absence on probes — that
+last one checked by mutation, since a test asserting a header is missing passes
+for free if the mechanism is never wired. Additionally verified live: a
+correlation ID read off a response found its trace in Tempo, one trace spanned
+both processes (`observer.pass` → the control plane's `POST
+/api/v1/observations`), and Prometheus scraped both targets `up` with
+`opsatlas_observer_probes_total` returning series.
+
+**Three things this phase got wrong first, recorded because they all fail
+silently:**
+
+- **Filter ordering.** `CorrelationIdFilter` at `HIGHEST_PRECEDENCE` ran *before*
+  the observation filter that creates the span, so there was no current span to
+  read and every correlation ID quietly fell back to a generated UUID — which
+  looks exactly like it working. It runs at `+5` now, with the reason in the
+  class comment.
+- **A configuration class that never loaded.** `management.tracing.propagation.type=w3c`
+  was ignored and the propagator was the no-op one. Two things were needed: a
+  `TextMapPropagator` bean rather than a `ContextPropagators` one, and removing a
+  `@ConditionalOnProperty` that was stopping the class from loading at all.
+- **The trace ID overriding a caller's own correlation ID.** Two existing tests
+  caught it. §9 says the ID is accepted from the header and echoed, and a caller
+  who sends one and gets a different one back cannot correlate anything. The
+  amendment is recorded in ADR 0011 rather than quietly applied.
+
+**Deferred, with reasons:**
+
+- **Loki.** The control plane already logs structured JSON carrying the
+  correlation ID. Shipping it needs an agent, a retention policy and a second
+  query language, for value `docker logs | grep` already provides at this scale.
+- **Sampling below 100%.** Right at a poll every five minutes, wrong at a hundred
+  times the volume. Recorded in ADR 0011 as the first thing to revisit.
+- **Percentiles from stored history.** Span durations are in Tempo, but nothing
+  aggregates them and the rollups deliberately keep mean and max only (ADR 0009).
+- **Metrics from the observer into the control plane.** Prometheus scrapes the
+  observer directly; teaching the control plane to read Prometheus would make a
+  monitoring system a dependency of the catalog, which is a bigger decision than
+  this phase needed.
+
 ---
 
 ## After slice one
@@ -217,7 +270,7 @@ expanding scope.
 |---|---|---|
 | ~~6~~ | ~~GitHub sync~~ — **done**, by polling rather than webhooks (ADR 0008). A GitHub App is still deferred: it needs a registered application, a private key, an installation flow and somewhere to keep per-installation tokens, and identity is still a stub. | |
 | ~~7~~ | ~~Go observer~~ — **done**. Drift detection is deferred: it needs a deployment concept to compare a declared version against a running one. | |
-| 8 | OpenTelemetry pipeline, Prometheus, Loki, Tempo, Grafana | Needs services actually running to observe |
+| ~~8~~ | ~~OpenTelemetry, Prometheus, Tempo, Grafana~~ — **done**. Loki is still deferred: structured JSON on stdout already carries the correlation ID, and shipping it needs an agent, a retention policy and a second query language. | |
 | 9 | Transactional outbox, platform events, Redis read models | Only once there is a demonstrated need (§6) |
 | 10 | Terraform, Kubernetes, Helm, k6 load tests | Nothing to deploy until there is something to run |
 

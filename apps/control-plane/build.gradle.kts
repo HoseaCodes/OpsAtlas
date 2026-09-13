@@ -29,6 +29,13 @@ dependencies {
     implementation(libs.json.schema.validator)
     implementation(libs.springdoc.openapi)
 
+    // Telemetry. Versions come from the Spring Boot BOM rather than being
+    // pinned here, so the bridge and the exporter cannot drift apart from the
+    // Boot release that wires them.
+    implementation(libs.micrometer.tracing.bridge.otel)
+    implementation(libs.opentelemetry.exporter.otlp)
+    implementation(libs.micrometer.registry.prometheus)
+
     // Spring Security is in the fixed stack but is deliberately absent until
     // authentication is a phase. Adding the starter now would put every
     // endpoint behind a generated password - a capability the project does not

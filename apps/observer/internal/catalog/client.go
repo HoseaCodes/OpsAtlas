@@ -14,6 +14,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/ambitious-concepts/opsatlas/observer/internal/tracing"
 )
 
 // Target is one environment worth probing.
@@ -38,10 +40,17 @@ type Client struct {
 // The timeout is generous compared to a probe's: this is one request that
 // returns a page of services, and failing it means the observer probes a stale
 // list, which is worse than waiting a moment longer.
+//
+// The transport carries W3C trace context, so reading the catalog is a child
+// span of the pass that needed it rather than an unconnected request in the
+// control plane's traces (ADR 0011).
 func New(baseURL string, timeout time.Duration) *Client {
 	return &Client{
 		baseURL: strings.TrimRight(baseURL, "/"),
-		http:    &http.Client{Timeout: timeout},
+		http: &http.Client{
+			Timeout:   timeout,
+			Transport: tracing.Transport(nil),
+		},
 	}
 }
 
