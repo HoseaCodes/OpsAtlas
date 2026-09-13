@@ -1,0 +1,41 @@
+# Local development environment.
+#
+# PostgreSQL only. CLAUDE.md section 14 defers Redis, Kafka, the telemetry
+# stack and everything else until its phase is active, and section 6 adds that
+# Redis and Kafka wait for a demonstrated need. A compose file listing services
+# nothing connects to would be exactly the placeholder architecture rule 3
+# rules out.
+#
+# The credentials here are local-only and grant access to nothing else. Real
+# configuration comes from environment variables - see the application's
+# application.yaml for the variable names and their defaults.
+
+name: opsatlas
+
+services:
+  postgres:
+    image: postgres:16.4-alpine
+    container_name: opsatlas-postgres
+    environment:
+      POSTGRES_DB: opsatlas
+      POSTGRES_USER: opsatlas
+      POSTGRES_PASSWORD: opsatlas
+      # Deterministic collation, so index ordering does not depend on the host.
+      POSTGRES_INITDB_ARGS: "--locale=C --encoding=UTF8"
+    ports:
+      - "${OPSATLAS_DB_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      # `make dev` waits on this before starting the control plane, so a slow
+      # first start is a wait rather than a connection-refused stack trace.
+      test: ["CMD-SHELL", "pg_isready -U opsatlas -d opsatlas"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 3s
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+    name: opsatlas-postgres-data
