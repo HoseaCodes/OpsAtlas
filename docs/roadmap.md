@@ -164,6 +164,25 @@ control plane: two environments, one real and one with nothing listening,
 produced HEALTHY at 100% and DOWN at 0% with "connection refused", and eight
 probes became two state rows plus two daily rows.
 
+**Gap closed after phase 8:** phase 7's endpoints — `POST /api/v1/observations`,
+`GET /api/v1/health` and `GET /api/v1/services/{slug}/health` — were added
+without extending `OrgIsolationIT`, and so had unverified isolation for two
+phases. So had the scorecard and audit-log endpoints from phase 3 and
+`/sources/{id}/enable` from phase 6. All six are covered now, and the test
+carries positive controls (a service of ours registered and observed in the same
+request) so that a leak check cannot pass against an endpoint that answers
+nobody. Checked by mutation: removing the org filter from the audit log, the
+fleet health rollup and the environment lookup fails exactly three tests.
+
+The lesson worth keeping is that the rule "extend `OrgIsolationIT` whenever an
+endpoint is added" was written down in `CLAUDE.md` and still missed three times,
+because nothing failed when it was ignored. So it is now a test:
+`no_endpoint_escapes_this_test` enumerates every `/api/v1` mapping from the
+handler mapping and fails unless each appears in a `COVERED` set or in
+`NOT_TENANT_SCOPED` with a written reason. Adding an endpoint without covering
+its isolation now breaks the build. Verified by removing an entry: the failure
+names the endpoint and says what to do about it.
+
 **Deferred, with reasons:**
 
 - **Drift detection.** CLAUDE.md §5 lists it as the observer's job. It needs a

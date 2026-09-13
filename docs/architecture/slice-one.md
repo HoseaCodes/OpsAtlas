@@ -206,9 +206,9 @@ erDiagram
     }
     environment_state {
         uuid environment_id PK
-        text status "HEALTHY · DEGRADED · DOWN · UNREACHABLE"
-        integer probes "counters, never a row per probe"
-        integer successes
+        text status "HEALTHY · DEGRADED · DOWN — no UNKNOWN"
+        text detail "required unless HEALTHY"
+        integer consecutive_failures "a blip from an outage"
         timestamptz last_probe_at
         timestamptz last_healthy_at "null until one succeeds"
         bigint version "optimistic lock"
@@ -259,6 +259,11 @@ Three things in that diagram are load-bearing and easy to miss:
   `OrgIsolationIT` proves it does.
 - **`audit_event` has no foreign key to `service`.** An audit entry must outlive
   what it describes; a cascade would erase exactly the record worth keeping.
+- **`environment_state` has no probe counters and no `UNKNOWN` status.** Current
+  state is a status, a reason and a failure streak; the counting happens in
+  `environment_day`. An environment nobody has probed has **no row at all**, so
+  absence means never-observed and cannot be confused with a measurement — which
+  is why the status column has three values rather than four.
 - **`environment_day` stores a sum, a min and a max — and that is the ceiling.**
   Storage is environments × retained days, independent of how often the observer
   probes (ADR 0009). The deliberate cost is that no percentile can ever be

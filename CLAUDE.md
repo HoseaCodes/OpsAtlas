@@ -59,7 +59,7 @@ worse than no `terraform/` directory.
   Gradle provisions Temurin 21 itself. Go 1.27+ **is** required for
   `apps/observer`; it is installed here via Homebrew.
 - **Tests:** `make test` — 14 schema fixtures, 37 console component tests,
-  33 Go tests (race-clean) and 243 JVM tests, all passing. `make test-all` adds
+  33 Go tests (race-clean) and 251 JVM tests, all passing. `make test-all` adds
   19 Playwright tests against the real stack. Integration tests use
   Testcontainers and need a running Docker daemon; the Playwright tests need the
   stack running.
@@ -67,9 +67,18 @@ worse than no `terraform/` directory.
   describe the pipeline as passing.
 - **Database:** PostgreSQL 16 via `deploy/compose`. Flyway owns the schema;
   Hibernate runs `ddl-auto: validate` so entity/migration drift fails startup.
-- **Cross-organization isolation is verified** by `OrgIsolationIT` (14 tests).
-  That test must grow whenever an endpoint is added — an endpoint it does not
-  cover has unverified isolation and must be described that way.
+- **Cross-organization isolation is verified** by `OrgIsolationIT` (22 tests),
+  and it now covers **every org-scoped endpoint in the contract** — services,
+  sources, the scorecard, the audit log, both health endpoints and observation
+  ingestion. `GET /api/v1/policy/rules` is the only operation it does not cover,
+  because the rule catalog is static and holds no tenant data.
+  **This is now enforced, not remembered.** `no_endpoint_escapes_this_test`
+  enumerates every `/api/v1` mapping and fails the build unless each appears in
+  that test's `COVERED` set or in `NOT_TENANT_SCOPED` with a written reason — so
+  adding an endpoint without covering it breaks the build rather than passing
+  review. Its positive controls (registering and observing a service of our own
+  in the same request) are what stop the leak checks passing against an endpoint
+  that answers nobody; keep them.
 - **Health is probe availability, and never an SLO.** It is the share of probes
   that succeeded from one vantage point against a health endpoint. A service can
   serve errors to every real user while its readiness endpoint answers happily.
