@@ -1,6 +1,6 @@
 # 0005 — OpenAPI is generated from the code, committed, and drift-checked in CI
 
-- **Status:** Accepted
+- **Status:** Accepted, amended 2026-09-12 (see *Amendment*)
 - **Date:** 2026-09-12
 - **Phase:** Slice one
 
@@ -69,3 +69,38 @@ start the compose database before it can run. Deriving the document from a MockM
 test slice would avoid this, at the cost of a document one step further from what
 the running server actually serves. The dependency on a live boot is accepted
 deliberately: the document should describe the server, not a test harness.
+
+
+---
+
+## Amendment — 2026-09-12, during phase 4
+
+**What changed.** The springdoc Gradle plugin was replaced by a Gradle test task,
+`generateOpenApiDocument`, which boots the same application on a random port and
+fetches `/v3/api-docs` over a real socket.
+
+**Why this keeps the decision rather than reversing it.** The stated reason for
+preferring the plugin over a MockMvc slice was that the document should describe
+"the server, not a test harness" — that the application should actually boot. It
+still does: the same Spring context, the same controllers, a real HTTP server on a
+real port. What was dropped is the plugin's process management, which added a
+failure mode without adding fidelity.
+
+**What this costs.** The generator lives in the test source set, where a reader
+may reasonably expect assertions about behaviour rather than a file being
+written. Two things mitigate it: the task is excluded from `test` and run only by
+`make openapi`, so the suite never writes into the working tree; and the
+generator asserts that all five endpoints appear before writing, because a
+document describing nothing would still be valid JSON and would still commit
+cleanly.
+
+**A second amendment: the contract now states which fields are required.**
+springdoc emitted no `required` array at all, so every field in the generated
+TypeScript was optional. That is a contract defect, not a frontend inconvenience:
+a consumer then has to defend against absences that cannot happen, and the ones
+that genuinely can happen stop standing out. `OpenApiConfiguration` inverts the
+default — required unless explicitly `@Schema(nullable = true)` — so optionality
+is now a deliberate statement about the domain rather than a default nobody
+chose. The cost is that a genuinely nullable field which nobody annotates will be
+described as required, and the lie will be discovered by a consumer rather than
+by the build.

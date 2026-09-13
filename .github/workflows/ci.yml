@@ -1,0 +1,149 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Local-only credentials, matching deploy/compose/docker-compose.yml. Nothing
+  # here is a secret (CLAUDE.md section 3 rule 5).
+  OPSATLAS_DB_URL: jdbc:postgresql://localhost:5432/opsatlas
+  OPSATLAS_DB_USERNAME: opsatlas
+  OPSATLAS_DB_PASSWORD: opsatlas
+
+jobs:
+  # Runs without a JVM, a database or a browser, so it fails fast and its
+  # failures are unambiguous.
+  contract:
+    name: Contract fixtures
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Validate every example and invalid fixture
+        run: make check-examples
+      - run: make typecheck
+
+  control-plane:
+    name: Control plane
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16.4-alpine
+        env:
+          POSTGRES_DB: opsatlas
+          POSTGRES_USER: opsatlas
+          POSTGRES_PASSWORD: opsatlas
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U opsatlas -d opsatlas"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      # No setup-java step: the Gradle build declares a Java 21 toolchain and
+      # provisions it, so the JDK on the runner is not what the build compiles
+      # against. Removing this would make the build depend on the runner image.
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Test
+        run: ./gradlew :control-plane:test --console=plain
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: control-plane-test-report
+          path: apps/control-plane/build/reports/tests/test
+
+  # ADR 0005: the contract is committed, and this is what stops it going stale.
+  # A contract change that was not regenerated fails here rather than reaching
+  # the frontend as a runtime type error.
+  openapi-drift:
+    name: OpenAPI drift
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16.4-alpine
+        env:
+          POSTGRES_DB: opsatlas
+          POSTGRES_USER: opsatlas
+          POSTGRES_PASSWORD: opsatlas
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U opsatlas -d opsatlas"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: gradle/actions/setup-gradle@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Regenerate and fail on any difference
+        run: make check-openapi
+
+  console:
+    name: Console
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @opsatlas/web test
+      - run: pnpm --filter @opsatlas/web build
+
+  # The browser smoke test needs the whole stack, so it runs last and on its own.
+  # CLAUDE.md section 11: this is the difference between asserting the console
+  # works and claiming it.
+  smoke:
+    name: Browser smoke
+    runs-on: ubuntu-latest
+    needs: [control-plane, console]
+    services:
+      postgres:
+        image: postgres:16.4-alpine
+        env:
+          POSTGRES_DB: opsatlas
+          POSTGRES_USER: opsatlas
+          POSTGRES_PASSWORD: opsatlas
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U opsatlas -d opsatlas"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: gradle/actions/setup-gradle@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Start the control plane
+        run: |
+          ./gradlew :control-plane:bootRun --console=plain > /tmp/control-plane.log 2>&1 &
+          for i in $(seq 1 120); do
+            curl -sf http://localhost:8080/actuator/health && break
+            sleep 1
+          done
+          curl -sf http://localhost:8080/actuator/health || (cat /tmp/control-plane.log; exit 1)
+      - run: pnpm --filter @opsatlas/web exec playwright install --with-deps chromium
+      - run: pnpm --filter @opsatlas/web e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: apps/web/test-results
