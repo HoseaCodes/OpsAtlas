@@ -70,7 +70,7 @@ jobs — selection, focus ring, error-budget fill, open-incident emphasis. See
 | Semantic validation — duplicate environment names | **Real** | same |
 | Architecture decisions, phases 0–10 | **Real** (written down) | [`docs/adr/`](docs/adr/), [`docs/roadmap.md`](docs/roadmap.md) |
 | Design system extracted from the prototype | **Real** (written down) | [`docs/design/tokens.md`](docs/design/tokens.md) |
-| Control plane (Java 21 / Spring Boot) | **Real** | `make test` — 283 JVM tests |
+| Control plane (Java 21 / Spring Boot) | **Real** | `make test` — 286 JVM tests |
 | PostgreSQL schema and Flyway migrations | **Real** | `SeedConsistencyIT`, and Hibernate `ddl-auto: validate` refuses to start on drift |
 | `POST /api/v1/services` — register from a `service.yaml` | **Real** | `RegistrationApiIT`, plus 13 curl assertions against a running server |
 | Safe YAML ingestion — size cap, no alias expansion, no type construction | **Real** | `ManifestValidationTest` — billion-laughs, `!!java` tags, duplicate keys and a 70 KiB body are all refused |
@@ -123,9 +123,11 @@ jobs — selection, focus ring, error-budget fill, open-incident emphasis. See
 | **Authorization** — a verified token is not a membership | **Real, and verified live** | a genuine token from a second real Storm-Gate account, not provisioned here, gets 403 `not-provisioned` |
 | The organization comes from the caller, not a constant | **Real, and verified** | `OrgIsolationIT` authenticates as a principal in the *other* organization and asserts they reach their catalog and not ours; hardcoding the org in the resolver fails two tests |
 | The contract declares how to authenticate | **Real** | `bearerToken` and `serviceCredential` in the OpenAPI document, so Swagger UI can send either |
+| Metrics endpoints require a credential | **Real, and verified live** | anonymous scrape 401, credentialled scrape 200, Prometheus target back to `up` with series flowing |
+| Swagger UI off by default | **Real** | `OPSATLAS_SWAGGER_UI=true` turns it on; its assets load while the endpoints it calls still require a credential |
 | First-principal bootstrap from configuration, not from the first caller | **Real** | `PrincipalBootstrapIT` (5 tests), including that a bootstrapped identity can actually get in |
 | Org scoping resolved from the authenticated caller | **Real** | `SeedConsistencyIT`, `OrgIsolationIT` — scoping is covered; cross-org *authorization* is not yet |
-| Observer authenticating to the control plane | **Real, and verified live** | `ServiceCredentialIT` (6 tests) and 2 Go tests; run live, the observer reports `probed 4, applied 4` with its key and cannot refresh the catalog without it |
+| Observer authenticating to the control plane | **Real, and verified live** | `ServiceCredentialIT` (9 tests) and 2 Go tests; run live, the observer reports `probed 4, applied 4` with its key and cannot refresh the catalog without it |
 | Keys stored hashed, never in the database | **Real** | SHA-256 of a 256-bit key — a fast hash on purpose, and `ServiceCredentialIT` asserts the stored value is not the key |
 | Rotating a key revokes the old one immediately | **Real** | `ServiceCredentialIT` — both keys working during a changeover would leave a leaked key live |
 | Console sign-in, session and sign-out | **Real, and verified live** | `signin.spec.ts` drives a real browser against a real Storm-Gate: redirect to sign-in, sign in, catalog renders, reload keeps the session, sign out ends it |

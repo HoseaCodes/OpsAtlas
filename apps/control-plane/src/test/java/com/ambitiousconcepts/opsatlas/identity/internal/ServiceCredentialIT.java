@@ -25,7 +25,8 @@ import org.springframework.test.web.servlet.MockMvc;
  */
 @SpringBootTest
 @AutoConfigureMockMvc
-@TestPropertySource(properties = "opsatlas.credentials.observer.key=opsatlas_sk_EXAMPLE_not_a_real_key_for_tests_01")
+@TestPropertySource(
+        properties = "opsatlas.credentials.keys={observer: 'opsatlas_sk_EXAMPLE_not_a_real_key_for_tests_01'}")
 class ServiceCredentialIT extends PostgresTestBase {
 
     private static final String KEY = "opsatlas_sk_EXAMPLE_not_a_real_key_for_tests_01";
@@ -86,7 +87,10 @@ class ServiceCredentialIT extends PostgresTestBase {
         // What an operator does when a key has leaked: change it and restart.
         // Both keys working for a while would leave the leaked one live.
         new ServiceCredentialBootstrap(
-                        applicationCredentials(), jdbc, java.time.Clock.systemUTC(), "opsatlas_sk_EXAMPLE_the_replacement_key_for_test")
+                        applicationCredentials(),
+                        jdbc,
+                        java.time.Clock.systemUTC(),
+                        java.util.Map.of("observer", "opsatlas_sk_EXAMPLE_the_replacement_key_for_test"))
                 .provisionIfConfigured();
 
         mockMvc.perform(get("/api/v1/services").with(anonymous()).header(ServiceCredentials.HEADER, KEY))
@@ -110,6 +114,49 @@ class ServiceCredentialIT extends PostgresTestBase {
         assertThat(jdbc.queryForObject("select last_used_at from service_credential", java.sql.Timestamp.class))
                 .as("nobody can safely delete a credential they cannot tell is dead")
                 .isNotNull();
+    }
+
+    @Test
+    @DisplayName("a key also works on Authorization, for callers that can send nothing else")
+    void the_key_is_accepted_as_a_bearer_credential() throws Exception {
+        // Prometheus scrape configuration offers `authorization` and basic auth
+        // and no way to set an arbitrary header. Without this the metrics
+        // endpoints could only be left open.
+        mockMvc.perform(get("/api/v1/services").with(anonymous()).header("Authorization", "Bearer " + KEY))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("a bearer value that is not one of our keys is left to the token decoder")
+    void a_real_token_is_not_intercepted() throws Exception {
+        // The two mechanisms must never contend for the same string. Anything
+        // without this system's key prefix is passed through untouched - here it
+        // reaches the JWT decoder, fails to parse, and is refused as a token
+        // rather than as a bad key.
+        mockMvc.perform(get("/api/v1/services")
+                        .with(anonymous())
+                        .header("Authorization", "Bearer not.a.real.jwt"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @DisplayName("metrics need a credential now, and liveness still does not")
+    void the_metrics_endpoints_are_no_longer_open() throws Exception {
+        mockMvc.perform(get("/actuator/prometheus").with(anonymous())).andExpect(status().isUnauthorized());
+
+        // Not asserting 200: whether the Prometheus endpoint is registered at all
+        // depends on a meter registry this context does not configure, and a 404
+        // from the dispatcher is still proof that authorization let the request
+        // through - which is the rule under test.
+        mockMvc.perform(get("/actuator/prometheus").with(anonymous()).header(ServiceCredentials.HEADER, KEY))
+                .andExpect(result -> org.assertj.core.api.Assertions.assertThat(
+                                result.getResponse().getStatus())
+                        .as("a credentialled scrape must not be refused")
+                        .isNotEqualTo(401));
+
+        // A load balancer has no credential to offer, and liveness discloses
+        // nothing worth protecting.
+        mockMvc.perform(get("/actuator/health").with(anonymous())).andExpect(status().isOk());
     }
 
     @Autowired

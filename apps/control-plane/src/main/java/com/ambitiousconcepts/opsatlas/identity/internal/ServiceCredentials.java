@@ -31,7 +31,9 @@ class ServiceCredentials {
      * credential. A check that cries wolf gets switched off, which is the one
      * outcome worse than not having it (ADR 0012).
      */
-    static final Pattern KEY_SHAPE = Pattern.compile("opsatlas_sk_[A-Za-z0-9_-]{32,128}");
+    static final String KEY_PREFIX = "opsatlas_sk_";
+
+    static final Pattern KEY_SHAPE = Pattern.compile(KEY_PREFIX + "[A-Za-z0-9_-]{32,128}");
 
     static final String HEADER = "X-OpsAtlas-Key";
 

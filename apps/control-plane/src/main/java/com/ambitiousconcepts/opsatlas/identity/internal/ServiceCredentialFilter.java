@@ -37,7 +37,7 @@ class ServiceCredentialFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
-        String presented = request.getHeader(ServiceCredentials.HEADER);
+        String presented = presentedKey(request);
         if (presented != null && nobodyIsAuthenticatedYet()) {
             credentials
                     .authenticate(presented)
@@ -45,6 +45,36 @@ class ServiceCredentialFilter extends OncePerRequestFilter {
                             .setAuthentication(new ServiceCredentialAuthentication(principal)));
         }
         chain.doFilter(request, response);
+    }
+
+    /**
+     * The key, from either header it may arrive on.
+     *
+     * <p>{@code X-OpsAtlas-Key} is the header this system asks for. The bearer
+     * form exists for callers that cannot send anything else: Prometheus scrape
+     * configuration offers {@code authorization} and basic auth and no way to set
+     * an arbitrary header, so without this the metrics endpoints could only be
+     * left open.
+     *
+     * <p>It is safe here for a reason worth stating: this filter runs before the
+     * bearer-token filter and only claims a value that has this system's own key
+     * prefix. A JWT never has it, so a real token is passed through untouched and
+     * still goes to the decoder - the two mechanisms never contend for the same
+     * string.
+     */
+    private static String presentedKey(HttpServletRequest request) {
+        String own = request.getHeader(ServiceCredentials.HEADER);
+        if (own != null) {
+            return own;
+        }
+        String authorization = request.getHeader("Authorization");
+        if (authorization != null && authorization.regionMatches(true, 0, "Bearer ", 0, 7)) {
+            String value = authorization.substring(7).trim();
+            if (value.startsWith(ServiceCredentials.KEY_PREFIX)) {
+                return value;
+            }
+        }
+        return null;
     }
 
     /**

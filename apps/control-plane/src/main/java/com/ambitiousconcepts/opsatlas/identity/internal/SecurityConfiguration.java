@@ -7,6 +7,8 @@ import org.springframework.http.HttpMethod;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.oauth2.server.resource.web.BearerTokenResolver;
+import org.springframework.security.oauth2.server.resource.web.DefaultBearerTokenResolver;
 import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.web.SecurityFilterChain;
 
@@ -37,6 +39,33 @@ import org.springframework.security.web.SecurityFilterChain;
 @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
 class SecurityConfiguration {
 
+    /**
+     * Keeps this system's own keys away from the token decoder.
+     *
+     * <p>A service credential may arrive on {@code Authorization: Bearer}, because
+     * some callers can send nothing else. Spring Security's bearer filter does not
+     * ask whether anybody has already authenticated the request - it resolves the
+     * header, tries to decode it as a JWT, fails, and replaces a perfectly good
+     * authentication with a 401. Refusing to resolve our own prefix is the
+     * supported way to say "this one is not a token".
+     *
+     * <p>A JWT never carries that prefix, so a real token still reaches the
+     * decoder untouched.
+     */
+    @Bean
+    BearerTokenResolver bearerTokenResolver() {
+        DefaultBearerTokenResolver standard = new DefaultBearerTokenResolver();
+        return request -> {
+            String authorization = request.getHeader("Authorization");
+            if (authorization != null
+                    && authorization.regionMatches(true, 0, "Bearer ", 0, 7)
+                    && authorization.substring(7).trim().startsWith(ServiceCredentials.KEY_PREFIX)) {
+                return null;
+            }
+            return standard.resolve(request);
+        };
+    }
+
     @Bean
     SecurityFilterChain api(
             HttpSecurity http,
@@ -57,19 +86,17 @@ class SecurityConfiguration {
                         .requestMatchers(HttpMethod.GET, "/actuator/health", "/actuator/health/**", "/actuator/info")
                         .permitAll()
 
-                        // TODO(auth): the metrics endpoints are open because
-                        // Prometheus scrapes them and nothing issues it a token
-                        // yet. They expose request counts and timings rather
-                        // than catalog data, but "rather than" is not "never" -
-                        // this is the next thing to close, not a resting place.
-                        .requestMatchers(HttpMethod.GET, "/actuator/prometheus", "/actuator/metrics/**")
-                        .permitAll()
-
                         // The generated contract describes the API; it contains
-                        // no data. Swagger UI is a different question and is
-                        // answered by OPSATLAS_SWAGGER_UI, which must be off
-                        // wherever this is genuinely reachable.
-                        .requestMatchers(HttpMethod.GET, "/v3/api-docs", "/v3/api-docs/**")
+                        // no data. The Swagger UI assets are served with it so
+                        // the page can load and offer its Authorize button - the
+                        // endpoints it calls still require a credential, and the
+                        // page itself only ships when OPSATLAS_SWAGGER_UI is on.
+                        .requestMatchers(
+                                HttpMethod.GET,
+                                "/v3/api-docs",
+                                "/v3/api-docs/**",
+                                "/swagger-ui.html",
+                                "/swagger-ui/**")
                         .permitAll()
 
                         // Everything else, read or write, needs a caller this

@@ -85,13 +85,14 @@ springdoc:
   # block only controls the browsable UI over that same document, which adds no
   # endpoint and changes no response.
   #
-  # It defaults on because today the control plane runs only on a developer's
-  # machine. Nothing authenticates a request yet (ADR 0003), so wherever this is
-  # genuinely exposed, set OPSATLAS_SWAGGER_UI=false or put it behind the
-  # authentication that arrives with the identity phase - a try-it-out console
-  # over unauthenticated write endpoints is not something to publish by accident.
+  # It defaults OFF. Every endpoint it calls now requires a credential (ADR 0013),
+  # so a try-it-out console is no longer a way in - but it is still a page that
+  # invites people to make write calls against whatever it is pointed at, and a
+  # default that has to be remembered to turn off is a default that will not be.
+  # Turn it on deliberately with OPSATLAS_SWAGGER_UI=true; its Authorize button
+  # takes either of the schemes the contract declares.
   swagger-ui:
-    enabled: ${OPSATLAS_SWAGGER_UI:true}
+    enabled: ${OPSATLAS_SWAGGER_UI:false}
     # Land on a list of operations rather than every schema expanded at once,
     # and show how long a try-it-out call took.
     doc-expansion: none
@@ -163,8 +164,9 @@ opsatlas:
   # cannot report at all.
   # ---------------------------------------------------------------------------
   credentials:
-    observer:
-      key: ${OPSATLAS_OBSERVER_KEY:}
+    # Named machines, each revocable on its own. The env var names stay friendly;
+    # the map is what the code iterates.
+    keys: "{observer: '${OPSATLAS_OBSERVER_KEY:}', prometheus: '${OPSATLAS_PROMETHEUS_KEY:}'}"
 
   # ---------------------------------------------------------------------------
   # The first way in (ADR 0013).

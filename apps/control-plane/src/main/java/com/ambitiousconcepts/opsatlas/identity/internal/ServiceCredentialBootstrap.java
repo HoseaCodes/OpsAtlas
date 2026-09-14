@@ -2,6 +2,7 @@ package com.ambitiousconcepts.opsatlas.identity.internal;
 
 import java.time.Clock;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -33,41 +34,46 @@ class ServiceCredentialBootstrap {
 
     private static final Logger log = LoggerFactory.getLogger(ServiceCredentialBootstrap.class);
 
-    /** The only machine that needs one today. More would need a way to name them. */
-    static final String OBSERVER = "observer";
-
     private final ServiceCredentialRepository credentials;
     private final JdbcTemplate jdbc;
     private final Clock clock;
-    private final String observerKey;
+    private final Map<String, String> keys;
 
     ServiceCredentialBootstrap(
             ServiceCredentialRepository credentials,
             JdbcTemplate jdbc,
             Clock clock,
-            @Value("${opsatlas.credentials.observer.key:}") String observerKey) {
+            // Named, because there is more than one machine now: the observer
+            // reports observations and Prometheus scrapes metrics, and they
+            // should be revocable separately - a leaked scrape credential is not
+            // a reason to stop the fleet being watched.
+            @Value("#{${opsatlas.credentials.keys:{:}}}") Map<String, String> keys) {
         this.credentials = credentials;
         this.jdbc = jdbc;
         this.clock = clock;
-        this.observerKey = observerKey == null ? "" : observerKey.trim();
+        this.keys = keys == null ? Map.of() : keys;
     }
 
     @EventListener(ApplicationReadyEvent.class)
     @Transactional
     public void provisionIfConfigured() {
+        keys.forEach((name, key) -> provision(name, key == null ? "" : key.trim()));
+    }
+
+    private void provision(String name, String observerKey) {
         if (observerKey.isEmpty()) {
             // Not configured. The observer cannot report, which is a real state
             // a deployment can be in - a control plane with nobody watching -
             // and it is said out loud rather than left to a 401 nobody reads.
-            log.info("No observer credential configured (OPSATLAS_OBSERVER_KEY); "
-                    + "the observer will not be able to report observations");
+            log.info("No credential configured for '{}'; it will not be able to authenticate", name);
             return;
         }
 
         if (!ServiceCredentials.KEY_SHAPE.matcher(observerKey).matches()) {
-            throw new IllegalStateException("OPSATLAS_OBSERVER_KEY must look like opsatlas_sk_<32-128 url-safe "
-                    + "characters>. Refusing to start rather than storing something that cannot have come "
-                    + "from `make observer-key`, because a key that is nearly right fails later and further away.");
+            throw new IllegalStateException("The key configured for '" + name + "' must look like "
+                    + "opsatlas_sk_<32-128 url-safe characters>. Refusing to start rather than storing something "
+                    + "that cannot have come from `make observer-key`, because a key that is nearly right fails "
+                    + "later and further away.");
         }
 
         List<UUID> organizations = jdbc.queryForList("select id from organization order by slug", UUID.class);
@@ -78,7 +84,7 @@ class ServiceCredentialBootstrap {
 
         String hash = ServiceCredentials.hash(observerKey);
         credentials
-                .findByOrgIdAndName(organizations.get(0), OBSERVER)
+                .findByOrgIdAndName(organizations.get(0), name)
                 .ifPresentOrElse(
                         existing -> {
                             if (existing.hasHash(hash)) {
@@ -86,12 +92,12 @@ class ServiceCredentialBootstrap {
                             }
                             existing.rotateTo(hash);
                             credentials.save(existing);
-                            log.info("Rotated the observer credential; the previous key no longer works");
+                            log.info("Rotated the '{}' credential; the previous key no longer works", name);
                         },
                         () -> {
                             credentials.save(ServiceCredentialEntity.of(
-                                    organizations.get(0), OBSERVER, hash, clock.instant()));
-                            log.info("Provisioned the observer credential for org={}", organizations.get(0));
+                                    organizations.get(0), name, hash, clock.instant()));
+                            log.info("Provisioned the '{}' credential for org={}", name, organizations.get(0));
                         });
     }
 }

@@ -13,6 +13,19 @@ global:
 scrape_configs:
   - job_name: control-plane
     metrics_path: /actuator/prometheus
+    # The metrics endpoints stopped being open when authentication arrived
+    # (ADR 0013): they carry request counts, timings and error rates, which is a
+    # shape of the traffic rather than the catalog, but a shape of the traffic is
+    # still something to hand out on request.
+    #
+    # Prometheus offers `authorization` and basic auth and no way to set an
+    # arbitrary header, so the credential goes on Authorization - the control
+    # plane recognises its own key prefix there and never passes it to the token
+    # decoder. Read from a file so the key is not in a config file that is
+    # committed; `make prometheus-key` writes it.
+    authorization:
+      type: Bearer
+      credentials_file: /etc/prometheus/opsatlas.key
     static_configs:
       # Both run on the host rather than in compose, so they are reached
       # through the gateway rather than by service name.

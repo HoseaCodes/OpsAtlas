@@ -10,7 +10,7 @@ COMPOSE := docker compose -f deploy/compose/docker-compose.yml
 GRADLE  := ./gradlew --console=plain
 
 .DEFAULT_GOAL := help
-.PHONY: help install check-examples check-secrets observer-key issuer-key first-user typecheck test test-all test-java test-web test-observer check dev dev-web dev-observer e2e up up-telemetry down down-telemetry logs psql clean clean-db openapi check-openapi
+.PHONY: help install check-examples check-secrets observer-key issuer-key first-user prometheus-key typecheck test test-all test-java test-web test-observer check dev dev-web dev-observer e2e up up-telemetry down down-telemetry logs psql clean clean-db openapi check-openapi
 
 help: ## Show the targets that exist today
 	@echo ""
@@ -102,7 +102,7 @@ first-user: up ## Create the local account and record it for bootstrap
 	rm -f deploy/compose/.env.bak; \
 	{ echo "OPSATLAS_BOOTSTRAP_ISSUER=$(ISSUER_URL)"; \
 	  echo "OPSATLAS_BOOTSTRAP_SUBJECT=$$subject"; \
-	  echo "OPSATLAS_BOOTSTRAP_DISPLAY_NAME=Local Operator"; } >> deploy/compose/.env; \
+	  echo "OPSATLAS_BOOTSTRAP_DISPLAY_NAME='Local Operator'"; } >> deploy/compose/.env; \
 	echo ""; \
 	echo "  $(LOCAL_EMAIL) is ready at the issuer, subject $$subject."; \
 	echo "  Recorded in deploy/compose/.env, which is gitignored."; \
@@ -155,6 +155,20 @@ observer-key: ## Generate a key for the observer (set it on both sides)
 	@echo "  Set it as OPSATLAS_OBSERVER_KEY on the control plane," >&2
 	@echo "  and as OPSATLAS_API_KEY on the observer. It is never printed again." >&2
 	@echo "" >&2
+
+prometheus-key: ## Generate the key Prometheus scrapes the control plane with
+	@mkdir -p deploy/compose/telemetry
+	@if [ -s deploy/compose/telemetry/opsatlas.key ]; then \
+		echo "A scrape key already exists; leaving it alone."; \
+	else \
+		printf 'opsatlas_sk_%s' "$$(LC_ALL=C tr -dc 'A-Za-z0-9_-' < /dev/urandom | head -c 43)" \
+			> deploy/compose/telemetry/opsatlas.key; \
+		echo "Wrote deploy/compose/telemetry/opsatlas.key (gitignored)."; \
+	fi
+	@echo ""
+	@echo "  Start the control plane with:"
+	@echo "    OPSATLAS_PROMETHEUS_KEY=$$(cat deploy/compose/telemetry/opsatlas.key) make dev"
+	@echo ""
 
 check-secrets: ## Refuse credential-shaped strings and tracked key files
 	./scripts/check-secrets.sh

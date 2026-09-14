@@ -134,6 +134,9 @@ services:
       - --web.enable-lifecycle
     volumes:
       - ./telemetry/prometheus.yaml:/etc/prometheus/prometheus.yml:ro
+      # Written by `make prometheus-key`, gitignored. Mounted rather than baked
+      # into the config so the key never sits in a committed file.
+      - ./telemetry/opsatlas.key:/etc/prometheus/opsatlas.key:ro
       - prometheus-data:/prometheus
     ports:
       - "9091:9090"   # 9090 is the observer's own metrics port

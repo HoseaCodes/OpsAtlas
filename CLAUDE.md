@@ -64,7 +64,7 @@ worse than no `terraform/` directory.
   Gradle provisions Temurin 21 itself. Go 1.27+ **is** required for
   `apps/observer`; it is installed here via Homebrew.
 - **Tests:** `make test` — 14 schema fixtures, 37 console component tests,
-  35 Go tests (race-clean) and 283 JVM tests, all passing. `make test-all` adds
+  35 Go tests (race-clean) and 286 JVM tests, all passing. `make test-all` adds
   26 Playwright tests against the real stack. Integration tests use
   Testcontainers and need a running Docker daemon; the Playwright tests need the
   stack running.
@@ -87,11 +87,19 @@ worse than no `terraform/` directory.
 - **Every `/api/v1` endpoint requires a verified RS256 token** (ADR 0013).
   OpsAtlas is a resource server: it fetches public keys from the issuer's JWKS
   and holds no signing key, so it can check a token and cannot mint one. Open by
-  design: `/actuator/health`, `/actuator/info`, `/v3/api-docs`. Open and
-  **not** by design: `/actuator/prometheus` and `/actuator/metrics/**`, because
-  Prometheus scrapes them and nothing issues it a token yet — there is a
-  `TODO(auth)` on it in `SecurityConfiguration` and it is the next thing to
-  close.
+  design and nothing else: `/actuator/health`, `/actuator/info`, `/v3/api-docs`
+  and the Swagger UI assets.
+- **The metrics endpoints are no longer open.** Prometheus carries a credential
+  of its own (`make prometheus-key`, mounted as a file it reads), sent on
+  `Authorization: Bearer` because Prometheus cannot set an arbitrary header. A
+  `BearerTokenResolver` refuses to hand anything with this system's key prefix to
+  the token decoder, so a key and a JWT never contend for the same string.
+  Verified live: anonymous scrape 401, credentialled scrape 200, and the
+  Prometheus target back to `up`.
+- **Swagger UI defaults OFF**; `OPSATLAS_SWAGGER_UI=true` turns it on. Its assets
+  are permitted so the page can load and offer Authorize, while the endpoints it
+  calls still require a credential. It answered 401 — and was therefore broken —
+  for the whole window between authentication landing and this.
 - **A verified token is not a membership.** The issuer mints tokens for its own
   accounts, which are not this catalog's users. `ProvisionedPrincipals` requires
   a row in `principal` matching the token's **issuer and subject together** — the
