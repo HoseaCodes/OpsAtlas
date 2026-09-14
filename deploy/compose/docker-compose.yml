@@ -37,6 +37,62 @@ services:
     restart: unless-stopped
 
   # ---------------------------------------------------------------------------
+  # The identity provider, and its database.
+  #
+  # Not optional and not behind a profile: since ADR 0013 every control-plane
+  # endpoint needs a verified token, so a stack without an issuer is a control
+  # plane nobody can talk to. `make up` brings all of it or none of it.
+  #
+  # The image is published by Storm-Gate's own CI from a tagged commit. Pin a
+  # version with STORM_GATE_TAG rather than tracking `main`, so that an identity
+  # provider does not change underneath a deployment without somebody deciding.
+  # ---------------------------------------------------------------------------
+  mongo:
+    image: mongo:7
+    container_name: opsatlas-mongo
+    # Storm-Gate's store, not OpsAtlas's. PostgreSQL remains the system of
+    # record for everything this project owns (CLAUDE.md section 6); nothing in
+    # OpsAtlas reads or writes this database.
+    ports:
+      - "${STORM_GATE_DB_PORT:-27017}:27017"
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.runCommand({ping:1}).ok"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 3s
+    restart: unless-stopped
+
+  storm-gate:
+    image: ghcr.io/hoseacodes/storm-gate:${STORM_GATE_TAG:-main}
+    container_name: opsatlas-storm-gate
+    depends_on:
+      mongo:
+        condition: service_healthy
+    environment:
+      PORT: 8080
+      NODE_ENV: production
+      # RS256, never the HS256 default. Under HS256 a verifier needs the secret
+      # that also mints tokens, which would undo the reason for choosing an
+      # issuer that publishes a key set at all (ADR 0013).
+      JWT_SIGNING_ALG: RS256
+      JWT_ISSUER: http://localhost:${STORM_GATE_PORT:-8090}
+      # Generated per developer by `make up` into deploy/compose/.env, which is
+      # gitignored. Base64 because a PEM's newlines do not survive an env file.
+      JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY:?run `make up`, which generates a local signing key}
+      ACCESS_TOKEN_SECRET: ${ACCESS_TOKEN_SECRET:-local-development-access-secret}
+      REFRESH_TOKEN_SECRET: ${REFRESH_TOKEN_SECRET:-local-development-refresh-secret}
+      MONGODB_URL: mongodb://mongo:27017/stormgate
+      CORS_ORIGINS: http://localhost:3000
+    ports:
+      # 8090 on the host: 8080 is the control plane's, and Storm-Gate defaults
+      # to the same number.
+      - "${STORM_GATE_PORT:-8090}:8080"
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
   # Telemetry. Behind a profile, so `make up` still starts one container and
   # `make up-telemetry` starts the rest. A developer working on the catalog
   # should not have to run a collector, and four containers that nobody looks
@@ -109,6 +165,7 @@ services:
     restart: unless-stopped
 
 volumes:
+  mongo-data:
   postgres-data:
     name: opsatlas-postgres-data
   tempo-data:

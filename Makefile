@@ -10,7 +10,7 @@ COMPOSE := docker compose -f deploy/compose/docker-compose.yml
 GRADLE  := ./gradlew --console=plain
 
 .DEFAULT_GOAL := help
-.PHONY: help install check-examples check-secrets observer-key typecheck test test-all test-java test-web test-observer check dev dev-web dev-observer e2e up up-telemetry down down-telemetry logs psql clean clean-db openapi check-openapi
+.PHONY: help install check-examples check-secrets observer-key issuer-key typecheck test test-all test-java test-web test-observer check dev dev-web dev-observer e2e up up-telemetry down down-telemetry logs psql clean clean-db openapi check-openapi
 
 help: ## Show the targets that exist today
 	@echo ""
@@ -22,7 +22,18 @@ help: ## Show the targets that exist today
 
 # -- Running ----------------------------------------------------------------
 
-up: ## Start PostgreSQL and wait until it is accepting connections
+issuer-key: ## Generate this machine's local signing key for the identity provider
+	@if grep -q '^JWT_PRIVATE_KEY=' deploy/compose/.env 2>/dev/null; then \
+		echo "A local signing key already exists in deploy/compose/.env; leaving it alone."; \
+	else \
+		mkdir -p deploy/compose; \
+		printf 'JWT_PRIVATE_KEY=%s\n' "$$(openssl genrsa 2048 2>/dev/null | base64 | tr -d '\n')" \
+			>> deploy/compose/.env; \
+		echo "Generated a local signing key into deploy/compose/.env (gitignored)."; \
+		echo "It signs tokens for local development only. Never reuse it anywhere real."; \
+	fi
+
+up: issuer-key ## Start PostgreSQL, the identity provider, and wait for them
 	$(COMPOSE) up -d
 	@echo "Waiting for PostgreSQL to become healthy..."
 	@for i in $$(seq 1 60); do \

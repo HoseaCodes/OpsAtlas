@@ -293,7 +293,35 @@ either, which looked like a product bug. It is not one — the same click works
 once the router has attached, and a plain link to the identical URL works
 throughout.
 
-**An open decision, phase 9.** The browser suite now needs an identity provider,
+**Decided: option 2, a published image.** Storm-Gate's CI now builds a
+multi-architecture image and pushes it to `ghcr.io/hoseacodes/storm-gate`, and
+this project's compose pulls it. `make up` starts PostgreSQL, MongoDB and the
+identity provider together — not behind a profile, because since ADR 0013 a
+stack without an issuer is a control plane nobody can talk to.
+
+Getting there meant fixing what the image would have shipped, which was the
+point of looking:
+
+- **22 production vulnerabilities, including 2 critical, down to 2 moderate.**
+  One of the highs was `jws` — the library on the token signing and verification
+  path this project is about to trust. The last critical needed a major bcrypt
+  bump, so the compatibility question was answered rather than assumed: a hash
+  written by bcrypt 5, read out of the running database, still verifies under
+  bcrypt 6, and a wrong password is still rejected. No forced password resets.
+- **The Dockerfile pinned Node 18**, which left support in April 2025, while the
+  project's own `.nvmrc` and README said Node 20. An authentication service on
+  an end-of-life runtime ships whatever that runtime stops receiving.
+- **The build toolchain shipped in the final image.** Multi-stage now, so gcc,
+  make and python3 are not present in something that runs on the internet.
+- **The application could rewrite its own source.** The original chowned all of
+  `/app` to the runtime user; the replacement grants only `logs/`. Found because
+  a comment claiming otherwise was written first and then tested.
+
+The workflow gates on the suite and on `npm audit --omit=dev --audit-level=high`,
+so a known-vulnerable production dependency stops a publish rather than becoming
+one.
+
+**The superseded question.** The browser suite needs an identity provider,
 because the console it drives needs somebody to sign in as. `make e2e` starts
 PostgreSQL, the control plane and the console; it does not start Storm-Gate, and
 Storm-Gate needs MongoDB of its own. Three ways out, none free:

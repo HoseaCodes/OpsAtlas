@@ -51,6 +51,11 @@ worse than no `terraform/` directory.
   behind the compose `telemetry` profile; ADRs 0001–0011;
   `docs/design/tokens.md`; `docs/architecture/slice-one.md`.
 - **Build:** pnpm workspace plus Gradle, `make` as the single entry point.
+  `make up` now starts **PostgreSQL, MongoDB and Storm-Gate** (the identity
+  provider, from `ghcr.io/hoseacodes/storm-gate`), because since ADR 0013 a
+  stack without an issuer is a control plane nobody can talk to. It also runs
+  `make issuer-key` first, which generates a local RSA signing key into
+  `deploy/compose/.env` — gitignored, local-only, never reused anywhere real.
   `make dev` runs the control plane on :8080 against compose PostgreSQL,
   `make dev-observer` the observer, and `make up-telemetry` the collector, Tempo
   (:3200), Prometheus (:9091) and Grafana (:3001). The telemetry stack is a
