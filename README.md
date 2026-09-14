@@ -84,7 +84,7 @@ jobs — selection, focus ring, error-budget fill, open-incident emphasis. See
 | OpenAPI document generated from the code, drift-checked | **Real** | `make check-openapi` fails the build on any difference |
 | Swagger UI over that document, at `/swagger-ui.html` | **Real** | served by springdoc; on by default locally, off when `OPSATLAS_SWAGGER_UI=false` |
 | Typed TypeScript client, no hand-written API types | **Real** | `make typecheck` |
-| Web console — catalog, detail, scorecard, register by paste | **Real** | 37 component tests, 23 Playwright tests against the real stack |
+| Web console — catalog, detail, scorecard, register by paste | **Real** | 37 component tests, 26 Playwright tests against the real stack |
 | A copyable prompt on `/register`, generated from the schema and the live rules | **Real** | `manifestPrompt.test.ts` walks the real schema and fails if a field is missing from the prompt; a Playwright test reads the clipboard |
 | Loading / empty / partial-failure / error / never-observed states | **Real** | `states.test.tsx`, and the detail page settles its two requests independently |
 | Status carried by shape and height, never by hue | **Real** | `status.test.tsx` — a pass differs from a fail by shape, a day's availability by height |
@@ -128,7 +128,7 @@ jobs — selection, focus ring, error-budget fill, open-incident emphasis. See
 | Rotating a key revokes the old one immediately | **Real** | `ServiceCredentialIT` — both keys working during a changeover would leave a leaked key live |
 | Console sign-in, session and sign-out | **Real, and verified live** | `signin.spec.ts` drives a real browser against a real Storm-Gate: redirect to sign-in, sign in, catalog renders, reload keeps the session, sign out ends it |
 | The console holds no credential of its own | **Real** | it forwards the reader's token, so the audit log names the person rather than "the console" |
-| **The rest of the browser suite** | **Red — 2 passed, 8 failed, 15 not run** | the other specs have no session yet, and `make e2e` does not start an identity provider |
+| The browser suite, signed in | **Real** | 26 Playwright tests against the whole stack — identity provider, control plane, PostgreSQL and the console — with a shared session from a real sign-in |
 | OpenAPI document declaring the bearer scheme | **Not done** | the generated contract says nothing about auth, so the typed client does not know a token exists |
 | Dependency graph and blast radius | **Not built** | needs trace data |
 | Real-user SLO measurement | **Not built** | probe availability is not an SLO — see below |

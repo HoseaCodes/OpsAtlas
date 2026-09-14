@@ -65,7 +65,7 @@ worse than no `terraform/` directory.
   `apps/observer`; it is installed here via Homebrew.
 - **Tests:** `make test` — 14 schema fixtures, 37 console component tests,
   35 Go tests (race-clean) and 280 JVM tests, all passing. `make test-all` adds
-  23 Playwright tests against the real stack. Integration tests use
+  26 Playwright tests against the real stack. Integration tests use
   Testcontainers and need a running Docker daemon; the Playwright tests need the
   stack running.
 - **CI has run, and it is green.** Run #1 on 2026-09-13, commit `16b3435`,
@@ -121,12 +121,16 @@ worse than no `terraform/` directory.
     every write in the audit log read as "the console did it". Verified live
     against a real Storm-Gate: redirect to sign-in, sign in, catalog renders,
     session survives a reload, sign out.
-  - **⚠ `make e2e` is red: 2 passed, 8 failed, 15 did not run.** Only the new
-    `signin.spec.ts` passes. The other specs visit pages with no session (now a
-    redirect to `/login`) and register services through the API with no token.
-    They need a shared signed-in `storageState` and an authenticated setup
-    helper. **And the suite now needs an identity provider running**, which
-    `make e2e` does not start — see the decision noted in `docs/roadmap.md`.
+  - ~~`make e2e` is red.~~ **Green: 26 passed.** A Playwright `setup` project
+    signs in once through the form and every other spec reuses that
+    `storageState`; `signin.spec.ts` runs without it, since it is about not being
+    signed in yet. Specs' direct API calls go as the operator via
+    `e2e/support/session.ts`.
+  - **The browser suite needs the whole stack**, identity provider included:
+    `make up && make first-user && make dev`. `make first-user` creates the local
+    account at the issuer, reads back the subject the issuer assigned, and
+    records it in `deploy/compose/.env` so `make dev` provisions it on startup —
+    a fresh stack otherwise admits nobody.
   - The generated OpenAPI document declares no security scheme either, so the
     typed client does not know a token exists. That is the same gap seen from
     the contract's side.

@@ -10,7 +10,7 @@ COMPOSE := docker compose -f deploy/compose/docker-compose.yml
 GRADLE  := ./gradlew --console=plain
 
 .DEFAULT_GOAL := help
-.PHONY: help install check-examples check-secrets observer-key issuer-key typecheck test test-all test-java test-web test-observer check dev dev-web dev-observer e2e up up-telemetry down down-telemetry logs psql clean clean-db openapi check-openapi
+.PHONY: help install check-examples check-secrets observer-key issuer-key first-user typecheck test test-all test-java test-web test-observer check dev dev-web dev-observer e2e up up-telemetry down down-telemetry logs psql clean clean-db openapi check-openapi
 
 help: ## Show the targets that exist today
 	@echo ""
@@ -68,11 +68,53 @@ logs: ## Follow the PostgreSQL logs
 psql: ## Open a psql shell in the running database container
 	$(COMPOSE) exec postgres psql -U opsatlas -d opsatlas
 
+# The account the local stack is used as.
+#
+# A fresh stack admits nobody: the identity provider has no accounts, and a token
+# only works once a principal row exists for it (ADR 0013). This creates the
+# account at the issuer, reads back the subject the issuer assigned, and records
+# it so `make dev` can provision it on startup. Idempotent - run it again and it
+# signs in instead.
+LOCAL_EMAIL ?= operator@opsatlas.local
+LOCAL_PASSWORD ?= Str0ng-Local-Passw0rd!
+ISSUER_URL ?= http://localhost:8090
+
+first-user: up ## Create the local account and record it for bootstrap
+	@set -e; \
+	body='{"name":"Local Operator","email":"$(LOCAL_EMAIL)","username":"operator",'; \
+	body="$$body\"password\":\"$(LOCAL_PASSWORD)\",\"role\":0,\"application\":\"opsatlas\"}"; \
+	token=$$(curl -s -X POST $(ISSUER_URL)/register -H 'Content-Type: application/json' -d "$$body" \
+		| sed -n 's/.*"accesstoken":"\([^"]*\)".*/\1/p'); \
+	if [ -z "$$token" ]; then \
+		token=$$(curl -s -X POST $(ISSUER_URL)/login -H 'Content-Type: application/json' \
+			-d '{"email":"$(LOCAL_EMAIL)","password":"$(LOCAL_PASSWORD)"}' \
+			| sed -n 's/.*"accesstoken":"\([^"]*\)".*/\1/p'); \
+	fi; \
+	if [ -z "$$token" ]; then \
+		echo "Could not create or sign in to $(LOCAL_EMAIL) at $(ISSUER_URL)."; \
+		echo "Is the stack up? Try: make up"; exit 1; \
+	fi; \
+	subject=$$(printf '%s' "$$token" | cut -d. -f2 | tr '_-' '/+' \
+		| awk '{ while (length($$0) % 4) $$0 = $$0 "="; print }' | base64 -d 2>/dev/null \
+		| sed -n 's/.*"id":"\([^"]*\)".*/\1/p'); \
+	if [ -z "$$subject" ]; then echo "The issuer returned a token with no subject id."; exit 1; fi; \
+	sed -i.bak '/^OPSATLAS_BOOTSTRAP_/d' deploy/compose/.env 2>/dev/null || true; \
+	rm -f deploy/compose/.env.bak; \
+	{ echo "OPSATLAS_BOOTSTRAP_ISSUER=$(ISSUER_URL)"; \
+	  echo "OPSATLAS_BOOTSTRAP_SUBJECT=$$subject"; \
+	  echo "OPSATLAS_BOOTSTRAP_DISPLAY_NAME=Local Operator"; } >> deploy/compose/.env; \
+	echo ""; \
+	echo "  $(LOCAL_EMAIL) is ready at the issuer, subject $$subject."; \
+	echo "  Recorded in deploy/compose/.env, which is gitignored."; \
+	echo "  'make dev' will provision it on startup."; \
+	echo ""
+
 dev: up ## Start the database, then run the control plane on :8080
 	@echo ""
 	@echo "  Control plane starting on http://localhost:8080"
 	@echo "  Then, in another terminal: make dev-web"
 	@echo ""
+	@if [ -f deploy/compose/.env ]; then set -a; . ./deploy/compose/.env; set +a; fi; \
 	$(GRADLE) :control-plane:bootRun
 
 dev-web: ## Run the console on :3000 (needs the control plane running)

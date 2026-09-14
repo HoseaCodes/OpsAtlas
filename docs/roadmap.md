@@ -321,6 +321,23 @@ The workflow gates on the suite and on `npm audit --omit=dev --audit-level=high`
 so a known-vulnerable production dependency stops a publish rather than becoming
 one.
 
+**Done, and the suite is green again.** The image publishes, `make up` starts the
+issuer from it, and `make first-user` closes the bootstrap gap in one command:
+it creates the local account at the issuer, reads back the subject the issuer
+assigned, and records it so `make dev` provisions it on startup. The browser
+suite signs in once in a `setup` project and shares that session — 26 tests
+passing against the whole stack.
+
+Two things that went wrong on the way are worth keeping, because both looked
+like product bugs and neither was. The publish failed twice: once on tag casing,
+and once because the step read `.target."docker-metadata-action".tags` from
+`DOCKER_METADATA_OUTPUT_JSON` — that is the *bake file* layout, and the variable
+holds the flat `{"tags":[...]}` one, so correctly computed tags were thrown away
+by the filter meant to read them. And a health assertion started failing because
+the observer, doing its job against the same database, had probed the service the
+test asserts is at 100%. That spec now registers a service of its own per run
+rather than assuming nothing else has ever touched one.
+
 **The superseded question.** The browser suite needs an identity provider,
 because the console it drives needs somebody to sign in as. `make e2e` starts
 PostgreSQL, the control plane and the console; it does not start Storm-Gate, and

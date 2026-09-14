@@ -40,3 +40,4 @@ apps/web/test-results/
 
 # ── Observer ─────────────────────────────────────────────────────────────
 apps/observer/observer
+apps/web/e2e/.auth/

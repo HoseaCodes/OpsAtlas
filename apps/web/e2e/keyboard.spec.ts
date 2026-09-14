@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { asOperator } from "./support/session";
 
 const EXAMPLES = join(process.cwd(), "..", "..", "examples", "services");
 const API = process.env.OPSATLAS_API_URL ?? "http://localhost:8080";
@@ -21,7 +22,7 @@ async function ensureRegistered(name: string) {
   const body = readFileSync(join(EXAMPLES, name), "utf8");
   const response = await fetch(`${API}/api/v1/services`, {
     method: "POST",
-    headers: { "Content-Type": "application/yaml" },
+    headers: await asOperator({ "Content-Type": "application/yaml" }),
     body,
   });
   if (response.ok) return;
@@ -29,12 +30,12 @@ async function ensureRegistered(name: string) {
     throw new Error(`Setup failed to register ${name}: ${response.status} ${await response.text()}`);
   }
   const slug = name.replace(/\.ya?ml$/, "");
-  const current = await fetch(`${API}/api/v1/services/${slug}`);
+  const current = await fetch(`${API}/api/v1/services/${slug}`, { headers: await asOperator() });
   const etag = current.headers.get("etag");
   if (!current.ok || !etag) throw new Error(`Setup could not read ${slug}: ${current.status}`);
   const updated = await fetch(`${API}/api/v1/services/${slug}`, {
     method: "PUT",
-    headers: { "Content-Type": "application/yaml", "If-Match": etag },
+    headers: await asOperator({ "Content-Type": "application/yaml", "If-Match": etag }),
     body,
   });
   if (!updated.ok) throw new Error(`Setup failed to update ${slug}: ${updated.status}`);

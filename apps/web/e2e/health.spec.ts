@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { asOperator } from "./support/session";
 
 const API = process.env.OPSATLAS_API_URL ?? "http://localhost:8080";
 
@@ -11,13 +12,28 @@ const API = process.env.OPSATLAS_API_URL ?? "http://localhost:8080";
  * because what this file is about is the console. That the observer produces
  * these is covered by its own tests and by a live run.
  */
+/**
+ * A service this run owns outright.
+ *
+ * It used to be a fixed `probed-api`, which assumed nothing else had ever
+ * observed it - and the observer, doing its job against the same database,
+ * probes whatever the catalog declares. One live run of it put real failures on
+ * this service and the assertion that production sits at exactly 100.00% became
+ * false, in a way that looked like a console bug and was not.
+ *
+ * A per-run slug means these assertions are about observations this file
+ * created. The catalog keeps the earlier ones, which is what a catalog does.
+ */
+const SLUG = `probed-api-${Date.now().toString(36)}`;
+const DISPLAY = `Probed API ${SLUG.slice(-6)}`;
+
 const MANIFEST = `apiVersion: opsatlas.ambitiousconcepts.io/v1
 kind: Service
 metadata:
-  name: probed-api
-  displayName: Probed API
+  name: ${SLUG}
+  displayName: ${DISPLAY}
   owner: ambitious-concepts
-  repository: ambitious-concepts/probed-api
+  repository: ambitious-concepts/${SLUG}
 spec:
   tier: 1
   runtime: spring-boot
@@ -30,7 +46,7 @@ spec:
     readiness: /readyz
     liveness: /healthz
   observability:
-    serviceName: probed-api
+    serviceName: ${SLUG}
   operations:
     slo: {availability: 99.9, window: 30d}
     runbook: docs/runbook.md
@@ -44,7 +60,7 @@ let stagingId = "";
 test.beforeAll(async () => {
   const registered = await fetch(`${API}/api/v1/services`, {
     method: "POST",
-    headers: { "Content-Type": "application/yaml" },
+    headers: await asOperator({ "Content-Type": "application/yaml" }),
     body: MANIFEST,
   });
   if (registered.status === 409) {
@@ -52,24 +68,24 @@ test.beforeAll(async () => {
     // API's own answer to a 409 is PUT with If-Match, so setup does that
     // instead of requiring a clean database - CI gets one, a developer's
     // machine does not.
-    const current = await fetch(`${API}/api/v1/services/probed-api`);
+    const current = await fetch(`${API}/api/v1/services/${SLUG}`, { headers: await asOperator() });
     const etag = current.headers.get("etag");
     if (!current.ok || !etag) {
-      throw new Error(`setup could not read probed-api after a 409: ${current.status}`);
+      throw new Error(`setup could not read ${SLUG} after a 409: ${current.status}`);
     }
-    const updated = await fetch(`${API}/api/v1/services/probed-api`, {
+    const updated = await fetch(`${API}/api/v1/services/${SLUG}`, {
       method: "PUT",
-      headers: { "Content-Type": "application/yaml", "If-Match": etag },
+      headers: await asOperator({ "Content-Type": "application/yaml", "If-Match": etag }),
       body: MANIFEST,
     });
     if (!updated.ok) {
-      throw new Error(`setup failed to update probed-api: ${updated.status} ${await updated.text()}`);
+      throw new Error(`setup failed to update ${SLUG}: ${updated.status} ${await updated.text()}`);
     }
   } else if (registered.status !== 201 && registered.status !== 200) {
     throw new Error(`setup failed to register: ${registered.status} ${await registered.text()}`);
   }
 
-  const detail = await (await fetch(`${API}/api/v1/services/probed-api`)).json();
+  const detail = await (await fetch(`${API}/api/v1/services/${SLUG}`, { headers: await asOperator() })).json();
   for (const environment of detail.environments) {
     if (environment.name === "production") productionId = environment.id;
     if (environment.name === "staging") stagingId = environment.id;
@@ -99,7 +115,7 @@ test.beforeAll(async () => {
 
   const reported = await fetch(`${API}/api/v1/observations`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: await asOperator({ "Content-Type": "application/json" }),
     body: JSON.stringify({
       idempotencyKey: `e2e-health-${now}`,
       observerId: "e2e",
@@ -114,7 +130,7 @@ test.beforeAll(async () => {
 test("the catalog shows the worst environment's health, not an average", async ({ page }) => {
   await page.goto("/catalog");
 
-  const row = page.getByRole("link", { name: /Probed API/ });
+  const row = page.getByRole("link", { name: new RegExp(DISPLAY) });
   await expect(row).toBeVisible();
   // Production is healthy and staging is down. The service is down: averaging
   // would call it mostly fine, which is true of the environments and false of
@@ -123,7 +139,7 @@ test("the catalog shows the worst environment's health, not an average", async (
 });
 
 test("the detail page shows per-environment health and why the failing one failed", async ({ page }) => {
-  await page.goto("/catalog/probed-api");
+  await page.goto(`/catalog/${SLUG}`);
 
   await expect(page.getByRole("cell", { name: "production" })).toBeVisible();
   await expect(page.getByText("Healthy").first()).toBeVisible();
@@ -137,7 +153,7 @@ test("the detail page shows per-environment health and why the failing one faile
 });
 
 test("the page refuses to call probe availability an SLO", async ({ page }) => {
-  await page.goto("/catalog/probed-api");
+  await page.goto(`/catalog/${SLUG}`);
 
   // The claim the whole measurement rests on: this is the share of probes that
   // succeeded from one vantage point, and a service can serve errors to every
@@ -146,7 +162,7 @@ test("the page refuses to call probe availability an SLO", async ({ page }) => {
 });
 
 test("the 30-day ribbon distinguishes an un-probed day from a bad one", async ({ page }) => {
-  await page.goto("/catalog/probed-api");
+  await page.goto(`/catalog/${SLUG}`);
 
   const ribbon = page.locator(".ribbon").first();
   await expect(ribbon).toBeVisible();
@@ -164,7 +180,7 @@ test("a service that has never been probed says so rather than looking healthy",
   // legacy-report-runner is registered by the catalog spec and never observed.
   await fetch(`${API}/api/v1/services`, {
     method: "POST",
-    headers: { "Content-Type": "application/yaml" },
+    headers: await asOperator({ "Content-Type": "application/yaml" }),
     body: `apiVersion: opsatlas.ambitiousconcepts.io/v1
 kind: Service
 metadata:

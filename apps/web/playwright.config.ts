@@ -8,8 +8,14 @@ import { defineConfig, devices } from "@playwright/test";
  * the browser.' Assert through a Playwright smoke test or say it was not
  * verified." This file is the difference between those two.
  *
- * It assumes the control plane is already running (make up && make dev) and
+ * It assumes the whole stack is already running - the identity provider, the
+ * control plane and PostgreSQL (make up && make first-user && make dev) - and
  * starts the console itself.
+ *
+ * Since ADR 0013 the console admits nobody without a session, so a `setup`
+ * project signs in once and every other spec reuses that state. Signing in per
+ * test would add a form submission and a token exchange to all of them for no
+ * extra coverage.
  */
 export default defineConfig({
   testDir: "./e2e",
@@ -21,12 +27,30 @@ export default defineConfig({
     baseURL: "http://localhost:3100",
     trace: "retain-on-failure",
   },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  projects: [
+    { name: "setup", testMatch: /auth\.setup\.ts/ },
+    {
+      name: "chromium",
+      use: { ...devices["Desktop Chrome"], storageState: "e2e/.auth/session.json" },
+      dependencies: ["setup"],
+      // signin.spec.ts is about not being signed in yet, so it runs without the
+      // saved state and manages its own.
+      testIgnore: /signin\.spec\.ts/,
+    },
+    {
+      name: "chromium-anonymous",
+      testMatch: /signin\.spec\.ts/,
+      use: { ...devices["Desktop Chrome"] },
+    },
+  ],
   webServer: {
     command: "pnpm build && pnpm start --port 3100",
     url: "http://localhost:3100/catalog",
     reuseExistingServer: false,
     timeout: 180_000,
-    env: { OPSATLAS_API_URL: process.env.OPSATLAS_API_URL ?? "http://localhost:8080" },
+    env: {
+      OPSATLAS_API_URL: process.env.OPSATLAS_API_URL ?? "http://localhost:8080",
+      STORM_GATE_URL: process.env.STORM_GATE_URL ?? "http://localhost:8090",
+    },
   },
 });
