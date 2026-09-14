@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { currentToken } from "@/lib/session";
 
 /**
  * Proxies source management to the control plane.
@@ -12,9 +13,30 @@ import { NextResponse } from "next/server";
 const baseUrl = () => process.env.OPSATLAS_API_URL ?? "http://localhost:8080";
 
 async function forward(path: string, init: RequestInit): Promise<NextResponse> {
+  // The reader's own token, forwarded. The console holds no credential of its
+  // own on purpose: one would make every write in the audit log read as "the
+  // console did it" (ADR 0013).
+  const token = await currentToken();
+  if (!token) {
+    return NextResponse.json(
+      {
+        type: "https://opsatlas.ambitiousconcepts.io/problems/unauthenticated",
+        title: "Authentication required",
+        status: 401,
+        detail: "Your session has ended. Sign in again to continue.",
+        correlationId: "not-issued",
+      },
+      { status: 401 },
+    );
+  }
+
   let upstream: Response;
   try {
-    upstream = await fetch(`${baseUrl()}${path}`, { ...init, cache: "no-store" });
+    upstream = await fetch(`${baseUrl()}${path}`, {
+      ...init,
+      headers: { ...(init.headers ?? {}), Authorization: `Bearer ${token}` },
+      cache: "no-store",
+    });
   } catch {
     return NextResponse.json(
       {

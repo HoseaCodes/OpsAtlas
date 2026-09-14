@@ -293,6 +293,25 @@ either, which looked like a product bug. It is not one — the same click works
 once the router has attached, and a plain link to the identical URL works
 throughout.
 
+**An open decision, phase 9.** The browser suite now needs an identity provider,
+because the console it drives needs somebody to sign in as. `make e2e` starts
+PostgreSQL, the control plane and the console; it does not start Storm-Gate, and
+Storm-Gate needs MongoDB of its own. Three ways out, none free:
+
+1. **Add Storm-Gate and MongoDB to compose.** Honest, and it makes `make e2e`
+   exercise the real thing. The wrinkle is that Storm-Gate lives in a different
+   repository, so compose would either build from a path outside this project —
+   which only works on a machine that has both — or pull a published image,
+   which does not exist yet.
+2. **Publish a Storm-Gate image** and depend on the tag. Cleanest for CI, and it
+   makes this project's tests depend on another project's release cadence.
+3. **A stub issuer for tests only.** No external dependency and fast, but it
+   proves the console agrees with a fake, and CLAUDE.md §3 rule 2 would require
+   labelling it as mocked wherever it appears.
+
+Worth choosing deliberately rather than by whichever is easiest at the time: it
+decides what "the tests pass" means from here on.
+
 **Deferred, with reasons:**
 
 - **Drift detection.** CLAUDE.md §5 lists it as the observer's job. It needs a

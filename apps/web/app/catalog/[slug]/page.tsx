@@ -36,7 +36,7 @@ export default async function ServicePage({
   // partial-failure case CLAUDE.md §10 calls the normal case for a control
   // plane: if the scorecard cannot be read, the service detail is still worth
   // showing, and the page says which half is missing instead of failing whole.
-  const api = controlPlane();
+  const api = await controlPlane();
   const [detailResult, scorecardResult, healthResult] = await Promise.allSettled([
     api.getService(slug, noStore),
     api.getScorecard(slug, noStore),

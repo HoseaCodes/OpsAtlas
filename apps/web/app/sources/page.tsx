@@ -13,7 +13,7 @@ type SourceView = components["schemas"]["SourceView"];
 export default async function SourcesPage() {
   let sources: SourceView[];
   try {
-    const response = await controlPlane().listSources({ limit: 100 }, noStore);
+    const response = await (await controlPlane()).listSources({ limit: 100 }, noStore);
     sources = response.items;
   } catch (error) {
     const problem = error instanceof ApiError ? error : null;

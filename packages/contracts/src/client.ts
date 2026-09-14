@@ -73,15 +73,27 @@ export interface ClientOptions {
   baseUrl?: string;
   /** Passed through so a caller can cancel, and so Next.js can control caching. */
   fetch?: typeof globalThis.fetch;
+
+  /**
+   * The value for the Authorization header, e.g. `Bearer <token>`.
+   *
+   * Every control-plane endpoint requires one (ADR 0013). Supplied per client
+   * rather than per call because it belongs to whoever the client was built
+   * for, and threading it through every method signature would make it
+   * forgettable at exactly one call site.
+   */
+  authorization?: string;
 }
 
 export class OpsAtlasClient {
   private readonly baseUrl: string;
   private readonly doFetch: typeof globalThis.fetch;
+  private readonly authorization?: string;
 
   constructor(options: ClientOptions = {}) {
     this.baseUrl = (options.baseUrl ?? "http://localhost:8080").replace(/\/$/, "");
     this.doFetch = options.fetch ?? globalThis.fetch;
+    this.authorization = options.authorization;
   }
 
   listServices(params: { cursor?: string; limit?: number } = {}, init?: RequestInit) {
@@ -158,7 +170,14 @@ export class OpsAtlasClient {
   private async request<T>(path: string, init?: RequestInit): Promise<T> {
     const response = await this.doFetch(`${this.baseUrl}${path}`, {
       ...init,
-      headers: { Accept: "application/json", ...(init?.headers ?? {}) },
+      headers: {
+        Accept: "application/json",
+        // Before the caller's headers, so a call that sets its own wins - and
+        // after nothing, so a client built without one sends none rather than
+        // sending the word "undefined".
+        ...(this.authorization ? { Authorization: this.authorization } : {}),
+        ...(init?.headers ?? {}),
+      },
     });
 
     if (!response.ok) {

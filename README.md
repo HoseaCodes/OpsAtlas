@@ -126,7 +126,9 @@ jobs — selection, focus ring, error-budget fill, open-incident emphasis. See
 | Observer authenticating to the control plane | **Real, and verified live** | `ServiceCredentialIT` (6 tests) and 2 Go tests; run live, the observer reports `probed 4, applied 4` with its key and cannot refresh the catalog without it |
 | Keys stored hashed, never in the database | **Real** | SHA-256 of a 256-bit key — a fast hash on purpose, and `ServiceCredentialIT` asserts the stored value is not the key |
 | Rotating a key revokes the old one immediately | **Real** | `ServiceCredentialIT` — both keys working during a changeover would leave a leaked key live |
-| **Console reading the catalog** | **Broken by authentication** | its server-side calls carry no token; `make e2e` is 8 failed, 15 not run |
+| Console sign-in, session and sign-out | **Real, and verified live** | `signin.spec.ts` drives a real browser against a real Storm-Gate: redirect to sign-in, sign in, catalog renders, reload keeps the session, sign out ends it |
+| The console holds no credential of its own | **Real** | it forwards the reader's token, so the audit log names the person rather than "the console" |
+| **The rest of the browser suite** | **Red — 2 passed, 8 failed, 15 not run** | the other specs have no session yet, and `make e2e` does not start an identity provider |
 | OpenAPI document declaring the bearer scheme | **Not done** | the generated contract says nothing about auth, so the typed client does not know a token exists |
 | Dependency graph and blast radius | **Not built** | needs trace data |
 | Real-user SLO measurement | **Not built** | probe availability is not an SLO — see below |

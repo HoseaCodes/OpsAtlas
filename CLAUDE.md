@@ -110,9 +110,18 @@ worse than no `terraform/` directory.
     `service:observer`, because it is a machine and naming a person who does not
     exist would be worse. Verified live: without the key the service list refuses
     to refresh, with it a pass reports `probed 4, applied 4`.
-  - **The console cannot read the catalog.** Its server-side calls carry no
-    token. `make e2e` is **8 failed, 15 did not run** — the 15 never started
-    because their setup registers a service through the API first.
+  - ~~The console cannot read the catalog.~~ **Fixed.** A person signs in at
+    `/login`, the console holds *their* token in an httpOnly cookie and forwards
+    it — it deliberately holds no credential of its own, because one would make
+    every write in the audit log read as "the console did it". Verified live
+    against a real Storm-Gate: redirect to sign-in, sign in, catalog renders,
+    session survives a reload, sign out.
+  - **⚠ `make e2e` is red: 2 passed, 8 failed, 15 did not run.** Only the new
+    `signin.spec.ts` passes. The other specs visit pages with no session (now a
+    redirect to `/login`) and register services through the API with no token.
+    They need a shared signed-in `storageState` and an authenticated setup
+    helper. **And the suite now needs an identity provider running**, which
+    `make e2e` does not start — see the decision noted in `docs/roadmap.md`.
   - The generated OpenAPI document declares no security scheme either, so the
     typed client does not know a token exists. That is the same gap seen from
     the contract's side.

@@ -1,5 +1,8 @@
+import { cookies } from "next/headers";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
+import { SESSION_COOKIE, currentToken } from "@/lib/session";
 import { ThemeToggle } from "./ThemeToggle";
 
 /**
@@ -10,7 +13,18 @@ import { ThemeToggle } from "./ThemeToggle";
  * Incidents, Scorecards, Golden Paths, Costs, Architecture, Audit Log - is
  * recorded in docs/roadmap.md, not rendered here as disabled links.
  */
-export function AppShell({ children }: { children: ReactNode }) {
+export async function AppShell({ children }: { children: ReactNode }) {
+  const signedIn = (await currentToken()) !== undefined;
+
+  async function signOut() {
+    "use server";
+    // Deleting the cookie ends the session here. The token itself stays valid
+    // at the issuer until it expires - a resource server cannot revoke what it
+    // did not mint, and pretending otherwise would be the more dangerous lie.
+    (await cookies()).delete(SESSION_COOKIE);
+    redirect("/login");
+  }
+
   return (
     <div className="grid min-h-full grid-cols-1 md:grid-cols-[216px_minmax(0,1fr)]">
       <aside
@@ -43,8 +57,22 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
         </nav>
 
-        <div className="ml-auto flex flex-none items-center md:ml-0 md:mt-auto md:border-t md:border-rule md:pt-3.5">
+        <div className="ml-auto flex flex-none items-center gap-2 md:ml-0 md:mt-auto md:border-t md:border-rule md:pt-3.5">
           <ThemeToggle />
+          {signedIn ? (
+            // No name beside it: the token carries a subject and an expiry and
+            // nothing a person would recognise, and inventing a display name
+            // would be a UI element implying something the backend does not
+            // have (CLAUDE.md section 10).
+            <form action={signOut}>
+              <button
+                type="submit"
+                className="rounded-[5px] px-2 py-1.5 text-[13px] text-ink-2 hover:bg-surface-2 hover:text-ink"
+              >
+                Sign out
+              </button>
+            </form>
+          ) : null}
         </div>
       </aside>
 
