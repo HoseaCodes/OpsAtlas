@@ -39,8 +39,10 @@ class DefaultAuditRecorder implements AuditRecorder {
         events.save(AuditEventEntity.of(
                 orgId,
                 clock.instant(),
-                // TODO(auth): the stub principal's subject. Becomes a real
-                // identity the moment SeededOrgPrincipalResolver is replaced.
+                // The authenticated caller's subject (ADR 0013). The stable
+                // identifier rather than the display name: names are not unique
+                // and they change, and an audit entry has to say which account
+                // did this, years later, unambiguously.
                 currentPrincipal.get().subject(),
                 action,
                 subjectType,

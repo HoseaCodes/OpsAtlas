@@ -257,12 +257,11 @@ public class ApiExceptionHandler {
                         + " when reporting it.");
     }
 
+    /**
+     * Delegates, so that this and the security layer cannot answer in two
+     * different shapes. See {@link Problems}.
+     */
     private static ProblemDetail problem(HttpStatus status, String type, String title, String detail) {
-        ProblemDetail problem = ProblemDetail.forStatus(status);
-        problem.setType(URI.create(TYPE_BASE + type));
-        problem.setTitle(title);
-        problem.setDetail(detail);
-        problem.setProperty("correlationId", CorrelationIdFilter.current());
-        return problem;
+        return Problems.of(status, type, title, detail);
     }
 }

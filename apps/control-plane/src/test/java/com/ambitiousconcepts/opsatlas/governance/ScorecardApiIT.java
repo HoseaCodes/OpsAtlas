@@ -255,7 +255,11 @@ class ScorecardApiIT extends PostgresTestBase {
                 // The link between "something happened" and "here are the log
                 // lines for it" (CLAUDE.md section 9).
                 .andExpect(jsonPath("$.items[0].correlationId").value("audit-trace-0001"))
-                .andExpect(jsonPath("$.items[0].actor").value("local-operator"))
+                // Was "local-operator" - a constant, because nothing knew who
+                // was calling. It now names the authenticated caller (ADR 0013),
+                // which is most of what an audit log is for.
+                .andExpect(jsonPath("$.items[0].actor")
+                        .value(com.ambitiousconcepts.opsatlas.support.AuthenticatedByDefault.SUBJECT))
                 .andExpect(jsonPath("$.items[0].payload.slug").value("orders-api"))
                 .andExpect(jsonPath("$.items[0].payload.checksPassed").value(10))
                 .andExpect(jsonPath("$.items[0].payload.manifestDigest").isNotEmpty());

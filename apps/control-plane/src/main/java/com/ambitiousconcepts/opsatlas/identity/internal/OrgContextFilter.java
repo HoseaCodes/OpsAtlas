@@ -1,14 +1,14 @@
 package com.ambitiousconcepts.opsatlas.identity.internal;
 
 import com.ambitiousconcepts.opsatlas.identity.api.Principal;
-import com.ambitiousconcepts.opsatlas.identity.api.PrincipalResolver;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.util.Optional;
 import org.slf4j.MDC;
-import org.springframework.core.Ordered;
+import org.springframework.boot.autoconfigure.security.SecurityProperties;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
@@ -17,25 +17,42 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * Resolves the caller once per request and binds the organization for the
  * duration of it.
  *
- * <p>Ordered immediately after {@code CorrelationIdFilter} so that anything
- * logged here already carries a correlation id.
+ * <p>Ordered <strong>after Spring Security</strong>, which is a change from
+ * where this used to sit. It previously ran at {@code HIGHEST_PRECEDENCE + 10},
+ * ahead of everything - fine while the principal was a constant, and wrong the
+ * moment it came from a verified token: the security filter chain had not run
+ * yet, so there was no authentication to read. A correlation id is still in the
+ * MDC by now, because {@code CorrelationIdFilter} stays in front of both.
+ *
+ * <p>An unauthenticated request binds nothing rather than failing. Some
+ * endpoints are deliberately open - liveness, the generated contract - and they
+ * have no organization to scope to. Anything that needs one and does not have
+ * one fails loudly through {@code CurrentPrincipal}, which is exactly the guard
+ * CLAUDE.md section 2 says must stay able to catch a request that lost its
+ * principal.
  */
 @Component
-@Order(Ordered.HIGHEST_PRECEDENCE + 10)
+@Order(SecurityProperties.DEFAULT_FILTER_ORDER + 10)
 class OrgContextFilter extends OncePerRequestFilter {
 
     static final String MDC_KEY = "orgId";
 
-    private final PrincipalResolver principalResolver;
+    private final TokenPrincipalResolver resolver;
 
-    OrgContextFilter(PrincipalResolver principalResolver) {
-        this.principalResolver = principalResolver;
+    OrgContextFilter(TokenPrincipalResolver resolver) {
+        this.resolver = resolver;
     }
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
-        Principal principal = principalResolver.resolve(request);
+        Optional<Principal> resolved = resolver.lookup();
+        if (resolved.isEmpty()) {
+            chain.doFilter(request, response);
+            return;
+        }
+
+        Principal principal = resolved.get();
         RequestScopedPrincipal.bind(principal);
         MDC.put(MDC_KEY, principal.orgId().toString());
         try {

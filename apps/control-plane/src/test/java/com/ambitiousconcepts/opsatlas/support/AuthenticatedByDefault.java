@@ -30,9 +30,16 @@ public class AuthenticatedByDefault {
     /** Storm-Gate stamps the subject as `id`, not `sub` (ADR 0013). */
     public static final String SUBJECT = "6aa7317cf6dd7f35e3d7d4d4";
 
+    /**
+     * Identity is issuer plus subject, so the tests carry both. Not a real
+     * Storm-Gate URL: nothing here contacts an issuer, and a plausible-looking
+     * one would invite somebody to think it did.
+     */
+    public static final String ISSUER = "https://issuer.test.invalid";
+
     @Bean
     MockMvcBuilderCustomizer authenticateEveryRequest() {
-        return builder -> builder.defaultRequest(
-                get("/").with(jwt().jwt(token -> token.claim("id", SUBJECT).subject(SUBJECT))));
+        return builder -> builder.defaultRequest(get("/")
+                .with(jwt().jwt(token -> token.issuer(ISSUER).claim("id", SUBJECT).subject(SUBJECT))));
     }
 }

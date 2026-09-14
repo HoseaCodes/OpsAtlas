@@ -37,7 +37,9 @@ import org.springframework.security.web.SecurityFilterChain;
 class SecurityConfiguration {
 
     @Bean
-    SecurityFilterChain api(HttpSecurity http) throws Exception {
+    SecurityFilterChain api(
+            HttpSecurity http, ProvisionedPrincipals provisioned, ProblemSecurityResponses problems)
+            throws Exception {
         return http
                 // No sessions and no cookies: every caller presents a bearer
                 // token on every request. That also removes CSRF as a category
@@ -66,10 +68,18 @@ class SecurityConfiguration {
                         .requestMatchers(HttpMethod.GET, "/v3/api-docs", "/v3/api-docs/**")
                         .permitAll()
 
-                        // Everything else, read or write, needs a caller.
+                        // Everything else, read or write, needs a caller this
+                        // system knows. A verified token is not a membership:
+                        // the issuer will mint one for any account it holds, and
+                        // its accounts are not this catalog's users.
                         .anyRequest()
-                        .authenticated())
-                .oauth2ResourceServer(oauth2 -> oauth2.jwt(Customizer.withDefaults()))
+                        .access(provisioned))
+                .oauth2ResourceServer(oauth2 -> oauth2
+                        .jwt(Customizer.withDefaults())
+                        .authenticationEntryPoint(problems))
+                .exceptionHandling(handling -> handling
+                        .authenticationEntryPoint(problems)
+                        .accessDeniedHandler(problems))
                 .build();
     }
 }

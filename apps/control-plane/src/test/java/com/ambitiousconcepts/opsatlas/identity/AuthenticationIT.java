@@ -1,10 +1,15 @@
 package com.ambitiousconcepts.opsatlas.identity;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.anonymous;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.ambitiousconcepts.opsatlas.support.AuthenticatedByDefault;
 import com.ambitiousconcepts.opsatlas.support.PostgresTestBase;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -72,6 +77,50 @@ class AuthenticationIT extends PostgresTestBase {
         // would also be satisfied by an application that was simply broken.
         mockMvc.perform(get("/api/v1/services").with(anonymous())).andExpect(status().isUnauthorized());
         mockMvc.perform(get("/api/v1/services")).andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("a verified token for somebody this system does not know is refused")
+    void an_unprovisioned_caller_is_refused() throws Exception {
+        // The distinction this phase exists to make. Storm-Gate mints tokens for
+        // its own accounts, and its accounts are not this catalog's users - so
+        // "the signature checks out" cannot mean "may read the fleet", or every
+        // deployment sharing an identity provider would be readable by everyone
+        // on it.
+        mockMvc.perform(get("/api/v1/services")
+                        .with(jwt().jwt(token -> token.issuer(AuthenticatedByDefault.ISSUER)
+                                .claim("id", "a-real-account-nobody-provisioned"))))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.type")
+                        .value("https://opsatlas.ambitiousconcepts.io/problems/not-provisioned"));
+    }
+
+    @Test
+    @DisplayName("the same subject from a different issuer is a different person")
+    void the_issuer_is_part_of_the_identity() throws Exception {
+        // Two identity providers can hand out the same opaque id. Matching on
+        // the subject alone would hand one organization's catalog to whoever
+        // happened to collide with it elsewhere.
+        mockMvc.perform(get("/api/v1/services")
+                        .with(jwt().jwt(token -> token.issuer("https://somewhere-else.test.invalid")
+                                .claim("id", AuthenticatedByDefault.SUBJECT))))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("being turned away is a problem document, like every other error")
+    void a_refusal_carries_the_one_error_shape() throws Exception {
+        // CLAUDE.md section 9: one shape everywhere, carrying a correlationId.
+        // Spring Security answers 401 with an empty body by default, and an empty
+        // 401 cannot say whether the token was missing, expired or simply unknown.
+        String body = mockMvc.perform(get("/api/v1/services").with(anonymous()))
+                .andExpect(status().isUnauthorized())
+                .andExpect(header().string("Content-Type", "application/problem+json"))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        assertThat(body).contains("\"correlationId\"").contains("problems/unauthenticated");
     }
 
     @Test

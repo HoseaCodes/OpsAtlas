@@ -108,6 +108,28 @@ public abstract class PostgresTestBase {
                     "delete from organization where id not in (" + placeholders + ")",
                     seededOrganizations.toArray());
         }
+
+        provisionTheDefaultCaller();
+    }
+
+    /**
+     * The caller {@link AuthenticatedByDefault} authenticates as.
+     *
+     * <p>Seeded here rather than by a migration, because it is test data: a real
+     * deployment provisions its own people, and a principal shipped in the
+     * schema would be an account nobody created and everybody inherits.
+     */
+    private void provisionTheDefaultCaller() {
+        UUID org = seededOrganizations.iterator().next();
+        jdbc.update(
+                """
+                insert into principal (id, org_id, issuer, subject, display_name, created_at, updated_at)
+                values (?, ?, ?, ?, 'Test Operator', now(), now())
+                """,
+                UUID.randomUUID(),
+                org,
+                AuthenticatedByDefault.ISSUER,
+                AuthenticatedByDefault.SUBJECT);
     }
 
     @DynamicPropertySource
