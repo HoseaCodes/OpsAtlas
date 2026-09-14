@@ -37,6 +37,68 @@ services:
     restart: unless-stopped
 
   # ---------------------------------------------------------------------------
+  # The application itself, containerised.
+  #
+  # Behind the `app` profile, so the default `make up` still starts only what
+  # `make dev` needs around it - a developer running the control plane from
+  # Gradle does not want a second one on the same port. `make up-app` runs the
+  # built images instead, which is the arrangement a deployment would use and
+  # therefore the one worth being able to reproduce locally.
+  #
+  # Images are built from this repository rather than pulled: there is no
+  # published OpsAtlas image yet, and inventing a registry reference for one that
+  # does not exist would be a promise the compose file cannot keep.
+  # ---------------------------------------------------------------------------
+  control-plane:
+    profiles: ["app"]
+    build:
+      context: ../..
+      dockerfile: apps/control-plane/Dockerfile
+    image: opsatlas/control-plane:local
+    depends_on:
+      postgres:
+        condition: service_healthy
+      storm-gate:
+        condition: service_started
+    environment:
+      OPSATLAS_DB_URL: jdbc:postgresql://postgres:5432/opsatlas
+      OPSATLAS_DB_USERNAME: opsatlas
+      OPSATLAS_DB_PASSWORD: opsatlas
+      # The issuer as the browser will see it. A token's `iss` is compared
+      # against this, and a container name the browser cannot resolve would make
+      # every token look like it came from somewhere else.
+      OPSATLAS_OIDC_ISSUER: http://localhost:${STORM_GATE_PORT:-8090}
+      OPSATLAS_OIDC_JWKS_URI: http://storm-gate:8080/.well-known/jwks.json
+      OPSATLAS_BOOTSTRAP_ISSUER: http://localhost:${STORM_GATE_PORT:-8090}
+      OPSATLAS_BOOTSTRAP_SUBJECT: ${OPSATLAS_BOOTSTRAP_SUBJECT:-}
+      OPSATLAS_BOOTSTRAP_DISPLAY_NAME: ${OPSATLAS_BOOTSTRAP_DISPLAY_NAME:-}
+      OPSATLAS_OBSERVER_KEY: ${OPSATLAS_OBSERVER_KEY:-}
+      OPSATLAS_PROMETHEUS_KEY: ${OPSATLAS_PROMETHEUS_KEY:-}
+      OPSATLAS_TRACING_ENABLED: ${OPSATLAS_TRACING_ENABLED:-false}
+    ports:
+      - "${OPSATLAS_PORT:-8080}:8080"
+    restart: unless-stopped
+
+  console:
+    profiles: ["app"]
+    build:
+      context: ../..
+      dockerfile: apps/web/Dockerfile
+    image: opsatlas/console:local
+    depends_on:
+      control-plane:
+        condition: service_healthy
+    environment:
+      # Server-side calls stay inside the network; the browser never learns this
+      # address, which is the reason there is no CORS policy to configure.
+      OPSATLAS_API_URL: http://control-plane:8080
+      # Sign-in is also server-side, so this is the container address too.
+      STORM_GATE_URL: http://storm-gate:8080
+    ports:
+      - "${OPSATLAS_CONSOLE_PORT:-3000}:3000"
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
   # The identity provider, and its database.
   #
   # Not optional and not behind a profile: since ADR 0013 every control-plane

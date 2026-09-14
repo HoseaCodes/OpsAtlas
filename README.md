@@ -125,6 +125,7 @@ jobs — selection, focus ring, error-budget fill, open-incident emphasis. See
 | The contract declares how to authenticate | **Real** | `bearerToken` and `serviceCredential` in the OpenAPI document, so Swagger UI can send either |
 | Metrics endpoints require a credential | **Real, and verified live** | anonymous scrape 401, credentialled scrape 200, Prometheus target back to `up` with series flowing |
 | Swagger UI off by default | **Real** | `OPSATLAS_SWAGGER_UI=true` turns it on; its assets load while the endpoints it calls still require a credential |
+| **Container images** for the control plane and console | **Real, and verified live** | multi-stage builds, non-root, code read-only to the process; `make up-app` runs the whole stack containerised and a browser signs in against it |
 | First-principal bootstrap from configuration, not from the first caller | **Real** | `PrincipalBootstrapIT` (5 tests), including that a bootstrapped identity can actually get in |
 | Org scoping resolved from the authenticated caller | **Real** | `SeedConsistencyIT`, `OrgIsolationIT` — scoping is covered; cross-org *authorization* is not yet |
 | Observer authenticating to the control plane | **Real, and verified live** | `ServiceCredentialIT` (9 tests) and 2 Go tests; run live, the observer reports `probed 4, applied 4` with its key and cannot refresh the catalog without it |
@@ -510,6 +511,7 @@ Only directories with real contents exist. The full target layout is in
 ```text
 OpsAtlas/
 ├── apps/control-plane/     Java 21 / Spring Boot 3 modular monolith
+│   └── Dockerfile          multi-stage: JDK builds the jar, JRE runs it
 │   └── src/main/java/com/ambitiousconcepts/opsatlas/
 │       ├── shared/         errors, pagination, correlation — depends on nothing
 │       ├── identity/       the org-scoping stub
@@ -518,6 +520,7 @@ OpsAtlas/
 │       ├── integrations/   polling watched repositories (read-only)
 │       └── operations/     observations, rolled up; health read model
 ├── apps/observer/          Go — probes health endpoints, reports back
+├── apps/web/Dockerfile     multi-stage: Next standalone output, no dev deps
 ├── apps/web/               Next.js console — catalog, scorecard, register
 ├── packages/contracts/     service.yaml JSON Schema and the fixture validator
 ├── deploy/compose/         local PostgreSQL; collector, Tempo, Prometheus,

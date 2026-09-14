@@ -27,7 +27,8 @@ worse than no `terraform/` directory.
 > Update this section whenever it becomes inaccurate. It is the first thing
 > future sessions read.
 
-- **Phase:** **phases 0–8 done; phase 9 (authentication) is in progress.** The system measures something and can explain
+- **Phase:** **phases 0–10 done.** Authentication (9) and packaging (10) are
+  complete; what remains is deliberately deferred — see `docs/roadmap.md`. The system measures something and can explain
   it: a Go observer probes declared health endpoints, the catalog reports what it
   found, and one identifier follows a request through the logs, the traces and
   the audit log. Next is phase 9 — the transactional outbox and platform events —
@@ -51,7 +52,10 @@ worse than no `terraform/` directory.
   behind the compose `telemetry` profile; ADRs 0001–0011;
   `docs/design/tokens.md`; `docs/architecture/slice-one.md`.
 - **Build:** pnpm workspace plus Gradle, `make` as the single entry point.
-  `make up` now starts **PostgreSQL, MongoDB and Storm-Gate** (the identity
+  `make up-app` builds and runs the control plane and console as containers,
+  which is the arrangement a deployment uses; `make dev` runs the control plane
+  from Gradle instead, which is faster to iterate on.
+  `make up` starts **PostgreSQL, MongoDB and Storm-Gate** (the identity
   provider, from `ghcr.io/hoseacodes/storm-gate`), because since ADR 0013 a
   stack without an issuer is a control plane nobody can talk to. It also runs
   `make issuer-key` first, which generates a local RSA signing key into

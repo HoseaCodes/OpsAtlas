@@ -24,7 +24,9 @@ export default defineConfig({
   reporter: [["list"]],
   timeout: 30_000,
   use: {
-    baseURL: "http://localhost:3100",
+    // Overridable so the same specs can be pointed at the containerised console
+    // (`make up-app`, port 3000) as well as the one this config starts.
+    baseURL: process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3100",
     trace: "retain-on-failure",
   },
   projects: [
@@ -43,7 +45,9 @@ export default defineConfig({
       use: { ...devices["Desktop Chrome"] },
     },
   ],
-  webServer: {
+  // Skipped entirely when PLAYWRIGHT_BASE_URL points somewhere else: starting a
+  // second console to test a running one would test the wrong process.
+  webServer: process.env.PLAYWRIGHT_BASE_URL ? undefined : {
     command: "pnpm build && pnpm start --port 3100",
     url: "http://localhost:3100/catalog",
     reuseExistingServer: false,

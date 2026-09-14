@@ -10,7 +10,7 @@ COMPOSE := docker compose -f deploy/compose/docker-compose.yml
 GRADLE  := ./gradlew --console=plain
 
 .DEFAULT_GOAL := help
-.PHONY: help install check-examples check-secrets observer-key issuer-key first-user prometheus-key typecheck test test-all test-java test-web test-observer check dev dev-web dev-observer e2e up up-telemetry down down-telemetry logs psql clean clean-db openapi check-openapi
+.PHONY: help install check-examples check-secrets observer-key issuer-key first-user prometheus-key up-app down-app typecheck test test-all test-java test-web test-observer check dev dev-web dev-observer e2e up up-telemetry down down-telemetry logs psql clean clean-db openapi check-openapi
 
 help: ## Show the targets that exist today
 	@echo ""
@@ -44,6 +44,19 @@ up: issuer-key ## Start PostgreSQL, the identity provider, and wait for them
 		sleep 1; \
 	done; \
 	echo "PostgreSQL did not become healthy in 60s. Try: make logs"; exit 1
+
+up-app: up ## Run the control plane and console as containers, like a deployment
+	$(COMPOSE) --profile app up -d --build
+	@echo ""
+	@echo "  Console       http://localhost:$${OPSATLAS_CONSOLE_PORT:-3000}"
+	@echo "  Control plane http://localhost:$${OPSATLAS_PORT:-8080}"
+	@echo ""
+	@echo "  This is the arrangement a deployment uses. 'make dev' runs the"
+	@echo "  control plane from Gradle instead, which is faster to iterate on."
+	@echo ""
+
+down-app: ## Stop the containerised control plane and console
+	$(COMPOSE) --profile app down
 
 up-telemetry: ## Start the collector, Tempo, Prometheus and Grafana
 	$(COMPOSE) --profile telemetry up -d
