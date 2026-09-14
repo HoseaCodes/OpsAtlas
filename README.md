@@ -70,7 +70,7 @@ jobs — selection, focus ring, error-budget fill, open-incident emphasis. See
 | Semantic validation — duplicate environment names | **Real** | same |
 | Architecture decisions, phases 0–10 | **Real** (written down) | [`docs/adr/`](docs/adr/), [`docs/roadmap.md`](docs/roadmap.md) |
 | Design system extracted from the prototype | **Real** (written down) | [`docs/design/tokens.md`](docs/design/tokens.md) |
-| Control plane (Java 21 / Spring Boot) | **Real** | `make test` — 259 JVM tests |
+| Control plane (Java 21 / Spring Boot) | **Real** | `make test` — 274 JVM tests |
 | PostgreSQL schema and Flyway migrations | **Real** | `SeedConsistencyIT`, and Hibernate `ddl-auto: validate` refuses to start on drift |
 | `POST /api/v1/services` — register from a `service.yaml` | **Real** | `RegistrationApiIT`, plus 13 curl assertions against a running server |
 | Safe YAML ingestion — size cap, no alias expansion, no type construction | **Real** | `ManifestValidationTest` — billion-laughs, `!!java` tags, duplicate keys and a 70 KiB body are all refused |
@@ -119,7 +119,13 @@ jobs — selection, focus ring, error-budget fill, open-incident emphasis. See
 | RFC 9457 problem responses with `correlationId` and `violations[]` | **Real** | `CatalogApiIT` |
 | Correlation ID accepted, generated, echoed | **Real** | `CatalogApiIT` |
 | Module boundaries across all five modules | **Real, enforced** | `ArchitectureTest` — 15 rules |
-| Org scoping via stub `PrincipalResolver` | **Real, but unauthenticated** | `SeedConsistencyIT`, `OrgIsolationIT` |
+| **Authentication** — every `/api/v1` endpoint needs a verified RS256 token | **Real, and verified live** | `AuthenticationIT` (9 tests); and against a real Storm-Gate: no token → 401, a real token → 200, a token signed by an unpublished key → 401 |
+| **Authorization** — a verified token is not a membership | **Real, and verified live** | a genuine token from a second real Storm-Gate account, not provisioned here, gets 403 `not-provisioned` |
+| First-principal bootstrap from configuration, not from the first caller | **Real** | `PrincipalBootstrapIT` (5 tests), including that a bootstrapped identity can actually get in |
+| Org scoping resolved from the authenticated caller | **Real** | `SeedConsistencyIT`, `OrgIsolationIT` — scoping is covered; cross-org *authorization* is not yet |
+| **Observer reporting observations** | **Broken by authentication** | it sends no token and has no credential yet |
+| **Console reading the catalog** | **Broken by authentication** | its server-side calls carry no token; `make e2e` is 8 failed, 15 not run |
+| OpenAPI document declaring the bearer scheme | **Not done** | the generated contract says nothing about auth, so the typed client does not know a token exists |
 | Dependency graph and blast radius | **Not built** | needs trace data |
 | Real-user SLO measurement | **Not built** | probe availability is not an SLO — see below |
 | Latency percentiles over stored history | **Not built** | span durations are in Tempo; nothing aggregates them, and the rollups deliberately store mean and max only (ADR 0009) |

@@ -150,6 +150,28 @@ management:
 # never holds write access.
 # ---------------------------------------------------------------------------
 opsatlas:
+  # ---------------------------------------------------------------------------
+  # The first way in (ADR 0013).
+  #
+  # A token only works if a `principal` row exists for it, and rows are created
+  # by somebody already inside - so a fresh deployment admits nobody. Set these
+  # once, to the identity that should get in first, and the row is created on
+  # startup if it is missing.
+  #
+  # Deliberately not "the first caller wins": that is a race with the internet,
+  # and losing it once cannot be undone. Setting an environment variable is
+  # something only an operator can do.
+  #
+  # The subject is whatever the issuer stamps - for Storm-Gate, the `id` claim,
+  # which you can read out of a token you have just been issued. Leaving these
+  # set is harmless; later starts find the row and do nothing.
+  # ---------------------------------------------------------------------------
+  bootstrap:
+    principal:
+      issuer: ${OPSATLAS_BOOTSTRAP_ISSUER:}
+      subject: ${OPSATLAS_BOOTSTRAP_SUBJECT:}
+      display-name: ${OPSATLAS_BOOTSTRAP_DISPLAY_NAME:}
+
   sync:
     # Set false to stop the scheduler. Tests do this: a timer firing underneath
     # an assertion is a flake generator.

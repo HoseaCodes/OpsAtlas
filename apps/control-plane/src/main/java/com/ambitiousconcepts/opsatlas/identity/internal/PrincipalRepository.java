@@ -12,4 +12,7 @@ interface PrincipalRepository extends Repository<PrincipalEntity, UUID> {
      * hand one organization's catalog to another.
      */
     Optional<PrincipalEntity> findByIssuerAndSubject(String issuer, String subject);
+
+    /** Used only by the bootstrap; principals are otherwise provisioned by hand. */
+    PrincipalEntity save(PrincipalEntity principal);
 }

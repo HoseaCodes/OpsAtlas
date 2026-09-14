@@ -35,6 +35,18 @@ class PrincipalEntity {
 
     protected PrincipalEntity() {}
 
+    static PrincipalEntity of(UUID orgId, String issuer, String subject, String displayName, Instant now) {
+        PrincipalEntity entity = new PrincipalEntity();
+        entity.id = UUID.randomUUID();
+        entity.orgId = orgId;
+        entity.issuer = issuer;
+        entity.subject = subject;
+        entity.displayName = displayName;
+        entity.createdAt = now;
+        entity.updatedAt = now;
+        return entity;
+    }
+
     UUID getOrgId() {
         return orgId;
     }

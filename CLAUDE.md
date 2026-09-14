@@ -27,7 +27,7 @@ worse than no `terraform/` directory.
 > Update this section whenever it becomes inaccurate. It is the first thing
 > future sessions read.
 
-- **Phase:** **phases 0–8 done.** The system measures something and can explain
+- **Phase:** **phases 0–8 done; phase 9 (authentication) is in progress.** The system measures something and can explain
   it: a Go observer probes declared health endpoints, the catalog reports what it
   found, and one identifier follows a request through the logs, the traces and
   the audit log. Next is phase 9 — the transactional outbox and platform events —
@@ -37,7 +37,7 @@ worse than no `terraform/` directory.
   control plane that registers services from a real manifest and serves them —
   `POST`, `GET /{slug}`, `GET` (cursor-paged), `PUT` with `If-Match` — with the
   ADR 0002 ingestion pipeline, RFC 9457 problem responses, correlation IDs and
-  the org-scoping stub; a `governance` module scoring ten declaration rules and
+  real authentication (ADR 0013); a `governance` module scoring ten declaration rules and
   auditing every change, both inside the registration transaction; Flyway schema
   for `organization`, `team`, `service`, `environment`, `policy_result`,
   `policy_result_check`, `audit_event`; a generated-and-drift-checked OpenAPI
@@ -59,7 +59,7 @@ worse than no `terraform/` directory.
   Gradle provisions Temurin 21 itself. Go 1.27+ **is** required for
   `apps/observer`; it is installed here via Homebrew.
 - **Tests:** `make test` — 14 schema fixtures, 37 console component tests,
-  33 Go tests (race-clean) and 259 JVM tests, all passing. `make test-all` adds
+  33 Go tests (race-clean) and 274 JVM tests, all passing. `make test-all` adds
   23 Playwright tests against the real stack. Integration tests use
   Testcontainers and need a running Docker daemon; the Playwright tests need the
   stack running.
@@ -79,6 +79,46 @@ worse than no `terraform/` directory.
   which branch work is landing on before trusting a green history.
 - **Database:** PostgreSQL 16 via `deploy/compose`. Flyway owns the schema;
   Hibernate runs `ddl-auto: validate` so entity/migration drift fails startup.
+- **Every `/api/v1` endpoint requires a verified RS256 token** (ADR 0013).
+  OpsAtlas is a resource server: it fetches public keys from the issuer's JWKS
+  and holds no signing key, so it can check a token and cannot mint one. Open by
+  design: `/actuator/health`, `/actuator/info`, `/v3/api-docs`. Open and
+  **not** by design: `/actuator/prometheus` and `/actuator/metrics/**`, because
+  Prometheus scrapes them and nothing issues it a token yet — there is a
+  `TODO(auth)` on it in `SecurityConfiguration` and it is the next thing to
+  close.
+- **A verified token is not a membership.** The issuer mints tokens for its own
+  accounts, which are not this catalog's users. `ProvisionedPrincipals` requires
+  a row in `principal` matching the token's **issuer and subject together** — the
+  pair, because two providers can hand out the same opaque id. An authenticated
+  caller with no row gets **403, not 401**: they have a credential, it is simply
+  not one this system knows, and retrying will not help.
+- **The first principal comes from configuration**, not from the first caller.
+  `OPSATLAS_BOOTSTRAP_ISSUER` / `_SUBJECT` / `_DISPLAY_NAME` provision one
+  identity on startup, idempotently. "Whoever authenticates first becomes the
+  administrator" is a race with the internet and losing it once is
+  unrecoverable. Without this a fresh deployment admits nobody, because rows are
+  created by somebody already inside.
+- **⚠ Both clients are broken by authentication, and this is the most immediate
+  work outstanding.** Turning it on refused every caller that does not present a
+  token, which is correct and was also going to break everything that did not.
+  - **The Go observer cannot report.** `POST /api/v1/observations` needs a token
+    and it sends none, so `make dev-observer` gets 401. ADR 0013 says it gets an
+    OpsAtlas-issued credential rather than a Storm-Gate account: it is a
+    component of this system, not a person, and inventing a fake user for it
+    would put a lie in the audit log. That credential is not built yet.
+  - **The console cannot read the catalog.** Its server-side calls carry no
+    token. `make e2e` is **8 failed, 15 did not run** — the 15 never started
+    because their setup registers a service through the API first.
+  - The generated OpenAPI document declares no security scheme either, so the
+    typed client does not know a token exists. That is the same gap seen from
+    the contract's side.
+- **`OrgIsolationIT` proves scoping, not yet authorization.** Its 22 tests plant
+  a second organization's rows and assert the API never returns them. Every
+  request in it authenticates as the same provisioned caller, so what is *not*
+  yet asserted is that a caller provisioned in organization A is refused
+  organization B's data through a real token. That is the next thing the file
+  should grow.
 - **Cross-organization isolation is verified** by `OrgIsolationIT` (22 tests),
   and it now covers **every org-scoped endpoint in the contract** — services,
   sources, the scorecard, the audit log, both health endpoints and observation
@@ -335,10 +375,12 @@ Organization
 
 **Tenancy decision, so this does not get re-litigated each session:** every tenant-scoped
 table has `org_id UUID NOT NULL` with a foreign key to `organization`, and every
-query filters on it. Until authentication exists, the organization is resolved by
-a single stub `PrincipalResolver` in `identity` that returns the one seeded
-organization. Swapping that resolver for real auth is the entire migration path,
-and it is marked with a `TODO(auth)` comment.
+query filters on it. The organization comes from the authenticated caller:
+`TokenPrincipalResolver` reads the verified token and looks the caller up in the
+`principal` table (ADR 0013). The stub that preceded it returned one seeded
+organization for every request, and ADR 0003's claim that swapping that single
+implementation would be the entire migration path turned out to be exactly
+true — no query, no table and no caller of `CurrentPrincipal` changed.
 
 This is single-tenant data modelling done so multi-tenancy is possible later. The
 README says exactly that. **Do not describe the project as supporting
