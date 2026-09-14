@@ -33,6 +33,7 @@ type Target struct {
 type Client struct {
 	baseURL string
 	http    *http.Client
+	apiKey  string
 }
 
 // New returns a client with a bounded HTTP client.
@@ -44,8 +45,9 @@ type Client struct {
 // The transport carries W3C trace context, so reading the catalog is a child
 // span of the pass that needed it rather than an unconnected request in the
 // control plane's traces (ADR 0011).
-func New(baseURL string, timeout time.Duration) *Client {
+func New(baseURL, apiKey string, timeout time.Duration) *Client {
 	return &Client{
+		apiKey:  apiKey,
 		baseURL: strings.TrimRight(baseURL, "/"),
 		http: &http.Client{
 			Timeout:   timeout,
@@ -170,6 +172,9 @@ func (c *Client) get(ctx context.Context, endpoint string, into any) error {
 		return fmt.Errorf("building request for %s: %w", endpoint, err)
 	}
 	request.Header.Set("Accept", "application/json")
+	if c.apiKey != "" {
+		request.Header.Set("X-OpsAtlas-Key", c.apiKey)
+	}
 
 	response, err := c.http.Do(request)
 	if err != nil {

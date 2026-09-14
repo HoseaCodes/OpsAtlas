@@ -7,6 +7,7 @@ import org.springframework.http.HttpMethod;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.web.SecurityFilterChain;
 
 /**
@@ -38,7 +39,10 @@ class SecurityConfiguration {
 
     @Bean
     SecurityFilterChain api(
-            HttpSecurity http, ProvisionedPrincipals provisioned, ProblemSecurityResponses problems)
+            HttpSecurity http,
+            ProvisionedPrincipals provisioned,
+            ProblemSecurityResponses problems,
+            ServiceCredentialFilter serviceCredentials)
             throws Exception {
         return http
                 // No sessions and no cookies: every caller presents a bearer
@@ -74,6 +78,10 @@ class SecurityConfiguration {
                         // its accounts are not this catalog's users.
                         .anyRequest()
                         .access(provisioned))
+                // Before the bearer-token filter: a machine that has already
+                // authenticated on its own header must not then be handed to the
+                // JWT decoder, which would find no token and start over.
+                .addFilterBefore(serviceCredentials, BearerTokenAuthenticationFilter.class)
                 .oauth2ResourceServer(oauth2 -> oauth2
                         .jwt(Customizer.withDefaults())
                         .authenticationEntryPoint(problems))

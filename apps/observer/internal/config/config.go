@@ -20,6 +20,19 @@ type Config struct {
 	// refuses to start if it is not a usable URL.
 	APIURL string
 
+	// APIKey authenticates this observer to the control plane.
+	//
+	// The observer is a component of OpsAtlas rather than a person, so it does
+	// not sign in to the identity provider: it carries a key the control plane
+	// issued and the audit log records it as `service:observer` (ADR 0013).
+	//
+	// Optional here, and it should not be. Without it every request is refused
+	// and the observer does nothing but log 401s - but failing to start would
+	// mean a control plane that has not been given a key yet takes its observer
+	// down with it, and the operator loses the metrics endpoint that would have
+	// told them why.
+	APIKey string
+
 	// ObserverID identifies this observer in reported batches and in the audit
 	// trail. Defaults to the hostname, which is right in a container and
 	// adequate on a laptop.
@@ -69,6 +82,7 @@ func Load() (Config, error) {
 
 	cfg := Config{
 		APIURL:           env("OPSATLAS_API_URL", "http://localhost:8080"),
+		APIKey:           env("OPSATLAS_API_KEY", ""),
 		ObserverID:       env("OPSATLAS_OBSERVER_ID", hostname),
 		ProbeInterval:    duration("OPSATLAS_PROBE_INTERVAL", 30*time.Second),
 		ProbeTimeout:     duration("OPSATLAS_PROBE_TIMEOUT", 5*time.Second),
@@ -85,6 +99,11 @@ func (c Config) validate() error {
 	switch {
 	case !strings.HasPrefix(c.APIURL, "http://") && !strings.HasPrefix(c.APIURL, "https://"):
 		return fmt.Errorf("OPSATLAS_API_URL must be an http or https URL, got %q", c.APIURL)
+	case c.APIKey != "" && !strings.HasPrefix(c.APIKey, "opsatlas_sk_"):
+		// Caught here rather than as a 401 an hour later. The error never
+		// quotes the value: a key in a log is a leaked key.
+		return fmt.Errorf("OPSATLAS_API_KEY does not look like a key from `make observer-key` "+
+			"(it should start with opsatlas_sk_); refusing to start rather than failing every request %s", "")
 
 	// The observer id reaches an audit trail and an idempotency key, and the
 	// control plane constrains the latter. Checking here turns a confusing

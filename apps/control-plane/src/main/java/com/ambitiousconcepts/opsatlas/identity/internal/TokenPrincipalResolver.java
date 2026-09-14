@@ -53,6 +53,15 @@ class TokenPrincipalResolver implements PrincipalResolver {
      */
     Optional<Principal> lookup() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+
+        // A machine carrying a credential this system issued. It has no row in
+        // `principal` and needs none: the credential itself names the
+        // organization, and the audit log will call it `service:<name>` rather
+        // than pretending a person acted.
+        if (authentication instanceof ServiceCredentialAuthentication machine) {
+            return Optional.of(machine.principal());
+        }
+
         if (!(authentication instanceof JwtAuthenticationToken authenticated)) {
             return Optional.empty();
         }

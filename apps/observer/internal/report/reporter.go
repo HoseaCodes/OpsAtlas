@@ -43,6 +43,7 @@ type Reporter struct {
 	baseURL    string
 	observerID string
 	http       *http.Client
+	apiKey     string
 }
 
 // New returns a Reporter.
@@ -50,8 +51,9 @@ type Reporter struct {
 // The transport carries W3C trace context, which is what makes a probe and the
 // registration or state change it caused one trace rather than three
 // unconnected ones (ADR 0011).
-func New(baseURL, observerID string, timeout time.Duration) *Reporter {
+func New(baseURL, observerID, apiKey string, timeout time.Duration) *Reporter {
 	return &Reporter{
+		apiKey:     apiKey,
 		baseURL:    strings.TrimRight(baseURL, "/"),
 		observerID: observerID,
 		http: &http.Client{
@@ -143,6 +145,9 @@ func (r *Reporter) post(ctx context.Context, body []byte) (Result, error) {
 	}
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Accept", "application/json")
+	if r.apiKey != "" {
+		request.Header.Set("X-OpsAtlas-Key", r.apiKey)
+	}
 
 	response, err := r.http.Do(request)
 	if err != nil {

@@ -10,7 +10,7 @@ COMPOSE := docker compose -f deploy/compose/docker-compose.yml
 GRADLE  := ./gradlew --console=plain
 
 .DEFAULT_GOAL := help
-.PHONY: help install check-examples check-secrets typecheck test test-all test-java test-web test-observer check dev dev-web dev-observer e2e up up-telemetry down down-telemetry logs psql clean clean-db openapi check-openapi
+.PHONY: help install check-examples check-secrets observer-key typecheck test test-all test-java test-web test-observer check dev dev-web dev-observer e2e up up-telemetry down down-telemetry logs psql clean clean-db openapi check-openapi
 
 help: ## Show the targets that exist today
 	@echo ""
@@ -95,6 +95,13 @@ install: ## Install workspace dependencies
 
 check-examples: ## Validate every example and fixture manifest against the schema
 	pnpm --filter @opsatlas/contracts check:examples
+
+observer-key: ## Generate a key for the observer (set it on both sides)
+	@printf 'opsatlas_sk_%s\n' "$$(LC_ALL=C tr -dc 'A-Za-z0-9_-' < /dev/urandom | head -c 43)"
+	@echo "" >&2
+	@echo "  Set it as OPSATLAS_OBSERVER_KEY on the control plane," >&2
+	@echo "  and as OPSATLAS_API_KEY on the observer. It is never printed again." >&2
+	@echo "" >&2
 
 check-secrets: ## Refuse credential-shaped strings and tracked key files
 	./scripts/check-secrets.sh

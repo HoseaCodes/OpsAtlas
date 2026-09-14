@@ -151,6 +151,22 @@ management:
 # ---------------------------------------------------------------------------
 opsatlas:
   # ---------------------------------------------------------------------------
+  # The observer's credential (ADR 0013).
+  #
+  # The observer is a component of this system rather than a person, so it does
+  # not get an account at the identity provider - an audit entry naming a person
+  # who does not exist is worse than one naming a machine. It carries a key this
+  # system issued, and the audit log calls it `service:observer`.
+  #
+  # Generate one with `make observer-key`, set it here and on the observer.
+  # Changing it rotates: the old key stops working at once. Unset, the observer
+  # cannot report at all.
+  # ---------------------------------------------------------------------------
+  credentials:
+    observer:
+      key: ${OPSATLAS_OBSERVER_KEY:}
+
+  # ---------------------------------------------------------------------------
   # The first way in (ADR 0013).
   #
   # A token only works if a `principal` row exists for it, and rows are created

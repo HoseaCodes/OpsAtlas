@@ -59,7 +59,7 @@ worse than no `terraform/` directory.
   Gradle provisions Temurin 21 itself. Go 1.27+ **is** required for
   `apps/observer`; it is installed here via Homebrew.
 - **Tests:** `make test` — 14 schema fixtures, 37 console component tests,
-  33 Go tests (race-clean) and 274 JVM tests, all passing. `make test-all` adds
+  35 Go tests (race-clean) and 280 JVM tests, all passing. `make test-all` adds
   23 Playwright tests against the real stack. Integration tests use
   Testcontainers and need a running Docker daemon; the Playwright tests need the
   stack running.
@@ -102,11 +102,14 @@ worse than no `terraform/` directory.
 - **⚠ Both clients are broken by authentication, and this is the most immediate
   work outstanding.** Turning it on refused every caller that does not present a
   token, which is correct and was also going to break everything that did not.
-  - **The Go observer cannot report.** `POST /api/v1/observations` needs a token
-    and it sends none, so `make dev-observer` gets 401. ADR 0013 says it gets an
-    OpsAtlas-issued credential rather than a Storm-Gate account: it is a
-    component of this system, not a person, and inventing a fake user for it
-    would put a lie in the audit log. That credential is not built yet.
+  - ~~The Go observer cannot report.~~ **Fixed.** It carries a key this system
+    issued, sent as `X-OpsAtlas-Key` and configured as `OPSATLAS_API_KEY`;
+    generate one with `make observer-key` and set the same value as
+    `OPSATLAS_OBSERVER_KEY` on the control plane. Its own header rather than
+    `Authorization`, which already means a JWT here. The audit log calls it
+    `service:observer`, because it is a machine and naming a person who does not
+    exist would be worse. Verified live: without the key the service list refuses
+    to refresh, with it a pass reports `probed 4, applied 4`.
   - **The console cannot read the catalog.** Its server-side calls carry no
     token. `make e2e` is **8 failed, 15 did not run** — the 15 never started
     because their setup registers a service through the API first.

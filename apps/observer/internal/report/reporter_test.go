@@ -20,6 +20,8 @@ func observation() Observation {
 	}
 }
 
+const testKey = "opsatlas_sk_EXAMPLE_not_a_real_key_for_tests_01"
+
 func TestRetriesCarryTheSameIdempotencyKey(t *testing.T) {
 	// This is the property that makes retrying safe at all. The control plane
 	// stores counters, so a batch applied twice inflates them with nothing
@@ -45,7 +47,7 @@ func TestRetriesCarryTheSameIdempotencyKey(t *testing.T) {
 	defer server.Close()
 
 	passStart := time.Now()
-	result, err := New(server.URL, "observer-1", 5*time.Second).
+	result, err := New(server.URL, "observer-1", testKey, 5*time.Second).
 		Send(context.Background(), passStart, []Observation{observation()})
 	if err != nil {
 		t.Fatalf("Send: %v", err)
@@ -67,7 +69,7 @@ func TestKeyMatchesWhatTheControlPlaneAccepts(t *testing.T) {
 	// The control plane constrains the key shape. A key it rejects would make
 	// every single report fail, permanently and identically.
 	shape := regexp.MustCompile(`^[A-Za-z0-9._:-]{8,200}$`)
-	reporter := New("http://localhost:8080", "observer-1", time.Second)
+	reporter := New("http://localhost:8080", "observer-1", testKey, time.Second)
 
 	key := reporter.key(time.Now())
 	if !shape.MatchString(key) {
@@ -76,7 +78,7 @@ func TestKeyMatchesWhatTheControlPlaneAccepts(t *testing.T) {
 }
 
 func TestDistinctPassesGetDistinctKeys(t *testing.T) {
-	reporter := New("http://localhost:8080", "observer-1", time.Second)
+	reporter := New("http://localhost:8080", "observer-1", testKey, time.Second)
 
 	first := reporter.key(time.Unix(0, 1_000_000_000))
 	second := reporter.key(time.Unix(0, 1_000_000_001))
@@ -96,7 +98,7 @@ func TestRejectedPayloadsAreNotRetried(t *testing.T) {
 	}))
 	defer server.Close()
 
-	_, err := New(server.URL, "observer-1", 5*time.Second).
+	_, err := New(server.URL, "observer-1", testKey, 5*time.Second).
 		Send(context.Background(), time.Now(), []Observation{observation()})
 	if err == nil {
 		t.Fatal("a rejected batch must be reported as an error")
@@ -119,7 +121,7 @@ func TestRateLimitingIsRetried(t *testing.T) {
 	}))
 	defer server.Close()
 
-	if _, err := New(server.URL, "observer-1", 5*time.Second).
+	if _, err := New(server.URL, "observer-1", testKey, 5*time.Second).
 		Send(context.Background(), time.Now(), []Observation{observation()}); err != nil {
 		t.Fatalf("Send: %v", err)
 	}
@@ -136,7 +138,7 @@ func TestEmptyBatchIsNotSent(t *testing.T) {
 	}))
 	defer server.Close()
 
-	if _, err := New(server.URL, "observer-1", time.Second).
+	if _, err := New(server.URL, "observer-1", testKey, time.Second).
 		Send(context.Background(), time.Now(), nil); err != nil {
 		t.Fatalf("an empty pass is not an error, got %v", err)
 	}
@@ -154,8 +156,52 @@ func TestShutdownStopsRetrying(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	if _, err := New(server.URL, "observer-1", time.Second).
+	if _, err := New(server.URL, "observer-1", testKey, time.Second).
 		Send(ctx, time.Now(), []Observation{observation()}); err == nil {
 		t.Fatal("a cancelled context must stop the retry loop")
+	}
+}
+
+func TestReportsCarryTheServiceCredential(t *testing.T) {
+	// The control plane refuses an unauthenticated report, so a reporter that
+	// forgot this header would fail every pass - visibly, but only against a
+	// running control plane. Asserted here so it fails in a second instead.
+	var presented string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		presented = r.Header.Get("X-OpsAtlas-Key")
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte(`{"applied":0,"ignored":0,"replayed":false}`))
+	}))
+	defer server.Close()
+
+	if _, err := New(server.URL, "observer-1", testKey, 5*time.Second).
+		Send(context.Background(), time.Now(), []Observation{observation()}); err != nil {
+		t.Fatalf("send: %v", err)
+	}
+
+	if presented != testKey {
+		t.Fatalf("X-OpsAtlas-Key = %q, want the configured key", presented)
+	}
+}
+
+func TestTheKeyIsNeverPutInTheAuthorizationHeader(t *testing.T) {
+	// Authorization already means a JWT here. A key sent there would be handed
+	// to the token decoder, fail to parse, and answer 401 with a message about
+	// tokens - a confusing failure for the one caller that did authenticate.
+	var authorization string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		authorization = r.Header.Get("Authorization")
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte(`{"applied":0,"ignored":0,"replayed":false}`))
+	}))
+	defer server.Close()
+
+	if _, err := New(server.URL, "observer-1", testKey, 5*time.Second).
+		Send(context.Background(), time.Now(), []Observation{observation()}); err != nil {
+		t.Fatalf("send: %v", err)
+	}
+
+	if authorization != "" {
+		t.Fatalf("Authorization = %q, want it left alone", authorization)
 	}
 }

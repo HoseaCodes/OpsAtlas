@@ -50,6 +50,8 @@ func main() {
 		"probeTimeout", cfg.ProbeTimeout.String(),
 		"concurrency", cfg.ProbeConcurrency,
 		"metricsAddr", cfg.MetricsAddr,
+		// Whether, never what.
+		"authenticated", cfg.APIKey != "",
 	)
 
 	if code := run(cfg, logger); code != 0 {
@@ -74,10 +76,10 @@ func run(cfg config.Config, logger *slog.Logger) int {
 	}
 
 	instruments := metrics.New()
-	catalogClient := catalog.New(cfg.APIURL, 30*time.Second)
+	catalogClient := catalog.New(cfg.APIURL, cfg.APIKey, 30*time.Second)
 	prober := probe.New(cfg.ProbeTimeout, cfg.ProbeRetries)
 	scheduler := probe.NewScheduler(prober, cfg.ProbeConcurrency, cfg.ProbeInterval)
-	reporter := report.New(cfg.APIURL, cfg.ObserverID, 30*time.Second)
+	reporter := report.New(cfg.APIURL, cfg.ObserverID, cfg.APIKey, 30*time.Second)
 
 	server := &http.Server{
 		Addr:              cfg.MetricsAddr,
