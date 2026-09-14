@@ -2,9 +2,14 @@
   "openapi" : "3.1.0",
   "info" : {
     "title" : "OpsAtlas control plane",
-    "description" : "The control plane for the OpsAtlas service catalog.\n\nConventions that hold for every endpoint: collections are cursor-paginated and never offset-paginated; failures are RFC 9457 problem documents carrying a correlationId and, for validation failures, a violations array locating each problem by JSON Pointer; a correlation id is accepted on X-Correlation-Id or generated, and echoed on every response.\n\nNothing in this API reports observed health. No field describes a measurement the platform has taken, because nothing probes anything yet.\n",
+    "description" : "The control plane for the OpsAtlas service catalog.\n\nConventions that hold for every endpoint: collections are cursor-paginated and never offset-paginated; failures are RFC 9457 problem documents carrying a correlationId and, for validation failures, a violations array locating each problem by JSON Pointer; a correlation id is accepted on X-Correlation-Id or generated, and echoed on every response.\n\nEvery endpoint requires a caller. A person presents a bearer token from the configured identity provider; a machine of this system's own - the observer - presents the key it was issued on X-OpsAtlas-Key. A token that verifies but belongs to nobody provisioned here is answered 403, not 401: the credential is genuine, it is simply not known to this deployment.\n\nHealth here is probe availability, measured by an observer against a declared health endpoint from one vantage point. It is not an SLO measurement, and no field in this API should be read as one.\n",
     "version" : "v1"
   },
+  "security" : [ {
+    "bearerToken" : [ ]
+  }, {
+    "serviceCredential" : [ ]
+  } ],
   "paths" : {
     "/api/v1/services/{slug}" : {
       "get" : {
@@ -1084,6 +1089,20 @@
           }
         },
         "required" : [ "items", "nextCursor" ]
+      }
+    },
+    "securitySchemes" : {
+      "bearerToken" : {
+        "type" : "http",
+        "description" : "A token from the configured identity provider. Verified against its published key set; this system holds no signing key and cannot mint one.",
+        "scheme" : "bearer",
+        "bearerFormat" : "JWT"
+      },
+      "serviceCredential" : {
+        "type" : "apiKey",
+        "description" : "A key issued by this system to one of its own machines. The audit log records the caller as service:<name> rather than as a person.",
+        "name" : "X-OpsAtlas-Key",
+        "in" : "header"
       }
     }
   }

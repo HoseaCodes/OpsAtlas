@@ -70,7 +70,7 @@ jobs — selection, focus ring, error-budget fill, open-incident emphasis. See
 | Semantic validation — duplicate environment names | **Real** | same |
 | Architecture decisions, phases 0–10 | **Real** (written down) | [`docs/adr/`](docs/adr/), [`docs/roadmap.md`](docs/roadmap.md) |
 | Design system extracted from the prototype | **Real** (written down) | [`docs/design/tokens.md`](docs/design/tokens.md) |
-| Control plane (Java 21 / Spring Boot) | **Real** | `make test` — 280 JVM tests |
+| Control plane (Java 21 / Spring Boot) | **Real** | `make test` — 283 JVM tests |
 | PostgreSQL schema and Flyway migrations | **Real** | `SeedConsistencyIT`, and Hibernate `ddl-auto: validate` refuses to start on drift |
 | `POST /api/v1/services` — register from a `service.yaml` | **Real** | `RegistrationApiIT`, plus 13 curl assertions against a running server |
 | Safe YAML ingestion — size cap, no alias expansion, no type construction | **Real** | `ManifestValidationTest` — billion-laughs, `!!java` tags, duplicate keys and a 70 KiB body are all refused |
@@ -78,7 +78,7 @@ jobs — selection, focus ring, error-budget fill, open-incident emphasis. See
 | Idempotent re-registration by manifest digest | **Real** | `RegistrationApiIT` — a replay returns 200 and does not move `version` |
 | `PUT` with `If-Match` optimistic locking (428 / 412) | **Real** | `RegistrationApiIT` |
 | `GET /api/v1/services` and `/{slug}` with cursor pagination | **Real** | `CatalogApiIT`, `RegistrationApiIT` |
-| Cross-organization isolation, on **every** org-scoped endpoint | **Real, and verified** | `OrgIsolationIT` — 22 tests covering services, sources, scorecard, audit log, both health endpoints and observation ingestion; two prove the database itself refuses a cross-org reference |
+| Cross-organization isolation, on **every** org-scoped endpoint | **Real, and verified** | `OrgIsolationIT` — 25 tests covering services, sources, scorecard, audit log, both health endpoints and observation ingestion; two prove the database itself refuses a cross-org reference |
 | That an endpoint cannot be added without covering its isolation | **Real, enforced** | `no_endpoint_escapes_this_test` enumerates every `/api/v1` mapping and fails the build on any that is neither covered nor exempt with a written reason |
 | That those isolation tests would catch a real leak | **Real, and verified** | removing the org filter from the audit log, the fleet health rollup and the environment lookup fails exactly three of them and nothing else |
 | OpenAPI document generated from the code, drift-checked | **Real** | `make check-openapi` fails the build on any difference |
@@ -121,6 +121,8 @@ jobs — selection, focus ring, error-budget fill, open-incident emphasis. See
 | Module boundaries across all five modules | **Real, enforced** | `ArchitectureTest` — 15 rules |
 | **Authentication** — every `/api/v1` endpoint needs a verified RS256 token | **Real, and verified live** | `AuthenticationIT` (9 tests); and against a real Storm-Gate: no token → 401, a real token → 200, a token signed by an unpublished key → 401 |
 | **Authorization** — a verified token is not a membership | **Real, and verified live** | a genuine token from a second real Storm-Gate account, not provisioned here, gets 403 `not-provisioned` |
+| The organization comes from the caller, not a constant | **Real, and verified** | `OrgIsolationIT` authenticates as a principal in the *other* organization and asserts they reach their catalog and not ours; hardcoding the org in the resolver fails two tests |
+| The contract declares how to authenticate | **Real** | `bearerToken` and `serviceCredential` in the OpenAPI document, so Swagger UI can send either |
 | First-principal bootstrap from configuration, not from the first caller | **Real** | `PrincipalBootstrapIT` (5 tests), including that a bootstrapped identity can actually get in |
 | Org scoping resolved from the authenticated caller | **Real** | `SeedConsistencyIT`, `OrgIsolationIT` — scoping is covered; cross-org *authorization* is not yet |
 | Observer authenticating to the control plane | **Real, and verified live** | `ServiceCredentialIT` (6 tests) and 2 Go tests; run live, the observer reports `probed 4, applied 4` with its key and cannot refresh the catalog without it |

@@ -64,7 +64,7 @@ worse than no `terraform/` directory.
   Gradle provisions Temurin 21 itself. Go 1.27+ **is** required for
   `apps/observer`; it is installed here via Homebrew.
 - **Tests:** `make test` — 14 schema fixtures, 37 console component tests,
-  35 Go tests (race-clean) and 280 JVM tests, all passing. `make test-all` adds
+  35 Go tests (race-clean) and 283 JVM tests, all passing. `make test-all` adds
   26 Playwright tests against the real stack. Integration tests use
   Testcontainers and need a running Docker daemon; the Playwright tests need the
   stack running.
@@ -131,16 +131,19 @@ worse than no `terraform/` directory.
     account at the issuer, reads back the subject the issuer assigned, and
     records it in `deploy/compose/.env` so `make dev` provisions it on startup —
     a fresh stack otherwise admits nobody.
-  - The generated OpenAPI document declares no security scheme either, so the
-    typed client does not know a token exists. That is the same gap seen from
-    the contract's side.
-- **`OrgIsolationIT` proves scoping, not yet authorization.** Its 22 tests plant
-  a second organization's rows and assert the API never returns them. Every
-  request in it authenticates as the same provisioned caller, so what is *not*
-  yet asserted is that a caller provisioned in organization A is refused
-  organization B's data through a real token. That is the next thing the file
-  should grow.
-- **Cross-organization isolation is verified** by `OrgIsolationIT` (22 tests),
+  - ~~The generated OpenAPI document declares no security scheme.~~ **Fixed.**
+    It declares `bearerToken` and `serviceCredential` as alternatives, so Swagger
+    UI can send either and the contract states what every endpoint requires.
+    **`make check-openapi` stays red until the regenerated contract is
+    committed** — that is the check doing its job, not a failure.
+- **`OrgIsolationIT` proves scoping *and* authorization.** Its 25 tests plant a
+  second organization's rows, and now a principal who belongs to it, so three of
+  them authenticate as that caller and assert they reach their own catalog and
+  not ours. Worth remembering why: until those existed, a resolver that ignored
+  the principal's organization and always returned the seeded one would have
+  passed the entire suite. Checked by mutation — doing exactly that now fails
+  two tests.
+- **Cross-organization isolation is verified** by `OrgIsolationIT` (25 tests),
   and it now covers **every org-scoped endpoint in the contract** — services,
   sources, the scorecard, the audit log, both health endpoints and observation
   ingestion. `GET /api/v1/policy/rules` is the only operation it does not cover,
