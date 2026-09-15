@@ -44,6 +44,16 @@ up: issuer-key ## Start PostgreSQL, the identity provider, and wait for them
 		sleep 1; \
 	done; \
 	echo "PostgreSQL did not become healthy in 60s. Try: make logs"; exit 1
+	@echo "Waiting for the identity provider..."
+	@for i in $$(seq 1 60); do \
+		if curl -sf http://localhost:$${STORM_GATE_PORT:-8090}/.well-known/jwks.json \
+			> /dev/null 2>&1; then \
+			echo "The identity provider is ready."; exit 0; \
+		fi; \
+		sleep 1; \
+	done; \
+	echo "The identity provider did not answer on :$${STORM_GATE_PORT:-8090} in 60s."; \
+	echo "Try: $(COMPOSE) logs storm-gate"; exit 1
 
 up-app: up ## Run the control plane and console as containers, like a deployment
 	$(COMPOSE) --profile app up -d --build
