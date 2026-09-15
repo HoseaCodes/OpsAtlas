@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { currentToken } from "@/lib/session";
 
 /**
  * Proxies a manifest submission to the control plane.
@@ -18,11 +19,27 @@ export async function POST(request: Request) {
   const baseUrl = process.env.OPSATLAS_API_URL ?? "http://localhost:8080";
   const target = `${baseUrl}/api/v1/services?sourcePath=${encodeURIComponent(sourcePath)}`;
 
+  // Registering names an actor in the audit log, so it is the reader's own
+  // token that goes upstream - not a credential belonging to the console.
+  const token = await currentToken();
+  if (!token) {
+    return NextResponse.json(
+      {
+        type: "https://opsatlas.ambitiousconcepts.io/problems/unauthenticated",
+        title: "Authentication required",
+        status: 401,
+        detail: "Your session has ended. Sign in again, then submit the manifest.",
+        correlationId: "not-issued",
+      },
+      { status: 401 },
+    );
+  }
+
   let upstream: Response;
   try {
     upstream = await fetch(target, {
       method: "POST",
-      headers: { "Content-Type": "application/yaml" },
+      headers: { "Content-Type": "application/yaml", Authorization: `Bearer ${token}` },
       body: document,
       cache: "no-store",
     });

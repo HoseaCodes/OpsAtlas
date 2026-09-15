@@ -10,6 +10,10 @@ const config: NextConfig = {
   // This repository sits inside a directory that has its own lockfile, so Next
   // otherwise infers the wrong workspace root and traces the wrong files.
   outputFileTracingRoot: path.join(import.meta.dirname, "../.."),
+  // A self-contained server plus only the node_modules it actually reaches.
+  // Without this the image needs the whole pnpm store - hundreds of megabytes
+  // of build-time dependencies to run a server that uses a handful of them.
+  output: "standalone",
 };
 
 export default config;

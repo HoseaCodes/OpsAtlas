@@ -25,6 +25,7 @@ PATTERNS+='|xox[baprs]-[A-Za-z0-9-]{10,}'          # Slack token
 PATTERNS+='|sk-[A-Za-z0-9]{32,}'                   # OpenAI-style key
 PATTERNS+='|eyJ[A-Za-z0-9_-]{20,}\.eyJ[A-Za-z0-9_-]{20,}\.'  # signed JWT
 
+
 found=0
 
 # The working tree, excluding everything generated or vendored.
@@ -33,6 +34,19 @@ if git grep --untracked -InE "$PATTERNS" -- \
     ':!pnpm-lock.yaml' ':!**/go.sum' ':!scripts/check-secrets.sh'; then
     echo ""
     echo "A credential-shaped string is in the working tree (see above)."
+    found=1
+fi
+
+# This system's own service credentials, which need a second pass: test
+# fixtures have to look like keys to be useful, so they are marked EXAMPLE and
+# skipped - the same convention AWS uses for AKIAIOSFODNN7EXAMPLE. A real key
+# from `make observer-key` is random and will not carry the marker.
+if git grep --untracked -InE 'opsatlas_sk_[A-Za-z0-9_-]{32,}' -- \
+    ':!node_modules' ':!**/node_modules' ':!**/build' ':!**/.next' ':!**/dist' \
+    ':!scripts/check-secrets.sh' | grep -v 'EXAMPLE'; then
+    echo ""
+    echo "An OpsAtlas service credential is in the working tree (see above)."
+    echo "If it is a fixture, put EXAMPLE in it. If it is real, rotate it."
     found=1
 fi
 

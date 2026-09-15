@@ -10,7 +10,7 @@ COMPOSE := docker compose -f deploy/compose/docker-compose.yml
 GRADLE  := ./gradlew --console=plain
 
 .DEFAULT_GOAL := help
-.PHONY: help install check-examples check-secrets typecheck test test-all test-java test-web test-observer check dev dev-web dev-observer e2e up up-telemetry down down-telemetry logs psql clean clean-db openapi check-openapi
+.PHONY: help install check-examples check-secrets observer-key issuer-key first-user prod-first-user prometheus-key up-app down-app typecheck test test-all test-java test-web test-observer check dev dev-web dev-observer e2e up up-telemetry down down-telemetry logs psql clean clean-db openapi check-openapi
 
 help: ## Show the targets that exist today
 	@echo ""
@@ -22,7 +22,18 @@ help: ## Show the targets that exist today
 
 # -- Running ----------------------------------------------------------------
 
-up: ## Start PostgreSQL and wait until it is accepting connections
+issuer-key: ## Generate this machine's local signing key for the identity provider
+	@if grep -q '^JWT_PRIVATE_KEY=' deploy/compose/.env 2>/dev/null; then \
+		echo "A local signing key already exists in deploy/compose/.env; leaving it alone."; \
+	else \
+		mkdir -p deploy/compose; \
+		printf 'JWT_PRIVATE_KEY=%s\n' "$$(openssl genrsa 2048 2>/dev/null | base64 | tr -d '\n')" \
+			>> deploy/compose/.env; \
+		echo "Generated a local signing key into deploy/compose/.env (gitignored)."; \
+		echo "It signs tokens for local development only. Never reuse it anywhere real."; \
+	fi
+
+up: issuer-key ## Start PostgreSQL, the identity provider, and wait for them
 	$(COMPOSE) up -d
 	@echo "Waiting for PostgreSQL to become healthy..."
 	@for i in $$(seq 1 60); do \
@@ -33,6 +44,29 @@ up: ## Start PostgreSQL and wait until it is accepting connections
 		sleep 1; \
 	done; \
 	echo "PostgreSQL did not become healthy in 60s. Try: make logs"; exit 1
+	@echo "Waiting for the identity provider..."
+	@for i in $$(seq 1 60); do \
+		if curl -sf http://localhost:$${STORM_GATE_PORT:-8090}/.well-known/jwks.json \
+			> /dev/null 2>&1; then \
+			echo "The identity provider is ready."; exit 0; \
+		fi; \
+		sleep 1; \
+	done; \
+	echo "The identity provider did not answer on :$${STORM_GATE_PORT:-8090} in 60s."; \
+	echo "Try: $(COMPOSE) logs storm-gate"; exit 1
+
+up-app: up ## Run the control plane and console as containers, like a deployment
+	$(COMPOSE) --profile app up -d --build
+	@echo ""
+	@echo "  Console       http://localhost:$${OPSATLAS_CONSOLE_PORT:-3000}"
+	@echo "  Control plane http://localhost:$${OPSATLAS_PORT:-8080}"
+	@echo ""
+	@echo "  This is the arrangement a deployment uses. 'make dev' runs the"
+	@echo "  control plane from Gradle instead, which is faster to iterate on."
+	@echo ""
+
+down-app: ## Stop the containerised control plane and console
+	$(COMPOSE) --profile app down
 
 up-telemetry: ## Start the collector, Tempo, Prometheus and Grafana
 	$(COMPOSE) --profile telemetry up -d
@@ -57,11 +91,104 @@ logs: ## Follow the PostgreSQL logs
 psql: ## Open a psql shell in the running database container
 	$(COMPOSE) exec postgres psql -U opsatlas -d opsatlas
 
+# The account the local stack is used as.
+#
+# A fresh stack admits nobody: the identity provider has no accounts, and a token
+# only works once a principal row exists for it (ADR 0013). This creates the
+# account at the issuer, reads back the subject the issuer assigned, and records
+# it so `make dev` can provision it on startup. Idempotent - run it again and it
+# signs in instead.
+LOCAL_EMAIL ?= operator@opsatlas.local
+LOCAL_PASSWORD ?= Str0ng-Local-Passw0rd!
+ISSUER_URL ?= http://localhost:8090
+
+first-user: up ## Create the local account and record it for bootstrap
+	@set -e; \
+	body='{"name":"Local Operator","email":"$(LOCAL_EMAIL)","username":"operator",'; \
+	body="$$body\"password\":\"$(LOCAL_PASSWORD)\",\"role\":0,\"application\":\"opsatlas\"}"; \
+	token=$$(curl -s -X POST $(ISSUER_URL)/register -H 'Content-Type: application/json' -d "$$body" \
+		| sed -n 's/.*"accesstoken":"\([^"]*\)".*/\1/p'); \
+	if [ -z "$$token" ]; then \
+		token=$$(curl -s -X POST $(ISSUER_URL)/login -H 'Content-Type: application/json' \
+			-d '{"email":"$(LOCAL_EMAIL)","password":"$(LOCAL_PASSWORD)"}' \
+			| sed -n 's/.*"accesstoken":"\([^"]*\)".*/\1/p'); \
+	fi; \
+	if [ -z "$$token" ]; then \
+		echo "Could not create or sign in to $(LOCAL_EMAIL) at $(ISSUER_URL)."; \
+		echo "Is the stack up? Try: make up"; exit 1; \
+	fi; \
+	subject=$$(printf '%s' "$$token" | cut -d. -f2 | tr '_-' '/+' \
+		| awk '{ while (length($$0) % 4) $$0 = $$0 "="; print }' | base64 -d 2>/dev/null \
+		| sed -n 's/.*"id":"\([^"]*\)".*/\1/p'); \
+	if [ -z "$$subject" ]; then echo "The issuer returned a token with no subject id."; exit 1; fi; \
+	sed -i.bak '/^OPSATLAS_BOOTSTRAP_/d' deploy/compose/.env 2>/dev/null || true; \
+	rm -f deploy/compose/.env.bak; \
+	{ echo "OPSATLAS_BOOTSTRAP_ISSUER=$(ISSUER_URL)"; \
+	  echo "OPSATLAS_BOOTSTRAP_SUBJECT=$$subject"; \
+	  echo "OPSATLAS_BOOTSTRAP_DISPLAY_NAME='Local Operator'"; } >> deploy/compose/.env; \
+	echo ""; \
+	echo "  $(LOCAL_EMAIL) is ready at the issuer, subject $$subject."; \
+	echo "  Recorded in deploy/compose/.env, which is gitignored."; \
+	echo "  'make dev' will provision it on startup."; \
+	echo ""
+
+# The same problem as `first-user`, against a deployment instead of a laptop.
+#
+# Deliberately not `first-user` with a different ISSUER_URL: that target depends
+# on `up`, so pointing it at a server would start a local stack on the way, and
+# it writes the answer into deploy/compose/.env, which is the wrong machine. A
+# deployment's .env lives on the box and is never in this repository, so this
+# prints what to put there rather than writing it.
+#
+# Run it once, after the stack is up and before anybody can sign in.
+prod-first-user: ## Create the first account on a deployment and print its bootstrap values
+	@if [ -z "$(ISSUER_URL_PROD)" ]; then \
+		echo "Usage: make prod-first-user ISSUER_URL_PROD=https://auth.example.com \\"; \
+		echo "                            PROD_EMAIL=you@example.com PROD_PASSWORD='...'"; \
+		echo ""; \
+		echo "  Creates the account at the issuer and prints the two lines to add"; \
+		echo "  to deploy/production/.env on the server. Nothing is written here."; \
+		exit 1; \
+	fi
+	@if [ -z "$(PROD_EMAIL)" ] || [ -z "$(PROD_PASSWORD)" ]; then \
+		echo "PROD_EMAIL and PROD_PASSWORD are both required."; exit 1; \
+	fi
+	@set -e; \
+	body='{"name":"$(or $(PROD_NAME),Operator)","email":"$(PROD_EMAIL)","username":"$(or $(PROD_USERNAME),operator)",'; \
+	body="$$body\"password\":\"$(PROD_PASSWORD)\",\"role\":0,\"application\":\"opsatlas\"}"; \
+	token=$$(curl -sS -X POST $(ISSUER_URL_PROD)/register -H 'Content-Type: application/json' -d "$$body" \
+		| sed -n 's/.*"accesstoken":"\([^"]*\)".*/\1/p'); \
+	if [ -z "$$token" ]; then \
+		token=$$(curl -sS -X POST $(ISSUER_URL_PROD)/login -H 'Content-Type: application/json' \
+			-d '{"email":"$(PROD_EMAIL)","password":"$(PROD_PASSWORD)"}' \
+			| sed -n 's/.*"accesstoken":"\([^"]*\)".*/\1/p'); \
+	fi; \
+	if [ -z "$$token" ]; then \
+		echo "Could not create or sign in to $(PROD_EMAIL) at $(ISSUER_URL_PROD)."; \
+		echo "Is the issuer reachable, and is its certificate valid?"; exit 1; \
+	fi; \
+	subject=$$(printf '%s' "$$token" | cut -d. -f2 | tr '_-' '/+' \
+		| awk '{ while (length($$0) % 4) $$0 = $$0 "="; print }' | base64 -d 2>/dev/null \
+		| sed -n 's/.*"id":"\([^"]*\)".*/\1/p'); \
+	if [ -z "$$subject" ]; then echo "The issuer returned a token with no subject id."; exit 1; fi; \
+	echo ""; \
+	echo "  $(PROD_EMAIL) exists at $(ISSUER_URL_PROD)."; \
+	echo ""; \
+	echo "  Add these to deploy/production/.env on the server, then restart the"; \
+	echo "  control plane. Until you do, it authenticates this account and then"; \
+	echo "  refuses it 403 for having no principal row - which is ADR 0013"; \
+	echo "  working, not a fault."; \
+	echo ""; \
+	echo "    OPSATLAS_BOOTSTRAP_SUBJECT=$$subject"; \
+	echo "    OPSATLAS_BOOTSTRAP_DISPLAY_NAME='$(or $(PROD_NAME),Operator)'"; \
+	echo ""
+
 dev: up ## Start the database, then run the control plane on :8080
 	@echo ""
 	@echo "  Control plane starting on http://localhost:8080"
 	@echo "  Then, in another terminal: make dev-web"
 	@echo ""
+	@if [ -f deploy/compose/.env ]; then set -a; . ./deploy/compose/.env; set +a; fi; \
 	$(GRADLE) :control-plane:bootRun
 
 dev-web: ## Run the console on :3000 (needs the control plane running)
@@ -95,6 +222,27 @@ install: ## Install workspace dependencies
 
 check-examples: ## Validate every example and fixture manifest against the schema
 	pnpm --filter @opsatlas/contracts check:examples
+
+observer-key: ## Generate a key for the observer (set it on both sides)
+	@printf 'opsatlas_sk_%s\n' "$$(LC_ALL=C tr -dc 'A-Za-z0-9_-' < /dev/urandom | head -c 43)"
+	@echo "" >&2
+	@echo "  Set it as OPSATLAS_OBSERVER_KEY on the control plane," >&2
+	@echo "  and as OPSATLAS_API_KEY on the observer. It is never printed again." >&2
+	@echo "" >&2
+
+prometheus-key: ## Generate the key Prometheus scrapes the control plane with
+	@mkdir -p deploy/compose/telemetry
+	@if [ -s deploy/compose/telemetry/opsatlas.key ]; then \
+		echo "A scrape key already exists; leaving it alone."; \
+	else \
+		printf 'opsatlas_sk_%s' "$$(LC_ALL=C tr -dc 'A-Za-z0-9_-' < /dev/urandom | head -c 43)" \
+			> deploy/compose/telemetry/opsatlas.key; \
+		echo "Wrote deploy/compose/telemetry/opsatlas.key (gitignored)."; \
+	fi
+	@echo ""
+	@echo "  Start the control plane with:"
+	@echo "    OPSATLAS_PROMETHEUS_KEY=$$(cat deploy/compose/telemetry/opsatlas.key) make dev"
+	@echo ""
 
 check-secrets: ## Refuse credential-shaped strings and tracked key files
 	./scripts/check-secrets.sh

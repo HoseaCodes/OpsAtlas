@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { asOperator } from "./support/session";
 
 const EXAMPLES = join(process.cwd(), "..", "..", "examples", "services");
 const API = process.env.OPSATLAS_API_URL ?? "http://localhost:8080";
@@ -22,7 +23,7 @@ async function register(name: string) {
   const body = manifest(name);
   const response = await fetch(`${API}/api/v1/services`, {
     method: "POST",
-    headers: { "Content-Type": "application/yaml" },
+    headers: await asOperator({ "Content-Type": "application/yaml" }),
     body,
   });
   if (response.ok) return;
@@ -34,7 +35,7 @@ async function register(name: string) {
 
 /** Updates an already-registered service to match the manifest. */
 async function replace(slug: string, body: string) {
-  const current = await fetch(`${API}/api/v1/services/${slug}`);
+  const current = await fetch(`${API}/api/v1/services/${slug}`, { headers: await asOperator() });
   if (!current.ok) {
     throw new Error(`Setup could not read ${slug} after a 409: ${current.status}`);
   }
@@ -44,7 +45,7 @@ async function replace(slug: string, body: string) {
   }
   const updated = await fetch(`${API}/api/v1/services/${slug}`, {
     method: "PUT",
-    headers: { "Content-Type": "application/yaml", "If-Match": etag },
+    headers: await asOperator({ "Content-Type": "application/yaml", "If-Match": etag }),
     body,
   });
   if (!updated.ok) {
@@ -146,7 +147,7 @@ test("the register page offers a prompt built from the live schema and rules", a
   expect(copied).toContain("apiVersion: opsatlas.ambitiousconcepts.io/v1");
   expect(copied).toContain("^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$");
 
-  const rules = await fetch(`${API}/api/v1/policy/rules`).then((response) => response.json());
+  const rules = await fetch(`${API}/api/v1/policy/rules`, { headers: await asOperator() }).then((response) => response.json());
   expect(copied).toContain(rules.policySetVersion);
   expect(copied).toContain(rules.declarationOnlyNotice);
   for (const rule of rules.rules) {

@@ -16,7 +16,7 @@ type Search = { q?: string; tier?: string; cursor?: string };
 export default async function CatalogPage({ searchParams }: { searchParams: Promise<Search> }) {
   const params = await searchParams;
 
-  const api = controlPlane();
+  const api = await controlPlane();
 
   let page: { items: ServiceSummary[]; nextCursor: string | null };
   try {

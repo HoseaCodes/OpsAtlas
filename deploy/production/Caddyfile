@@ -1,0 +1,62 @@
+# The only thing on this box listening to the internet.
+#
+# Caddy obtains and renews Let's Encrypt certificates on its own, which is the
+# reason it is here rather than nginx: nothing in this file configures a
+# certificate, a renewal timer or a reload hook, and there is correspondingly
+# nothing to forget to renew.
+#
+# Hostnames come from the environment so this file is the same on any
+# deployment. They are set in deploy/production/.env.
+{
+	email {$OPSATLAS_ACME_EMAIL}
+
+	# Every site below inherits this. Caddy logs JSON by default, which matches
+	# what the control plane and the observer already write.
+	servers {
+		trusted_proxies static private_ranges
+	}
+}
+
+# Applied to all three sites.
+(common) {
+	encode zstd gzip
+
+	header {
+		# Two years, which is what a preload submission requires if this ever
+		# wants one. Safe to commit to: every hostname here is served by this
+		# proxy and nothing on these names needs plain HTTP.
+		Strict-Transport-Security "max-age=63072000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		# This deployment embeds nothing and should be embedded by nothing.
+		X-Frame-Options "DENY"
+		# Caddy advertises itself by default. Not a security measure - just no
+		# reason to publish the version of the thing holding the certificates.
+		-Server
+	}
+
+	log {
+		output stdout
+		format json
+	}
+}
+
+# ---------------------------------------------------------------------------
+# The console, and nothing else.
+#
+# One public hostname on purpose. The console calls the control plane and the
+# identity provider from the server over the compose network, so neither needs a
+# route in from outside — and leaving them without one means Storm-Gate's open
+# `/register` is not on the internet at all, which is a better position than
+# publishing it and relying on the 403 behind it.
+#
+# What this costs: you cannot curl the API or fetch the OpenAPI document over
+# the wire, and the observer has to run on this box rather than anywhere else.
+# Both are recoverable — see "Publishing the API or the issuer later" in
+# README.md. Neither invalidates a token, because the issuer identifier is
+# already the public name it would use.
+# ---------------------------------------------------------------------------
+{$OPSATLAS_CONSOLE_HOST} {
+	import common
+	reverse_proxy console:3000
+}

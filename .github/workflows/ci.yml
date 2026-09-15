@@ -138,21 +138,21 @@ jobs:
   # The browser smoke test needs the whole stack, so it runs last and on its own.
   # CLAUDE.md section 11: this is the difference between asserting the console
   # works and claiming it.
+  #
+  # Since ADR 0013 "the whole stack" includes an identity provider. This job
+  # used to start a `services: postgres` and nothing else, which stopped being
+  # enough the moment authentication landed: `auth.setup.ts` signs in through
+  # the form and every other spec depends on it, so with no issuer to sign in
+  # against the entire suite fails on its dependency.
+  #
+  # So it runs what a developer runs. `make up` brings PostgreSQL, MongoDB and
+  # Storm-Gate through the same compose file, and generates a throwaway RSA
+  # signing key into a gitignored .env - which is why there is no key here for
+  # `make check-secrets` to find.
   smoke:
     name: Browser smoke
     runs-on: ubuntu-latest
     needs: [control-plane, console]
-    services:
-      postgres:
-        image: postgres:16.4-alpine
-        env:
-          POSTGRES_DB: opsatlas
-          POSTGRES_USER: opsatlas
-          POSTGRES_PASSWORD: opsatlas
-        ports: ["5432:5432"]
-        options: >-
-          --health-cmd "pg_isready -U opsatlas -d opsatlas"
-          --health-interval 5s --health-timeout 5s --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - uses: gradle/actions/setup-gradle@v4
@@ -162,6 +162,14 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Start PostgreSQL, MongoDB and the identity provider
+        run: make up
+      - name: Create the account the browser signs in as
+        # A fresh stack admits nobody: the issuer has no accounts, and a token
+        # only works once a principal row exists for it. This creates the
+        # account and records the subject the issuer assigned, so the step below
+        # can provision it.
+        run: make first-user
       - name: Start the control plane
         # No collector runs here. Export is best-effort and would be dropped
         # anyway, but a retrying exporter writes a warning every few seconds and
@@ -169,6 +177,11 @@ jobs:
         env:
           OPSATLAS_TRACING_ENABLED: "false"
         run: |
+          # The bootstrap values `make first-user` just wrote. Without these the
+          # control plane starts, authenticates the operator and then refuses
+          # them 403 for having no principal row - which is correct behaviour
+          # and a failing suite.
+          set -a; . ./deploy/compose/.env; set +a
           ./gradlew :control-plane:bootRun --console=plain > /tmp/control-plane.log 2>&1 &
           for i in $(seq 1 120); do
             curl -sf http://localhost:8080/actuator/health && break
@@ -177,6 +190,14 @@ jobs:
           curl -sf http://localhost:8080/actuator/health || (cat /tmp/control-plane.log; exit 1)
       - run: pnpm --filter @opsatlas/web exec playwright install --with-deps chromium
       - run: pnpm --filter @opsatlas/web e2e
+      - name: The control plane's log, if the browser suite failed
+        # A 401 or 403 in a Playwright failure is usually explained here rather
+        # than in the trace.
+        if: failure()
+        run: tail -120 /tmp/control-plane.log
+      - name: The identity provider's log, if the browser suite failed
+        if: failure()
+        run: docker compose -f deploy/compose/docker-compose.yml logs storm-gate | tail -60
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

@@ -37,6 +37,124 @@ services:
     restart: unless-stopped
 
   # ---------------------------------------------------------------------------
+  # The application itself, containerised.
+  #
+  # Behind the `app` profile, so the default `make up` still starts only what
+  # `make dev` needs around it - a developer running the control plane from
+  # Gradle does not want a second one on the same port. `make up-app` runs the
+  # built images instead, which is the arrangement a deployment would use and
+  # therefore the one worth being able to reproduce locally.
+  #
+  # Images are built from this repository rather than pulled: there is no
+  # published OpsAtlas image yet, and inventing a registry reference for one that
+  # does not exist would be a promise the compose file cannot keep.
+  # ---------------------------------------------------------------------------
+  control-plane:
+    profiles: ["app"]
+    build:
+      context: ../..
+      dockerfile: apps/control-plane/Dockerfile
+    image: opsatlas/control-plane:local
+    depends_on:
+      postgres:
+        condition: service_healthy
+      storm-gate:
+        condition: service_started
+    environment:
+      OPSATLAS_DB_URL: jdbc:postgresql://postgres:5432/opsatlas
+      OPSATLAS_DB_USERNAME: opsatlas
+      OPSATLAS_DB_PASSWORD: opsatlas
+      # The issuer as the browser will see it. A token's `iss` is compared
+      # against this, and a container name the browser cannot resolve would make
+      # every token look like it came from somewhere else.
+      OPSATLAS_OIDC_ISSUER: http://localhost:${STORM_GATE_PORT:-8090}
+      OPSATLAS_OIDC_JWKS_URI: http://storm-gate:8080/.well-known/jwks.json
+      OPSATLAS_BOOTSTRAP_ISSUER: http://localhost:${STORM_GATE_PORT:-8090}
+      OPSATLAS_BOOTSTRAP_SUBJECT: ${OPSATLAS_BOOTSTRAP_SUBJECT:-}
+      OPSATLAS_BOOTSTRAP_DISPLAY_NAME: ${OPSATLAS_BOOTSTRAP_DISPLAY_NAME:-}
+      OPSATLAS_OBSERVER_KEY: ${OPSATLAS_OBSERVER_KEY:-}
+      OPSATLAS_PROMETHEUS_KEY: ${OPSATLAS_PROMETHEUS_KEY:-}
+      OPSATLAS_TRACING_ENABLED: ${OPSATLAS_TRACING_ENABLED:-false}
+    ports:
+      - "${OPSATLAS_PORT:-8080}:8080"
+    restart: unless-stopped
+
+  console:
+    profiles: ["app"]
+    build:
+      context: ../..
+      dockerfile: apps/web/Dockerfile
+    image: opsatlas/console:local
+    depends_on:
+      control-plane:
+        condition: service_healthy
+    environment:
+      # Server-side calls stay inside the network; the browser never learns this
+      # address, which is the reason there is no CORS policy to configure.
+      OPSATLAS_API_URL: http://control-plane:8080
+      # Sign-in is also server-side, so this is the container address too.
+      STORM_GATE_URL: http://storm-gate:8080
+    ports:
+      - "${OPSATLAS_CONSOLE_PORT:-3000}:3000"
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # The identity provider, and its database.
+  #
+  # Not optional and not behind a profile: since ADR 0013 every control-plane
+  # endpoint needs a verified token, so a stack without an issuer is a control
+  # plane nobody can talk to. `make up` brings all of it or none of it.
+  #
+  # The image is published by Storm-Gate's own CI from a tagged commit. Pin a
+  # version with STORM_GATE_TAG rather than tracking `main`, so that an identity
+  # provider does not change underneath a deployment without somebody deciding.
+  # ---------------------------------------------------------------------------
+  mongo:
+    image: mongo:7
+    container_name: opsatlas-mongo
+    # Storm-Gate's store, not OpsAtlas's. PostgreSQL remains the system of
+    # record for everything this project owns (CLAUDE.md section 6); nothing in
+    # OpsAtlas reads or writes this database.
+    ports:
+      - "${STORM_GATE_DB_PORT:-27017}:27017"
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.runCommand({ping:1}).ok"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 3s
+    restart: unless-stopped
+
+  storm-gate:
+    image: ghcr.io/hoseacodes/storm-gate:${STORM_GATE_TAG:-main}
+    container_name: opsatlas-storm-gate
+    depends_on:
+      mongo:
+        condition: service_healthy
+    environment:
+      PORT: 8080
+      NODE_ENV: production
+      # RS256, never the HS256 default. Under HS256 a verifier needs the secret
+      # that also mints tokens, which would undo the reason for choosing an
+      # issuer that publishes a key set at all (ADR 0013).
+      JWT_SIGNING_ALG: RS256
+      JWT_ISSUER: http://localhost:${STORM_GATE_PORT:-8090}
+      # Generated per developer by `make up` into deploy/compose/.env, which is
+      # gitignored. Base64 because a PEM's newlines do not survive an env file.
+      JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY:?run `make up`, which generates a local signing key}
+      ACCESS_TOKEN_SECRET: ${ACCESS_TOKEN_SECRET:-local-development-access-secret}
+      REFRESH_TOKEN_SECRET: ${REFRESH_TOKEN_SECRET:-local-development-refresh-secret}
+      MONGODB_URL: mongodb://mongo:27017/stormgate
+      CORS_ORIGINS: http://localhost:3000
+    ports:
+      # 8090 on the host: 8080 is the control plane's, and Storm-Gate defaults
+      # to the same number.
+      - "${STORM_GATE_PORT:-8090}:8080"
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
   # Telemetry. Behind a profile, so `make up` still starts one container and
   # `make up-telemetry` starts the rest. A developer working on the catalog
   # should not have to run a collector, and four containers that nobody looks
@@ -78,6 +196,9 @@ services:
       - --web.enable-lifecycle
     volumes:
       - ./telemetry/prometheus.yaml:/etc/prometheus/prometheus.yml:ro
+      # Written by `make prometheus-key`, gitignored. Mounted rather than baked
+      # into the config so the key never sits in a committed file.
+      - ./telemetry/opsatlas.key:/etc/prometheus/opsatlas.key:ro
       - prometheus-data:/prometheus
     ports:
       - "9091:9090"   # 9090 is the observer's own metrics port
@@ -109,6 +230,7 @@ services:
     restart: unless-stopped
 
 volumes:
+  mongo-data:
   postgres-data:
     name: opsatlas-postgres-data
   tempo-data:

@@ -15,7 +15,7 @@ export default async function RegisterPage() {
   // The prompt is worth having without the rules, so a failure here degrades it
   // rather than failing the page: registering a manifest does not depend on the
   // rule list, and that is the partial-failure case CLAUDE.md §10 calls normal.
-  const rules = await controlPlane()
+  const rules = await (await controlPlane())
     .getPolicyRules(noStore)
     .catch((): null => null);
 

@@ -27,17 +27,19 @@ worse than no `terraform/` directory.
 > Update this section whenever it becomes inaccurate. It is the first thing
 > future sessions read.
 
-- **Phase:** **phases 0–8 done.** The system measures something and can explain
-  it: a Go observer probes declared health endpoints, the catalog reports what it
+- **Phase:** **phases 0–10 done, and 12 is part done.** Authentication (9) and
+  packaging (10) are complete. The system measures something and can explain it:
+  a Go observer probes declared health endpoints, the catalog reports what it
   found, and one identifier follows a request through the logs, the traces and
-  the audit log. Next is phase 9 — the transactional outbox and platform events —
-  which §6 says waits for a demonstrated need. The phase list is in
-  `docs/roadmap.md`.
+  the audit log. Phase 11 — the transactional outbox and platform events — waits
+  for a demonstrated need (§6). Phase 12 was split: the **deployment** exists as
+  configuration (ADR 0014) and has never been run on a host; **Terraform,
+  Kubernetes, Helm and k6 still wait.** The phase list is in `docs/roadmap.md`.
 - **What exists:** the `service.yaml` v1 JSON Schema and fixtures; a running
   control plane that registers services from a real manifest and serves them —
   `POST`, `GET /{slug}`, `GET` (cursor-paged), `PUT` with `If-Match` — with the
   ADR 0002 ingestion pipeline, RFC 9457 problem responses, correlation IDs and
-  the org-scoping stub; a `governance` module scoring ten declaration rules and
+  real authentication (ADR 0013); a `governance` module scoring ten declaration rules and
   auditing every change, both inside the registration transaction; Flyway schema
   for `organization`, `team`, `service`, `environment`, `policy_result`,
   `policy_result_check`, `audit_event`; a generated-and-drift-checked OpenAPI
@@ -48,9 +50,18 @@ worse than no `terraform/` directory.
   `operations` module folding probe results into per-environment and per-day
   counters; a Go observer in `apps/observer`; W3C trace context across both
   processes with OTLP export, and a collector, Tempo, Prometheus and Grafana
-  behind the compose `telemetry` profile; ADRs 0001–0011;
+  behind the compose `telemetry` profile; a production deployment configuration
+  in `deploy/production` with a runbook beside it; ADRs 0001–0014;
   `docs/design/tokens.md`; `docs/architecture/slice-one.md`.
 - **Build:** pnpm workspace plus Gradle, `make` as the single entry point.
+  `make up-app` builds and runs the control plane and console as containers,
+  which is the arrangement a deployment uses; `make dev` runs the control plane
+  from Gradle instead, which is faster to iterate on.
+  `make up` starts **PostgreSQL, MongoDB and Storm-Gate** (the identity
+  provider, from `ghcr.io/hoseacodes/storm-gate`), because since ADR 0013 a
+  stack without an issuer is a control plane nobody can talk to. It also runs
+  `make issuer-key` first, which generates a local RSA signing key into
+  `deploy/compose/.env` — gitignored, local-only, never reused anywhere real.
   `make dev` runs the control plane on :8080 against compose PostgreSQL,
   `make dev-observer` the observer, and `make up-telemetry` the collector, Tempo
   (:3200), Prometheus (:9091) and Grafana (:3001). The telemetry stack is a
@@ -59,21 +70,116 @@ worse than no `terraform/` directory.
   Gradle provisions Temurin 21 itself. Go 1.27+ **is** required for
   `apps/observer`; it is installed here via Homebrew.
 - **Tests:** `make test` — 14 schema fixtures, 37 console component tests,
-  33 Go tests (race-clean) and 257 JVM tests, all passing. `make test-all` adds
-  23 Playwright tests against the real stack. Integration tests use
+  35 Go tests (race-clean) and 286 JVM tests, all passing. `make test-all` adds
+  26 Playwright tests against the real stack. Integration tests use
   Testcontainers and need a running Docker daemon; the Playwright tests need the
   stack running.
-- **CI is written and has still never run — but not for the reason this file
-  used to give.** A remote does exist (`github.com/HoseaCodes/OpsAtlas`, public,
-  default branch `slice-one-foundation`) and GitHub has the workflow registered
-  and active. It reports **zero runs**, because `on: push` named `branches:
-  [master]` and no branch by that name has ever existed here. The trigger is
-  unfiltered now, so the next push fires it. **Until a run exists, do not
-  describe the pipeline as passing** — and check rather than assume: the GitHub
-  API answers `/repos/HoseaCodes/OpsAtlas/actions/runs` without authentication.
+- **CI has run, and it is green.** Run #1 on 2026-09-13, commit `16b3435`,
+  branch `master`: all six jobs passed — contract fixtures (23s), console (43s),
+  observer (84s), control plane (119s), OpenAPI drift (119s) and the browser
+  smoke test (190s). That last one is the one worth knowing passed: it starts
+  PostgreSQL, boots the control plane, builds and serves the console and drives
+  Playwright against all three on a clean runner. The Java 21 toolchain
+  provisions itself there via the foojay resolver, with no JDK installed.
+  Still do not describe a *later* state of the pipeline as passing without
+  checking: `/repos/HoseaCodes/OpsAtlas/actions/runs` answers unauthenticated.
+- **Only pushes to `master` run CI.** That is the trigger (`branches: [master]`)
+  and `master` is now the default branch. `slice-one-foundation` still exists and
+  pushes to it fire nothing — a pull request into `master` does. This is the
+  failure that hid a non-running pipeline for the life of the project, so check
+  which branch work is landing on before trusting a green history.
 - **Database:** PostgreSQL 16 via `deploy/compose`. Flyway owns the schema;
   Hibernate runs `ddl-auto: validate` so entity/migration drift fails startup.
-- **Cross-organization isolation is verified** by `OrgIsolationIT` (22 tests),
+- **`deploy/production` is not `deploy/compose` with different values**, and the
+  difference is the whole file (ADR 0014). The local file publishes PostgreSQL on
+  5432 and MongoDB on 27017, the second with no authentication — correct on a
+  laptop, an open database on a public IP. In the production file **only Caddy
+  publishes anything**, and only 80 and 443; Mongo requires authentication; every
+  secret is `${VAR:?message}` with no default, so a missing one stops the stack
+  naming itself rather than starting on `ACCESS_TOKEN_SECRET`'s local fallback,
+  which is a string committed to a public repository. Images are pulled by commit
+  SHA or release tag and **never `latest`** — a running version you cannot name
+  is one you cannot roll back. Do not "simplify" these back toward the local
+  file's shape.
+- **The deployment has never been run on a host.** Everything about it is
+  verified only as far as a laptop allows: the compose file renders and refuses a
+  missing secret, the Caddyfile passes `caddy validate`, all three images build,
+  and `make prod-first-user` works against the local issuer. No image has been
+  published to GHCR, and **there are no backups** — do not describe the data as
+  surviving the box until something copies it off.
+- **The observer is packaged now too** (`apps/observer/Dockerfile`), because a
+  deployment without it is a catalog rather than a monitoring platform: nothing
+  probes, so every environment reads "never probed" forever. Alpine rather than
+  scratch for two stated reasons — probes are HTTPS and need a CA bundle, and the
+  healthcheck needs something that can make a request.
+- **Every `/api/v1` endpoint requires a verified RS256 token** (ADR 0013).
+  OpsAtlas is a resource server: it fetches public keys from the issuer's JWKS
+  and holds no signing key, so it can check a token and cannot mint one. Open by
+  design and nothing else: `/actuator/health`, `/actuator/info`, `/v3/api-docs`
+  and the Swagger UI assets.
+- **The metrics endpoints are no longer open.** Prometheus carries a credential
+  of its own (`make prometheus-key`, mounted as a file it reads), sent on
+  `Authorization: Bearer` because Prometheus cannot set an arbitrary header. A
+  `BearerTokenResolver` refuses to hand anything with this system's key prefix to
+  the token decoder, so a key and a JWT never contend for the same string.
+  Verified live: anonymous scrape 401, credentialled scrape 200, and the
+  Prometheus target back to `up`.
+- **Swagger UI defaults OFF**; `OPSATLAS_SWAGGER_UI=true` turns it on. Its assets
+  are permitted so the page can load and offer Authorize, while the endpoints it
+  calls still require a credential. It answered 401 — and was therefore broken —
+  for the whole window between authentication landing and this.
+- **A verified token is not a membership.** The issuer mints tokens for its own
+  accounts, which are not this catalog's users. `ProvisionedPrincipals` requires
+  a row in `principal` matching the token's **issuer and subject together** — the
+  pair, because two providers can hand out the same opaque id. An authenticated
+  caller with no row gets **403, not 401**: they have a credential, it is simply
+  not one this system knows, and retrying will not help.
+- **The first principal comes from configuration**, not from the first caller.
+  `OPSATLAS_BOOTSTRAP_ISSUER` / `_SUBJECT` / `_DISPLAY_NAME` provision one
+  identity on startup, idempotently. "Whoever authenticates first becomes the
+  administrator" is a race with the internet and losing it once is
+  unrecoverable. Without this a fresh deployment admits nobody, because rows are
+  created by somebody already inside.
+- **⚠ Both clients are broken by authentication, and this is the most immediate
+  work outstanding.** Turning it on refused every caller that does not present a
+  token, which is correct and was also going to break everything that did not.
+  - ~~The Go observer cannot report.~~ **Fixed.** It carries a key this system
+    issued, sent as `X-OpsAtlas-Key` and configured as `OPSATLAS_API_KEY`;
+    generate one with `make observer-key` and set the same value as
+    `OPSATLAS_OBSERVER_KEY` on the control plane. Its own header rather than
+    `Authorization`, which already means a JWT here. The audit log calls it
+    `service:observer`, because it is a machine and naming a person who does not
+    exist would be worse. Verified live: without the key the service list refuses
+    to refresh, with it a pass reports `probed 4, applied 4`.
+  - ~~The console cannot read the catalog.~~ **Fixed.** A person signs in at
+    `/login`, the console holds *their* token in an httpOnly cookie and forwards
+    it — it deliberately holds no credential of its own, because one would make
+    every write in the audit log read as "the console did it". Verified live
+    against a real Storm-Gate: redirect to sign-in, sign in, catalog renders,
+    session survives a reload, sign out.
+  - ~~`make e2e` is red.~~ **Green: 26 passed.** A Playwright `setup` project
+    signs in once through the form and every other spec reuses that
+    `storageState`; `signin.spec.ts` runs without it, since it is about not being
+    signed in yet. Specs' direct API calls go as the operator via
+    `e2e/support/session.ts`.
+  - **The browser suite needs the whole stack**, identity provider included:
+    `make up && make first-user && make dev`. `make first-user` creates the local
+    account at the issuer, reads back the subject the issuer assigned, and
+    records it in `deploy/compose/.env` so `make dev` provisions it on startup —
+    a fresh stack otherwise admits nobody.
+  - ~~The generated OpenAPI document declares no security scheme.~~ **Fixed.**
+    It declares `bearerToken` and `serviceCredential` as alternatives, so Swagger
+    UI can send either and the contract states what every endpoint requires.
+    **`make check-openapi` stays red until the regenerated contract is
+    committed** — that is the check doing its job, not a failure.
+- **`OrgIsolationIT` proves scoping *and* authorization.** Its 25 tests plant a
+  second organization's rows, and now a principal who belongs to it, so three of
+  them authenticate as that caller and assert they reach their own catalog and
+  not ours. Worth remembering why: until those existed, a resolver that ignored
+  the principal's organization and always returned the seeded one would have
+  passed the entire suite. Checked by mutation — doing exactly that now fails
+  two tests.
+- **Cross-organization isolation is verified** by `OrgIsolationIT` (25 tests),
   and it now covers **every org-scoped endpoint in the contract** — services,
   sources, the scorecard, the audit log, both health endpoints and observation
   ingestion. `GET /api/v1/policy/rules` is the only operation it does not cover,
@@ -111,6 +217,15 @@ worse than no `terraform/` directory.
 - **A window of N days means today and the N-1 days before it.** So a 30-day
   ribbon's oldest day is `today - 29`. Easy to get wrong by one in either
   direction, and it has been.
+- **A key press or click that lands before the App Router hydrates is
+  swallowed.** It is a real window, not a test artefact, and
+  `waitForLoadState("networkidle")` does not close it — network idle is not
+  hydration. Where a Playwright test presses something and expects a navigation,
+  retry the press-and-assert pair with `toPass`, as `catalog.spec.ts` and
+  `keyboard.spec.ts` do. That keeps the whole property under test. One assertion
+  resisted even that and was removed as duplicate coverage rather than given a
+  longer timeout — `keyboard.spec.ts` records why, so it is not re-added on the
+  assumption it was only slow.
 - **Keyboard focus is visible, and asserted.** §10 requires keyboard navigation
   with visible focus; `e2e/keyboard.spec.ts` tabs through the catalog and fails
   if anything takes focus without showing it. Deleting the `:focus-visible` rule
@@ -155,7 +270,17 @@ worse than no `terraform/` directory.
   describe them as production-readiness checks.
 - **Bump `PolicyCatalog.VERSION`** whenever a rule is added, removed, or changed
   in a way that alters its verdict. It is what keeps an old score readable as
-  what it meant when it was computed.
+  what it meant when it was computed. `PolicySetIT` enforces it from both
+  directions: the rule-id set is pinned beside the version it stands for, and the
+  README's fleet table is asserted against what the scorer actually produces, so
+  a rule that quietly changes its mind about a manifest fails the build.
+- **The README's fleet table is a test fixture, not prose.** `PolicySetIT` parses
+  it and compares it to real scores. When it fails it prints the correct table in
+  the README's own column widths, ready to paste.
+- **A file a test reads at runtime must be declared as a Gradle input.** README.md,
+  `examples/services` and `packages/contracts/schemas` are. An undeclared one
+  leaves the test task up-to-date and the test unrun — green for having been
+  skipped by the exact change it exists to catch.
 - **Run `make openapi` after any controller or response-shape change**, and
   commit the result. CI fails on the difference otherwise (ADR 0005).
 - **Extend `OrgIsolationIT` whenever an endpoint is added.** An endpoint it does
@@ -310,10 +435,12 @@ Organization
 
 **Tenancy decision, so this does not get re-litigated each session:** every tenant-scoped
 table has `org_id UUID NOT NULL` with a foreign key to `organization`, and every
-query filters on it. Until authentication exists, the organization is resolved by
-a single stub `PrincipalResolver` in `identity` that returns the one seeded
-organization. Swapping that resolver for real auth is the entire migration path,
-and it is marked with a `TODO(auth)` comment.
+query filters on it. The organization comes from the authenticated caller:
+`TokenPrincipalResolver` reads the verified token and looks the caller up in the
+`principal` table (ADR 0013). The stub that preceded it returned one seeded
+organization for every request, and ADR 0003's claim that swapping that single
+implementation would be the entire migration path turned out to be exactly
+true — no query, no table and no caller of `CurrentPrincipal` changed.
 
 This is single-tenant data modelling done so multi-tenancy is possible later. The
 README says exactly that. **Do not describe the project as supporting

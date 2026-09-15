@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { asOperator } from "./support/session";
 
 const API = process.env.OPSATLAS_API_URL ?? "http://localhost:8080";
 
@@ -12,9 +13,9 @@ const API = process.env.OPSATLAS_API_URL ?? "http://localhost:8080";
  */
 test.beforeEach(async () => {
   // Start from a known state so counts are assertable.
-  const existing = await (await fetch(`${API}/api/v1/sources?limit=100`)).json();
+  const existing = await (await fetch(`${API}/api/v1/sources?limit=100`, { headers: await asOperator() })).json();
   for (const source of existing.items ?? []) {
-    await fetch(`${API}/api/v1/sources/${source.id}`, { method: "DELETE" });
+    await fetch(`${API}/api/v1/sources/${source.id}`, { method: "DELETE", headers: await asOperator() });
   }
 });
 

@@ -4,6 +4,28 @@
 # default here is the local compose password and grants access to nothing else.
 
 spring:
+  # ---------------------------------------------------------------------------
+  # Authentication (ADR 0013). OpsAtlas verifies RS256 tokens issued by
+  # Storm-Gate against its published key set. It holds no signing key: it can
+  # check a token and cannot mint one, which is why this names a JWKS URI and
+  # never a secret.
+  #
+  # The defaults point at a local Storm-Gate. They are development defaults, not
+  # a deployment: OPSATLAS_OIDC_ISSUER and OPSATLAS_OIDC_JWKS_URI must both be
+  # set wherever this runs for real, and the issuer must be publishing RS256
+  # (Storm-Gate defaults to HS256, under which a verifier would need the secret
+  # that also mints - see ADR 0013).
+  # ---------------------------------------------------------------------------
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: ${OPSATLAS_OIDC_JWKS_URI:http://localhost:8090/.well-known/jwks.json}
+          issuer-uri: ${OPSATLAS_OIDC_ISSUER:http://localhost:8090}
+          # Storm-Gate stamps the subject as `id`, not `sub`. Left at the
+          # default, every request would authenticate as nobody.
+          principal-claim-name: id
+
   application:
     name: opsatlas-control-plane
 
@@ -63,13 +85,14 @@ springdoc:
   # block only controls the browsable UI over that same document, which adds no
   # endpoint and changes no response.
   #
-  # It defaults on because today the control plane runs only on a developer's
-  # machine. Nothing authenticates a request yet (ADR 0003), so wherever this is
-  # genuinely exposed, set OPSATLAS_SWAGGER_UI=false or put it behind the
-  # authentication that arrives with the identity phase - a try-it-out console
-  # over unauthenticated write endpoints is not something to publish by accident.
+  # It defaults OFF. Every endpoint it calls now requires a credential (ADR 0013),
+  # so a try-it-out console is no longer a way in - but it is still a page that
+  # invites people to make write calls against whatever it is pointed at, and a
+  # default that has to be remembered to turn off is a default that will not be.
+  # Turn it on deliberately with OPSATLAS_SWAGGER_UI=true; its Authorize button
+  # takes either of the schemes the contract declares.
   swagger-ui:
-    enabled: ${OPSATLAS_SWAGGER_UI:true}
+    enabled: ${OPSATLAS_SWAGGER_UI:false}
     # Land on a list of operations rather than every schema expanded at once,
     # and show how long a try-it-out call took.
     doc-expansion: none
@@ -128,6 +151,45 @@ management:
 # never holds write access.
 # ---------------------------------------------------------------------------
 opsatlas:
+  # ---------------------------------------------------------------------------
+  # The observer's credential (ADR 0013).
+  #
+  # The observer is a component of this system rather than a person, so it does
+  # not get an account at the identity provider - an audit entry naming a person
+  # who does not exist is worse than one naming a machine. It carries a key this
+  # system issued, and the audit log calls it `service:observer`.
+  #
+  # Generate one with `make observer-key`, set it here and on the observer.
+  # Changing it rotates: the old key stops working at once. Unset, the observer
+  # cannot report at all.
+  # ---------------------------------------------------------------------------
+  credentials:
+    # Named machines, each revocable on its own. The env var names stay friendly;
+    # the map is what the code iterates.
+    keys: "{observer: '${OPSATLAS_OBSERVER_KEY:}', prometheus: '${OPSATLAS_PROMETHEUS_KEY:}'}"
+
+  # ---------------------------------------------------------------------------
+  # The first way in (ADR 0013).
+  #
+  # A token only works if a `principal` row exists for it, and rows are created
+  # by somebody already inside - so a fresh deployment admits nobody. Set these
+  # once, to the identity that should get in first, and the row is created on
+  # startup if it is missing.
+  #
+  # Deliberately not "the first caller wins": that is a race with the internet,
+  # and losing it once cannot be undone. Setting an environment variable is
+  # something only an operator can do.
+  #
+  # The subject is whatever the issuer stamps - for Storm-Gate, the `id` claim,
+  # which you can read out of a token you have just been issued. Leaving these
+  # set is harmless; later starts find the row and do nothing.
+  # ---------------------------------------------------------------------------
+  bootstrap:
+    principal:
+      issuer: ${OPSATLAS_BOOTSTRAP_ISSUER:}
+      subject: ${OPSATLAS_BOOTSTRAP_SUBJECT:}
+      display-name: ${OPSATLAS_BOOTSTRAP_DISPLAY_NAME:}
+
   sync:
     # Set false to stop the scheduler. Tests do this: a timer firing underneath
     # an assertion is a flake generator.

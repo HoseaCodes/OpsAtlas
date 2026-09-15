@@ -12,6 +12,10 @@ import (
 
 func ptr(s string) *string { return &s }
 
+// A key on every client: the control plane refuses requests without one, so a
+// test that omitted it would be exercising a call no deployment can make.
+const testKey = "opsatlas_sk_EXAMPLE_not_a_real_key_for_tests_01"
+
 func TestProbeURLJoinsBaseAndReadinessPath(t *testing.T) {
 	cases := []struct {
 		name      string
@@ -75,7 +79,7 @@ func TestTargetsSkipsEnvironmentsWithNoURL(t *testing.T) {
 	})
 	defer server.Close()
 
-	targets, skipped, err := New(server.URL, 5*time.Second).Targets(context.Background())
+	targets, skipped, err := New(server.URL, testKey, 5*time.Second).Targets(context.Background())
 	if err != nil {
 		t.Fatalf("Targets: %v", err)
 	}
@@ -112,7 +116,7 @@ func TestOneUnreadableServiceDoesNotCostTheWholeCatalog(t *testing.T) {
 	server := httptest.NewServer(mux)
 	defer server.Close()
 
-	targets, skipped, err := New(server.URL, 5*time.Second).Targets(context.Background())
+	targets, skipped, err := New(server.URL, testKey, 5*time.Second).Targets(context.Background())
 	if err != nil {
 		t.Fatalf("one bad service must not fail the whole read, got %v", err)
 	}
@@ -144,7 +148,7 @@ func TestTargetsFollowsPagination(t *testing.T) {
 	server := httptest.NewServer(mux)
 	defer server.Close()
 
-	targets, _, err := New(server.URL, 5*time.Second).Targets(context.Background())
+	targets, _, err := New(server.URL, testKey, 5*time.Second).Targets(context.Background())
 	if err != nil {
 		t.Fatalf("Targets: %v", err)
 	}

@@ -35,18 +35,19 @@ OpsAtlas/
 ├── deploy/
 │   ├── compose/                   ✓ local PostgreSQL
 │   │   └── telemetry/             ✓ collector, Tempo, Prometheus, Grafana
-│   ├── k8s/                         phase 10
-│   └── helm/                        phase 10
+│   ├── production/                ✓ one box, compose behind Caddy — ADR 0014
+│   ├── k8s/                         phase 12
+│   └── helm/                        phase 12
 ├── examples/
 │   └── services/                  ✓ example and fixture manifests
 ├── scripts/                       ✓ check-secrets.sh — a layout deviation, ADR 0012
 ├── docs/
-│   ├── adr/                       ✓ 0001-0012
+│   ├── adr/                       ✓ 0001-0014
 │   ├── architecture/              ✓ slice-one.md
 │   ├── design/                    ✓ tokens.md
 │   └── roadmap.md                 ✓ this file
-├── terraform/                       phase 10
-└── .github/workflows/             ✓ ci.yml
+├── terraform/                       phase 12
+└── .github/workflows/             ✓ ci.yml, publish.yml
 ```
 
 `packages/ui` is listed as *not planned* rather than as a later phase. A shared
@@ -238,6 +239,125 @@ Verified in both directions: all seven hand-written lists removed and the suite
 still passes 257, and disabling the shared reset fails 96 tests across 13
 classes. Runtime is unchanged at roughly half a minute.
 
+**Fifth gap closed after phase 8:** `PolicyCatalog.VERSION`. `CLAUDE.md` said to
+bump it whenever a rule changes, because it is what lets a score from last month
+still be read as what it meant then — and nothing enforced it. A rule could be
+added, every scorecard could start meaning something different, and every stored
+`policy_set_version` would still claim otherwise.
+
+`PolicySetIT` closes both halves. The rule-id set is pinned beside the version it
+stands for, which catches a rule appearing or disappearing. The README's fleet
+table — the most falsifiable claim in that document, six services with exact
+scores and exact failing rules — is asserted against what the scorer actually
+produces, which catches a rule quietly changing its mind about a manifest.
+
+It found the table already wrong: three failing checks were named
+`environment-urls`, `liveness-probe` and `readiness-probe`, and the real ids are
+`environment-urls-declared`, `liveness-probe-declared` and
+`readiness-probe-declared`. Every number in the table was right; the ids a reader
+would have searched for did not exist.
+
+**And it found something worse than the thing it was written for.** The first
+mutation check appeared to pass in under a second: Gradle had the test task
+up-to-date, because `README.md` was not a declared input. A test that reads a
+file at runtime is not re-run when that file changes — so the test existed,
+looked green, and was skipped by the exact edit it was written to catch. CI never
+hit it, having no cache to be up to date against, which is the worst shape for
+this kind of bug: correct in the place nobody watches, wrong in the place
+everybody works. `README.md`, `examples/services` and
+`packages/contracts/schemas` are declared inputs now.
+
+**A note on the keyboard tests, added in the same stretch.** They press keys and
+expect things to happen, which runs into something `catalog.spec.ts` already had
+written down: an interaction landing between the server-rendered markup
+appearing and the App Router hydrating is swallowed. `waitForLoadState("networkidle")`
+does not close that window — network idle is not hydration — and a helper named
+`ready()` that waits for the wrong thing is worse than no helper, because it
+reads as a guarantee. Where a key press must produce a navigation, the
+press-and-assert pair is retried with `toPass`, as the existing test does.
+
+**One assertion was dropped rather than stabilised.** The tab test also asserted
+that Enter on the Scorecard tab changes the URL, and failed about one run in
+thirty — not the brief swallow the retries handle, but a state where the retry
+exhausted a full fifteen seconds with the URL never changing. The cause is not
+understood. It was removed because it was duplicate coverage: `catalog.spec.ts`
+already asserts that activating that exact tab changes the URL, and the test
+above it already asserts that Enter opens a focused link. What the tab test
+uniquely covers — that the tab is reachable by tabbing and shows its focus — is
+unaffected and still asserted. A longer timeout would have hidden the lead
+instead; the comment in the test says so, so nobody re-adds it believing it was
+merely slow.
+
+Chasing that produced a wrong conclusion on the way, worth recording because it
+was stated before it was checked: a mouse click on the tab did not navigate
+either, which looked like a product bug. It is not one — the same click works
+once the router has attached, and a plain link to the identical URL works
+throughout.
+
+**Decided: option 2, a published image.** Storm-Gate's CI now builds a
+multi-architecture image and pushes it to `ghcr.io/hoseacodes/storm-gate`, and
+this project's compose pulls it. `make up` starts PostgreSQL, MongoDB and the
+identity provider together — not behind a profile, because since ADR 0013 a
+stack without an issuer is a control plane nobody can talk to.
+
+Getting there meant fixing what the image would have shipped, which was the
+point of looking:
+
+- **22 production vulnerabilities, including 2 critical, down to 2 moderate.**
+  One of the highs was `jws` — the library on the token signing and verification
+  path this project is about to trust. The last critical needed a major bcrypt
+  bump, so the compatibility question was answered rather than assumed: a hash
+  written by bcrypt 5, read out of the running database, still verifies under
+  bcrypt 6, and a wrong password is still rejected. No forced password resets.
+- **The Dockerfile pinned Node 18**, which left support in April 2025, while the
+  project's own `.nvmrc` and README said Node 20. An authentication service on
+  an end-of-life runtime ships whatever that runtime stops receiving.
+- **The build toolchain shipped in the final image.** Multi-stage now, so gcc,
+  make and python3 are not present in something that runs on the internet.
+- **The application could rewrite its own source.** The original chowned all of
+  `/app` to the runtime user; the replacement grants only `logs/`. Found because
+  a comment claiming otherwise was written first and then tested.
+
+The workflow gates on the suite and on `npm audit --omit=dev --audit-level=high`,
+so a known-vulnerable production dependency stops a publish rather than becoming
+one.
+
+**Done, and the suite is green again.** The image publishes, `make up` starts the
+issuer from it, and `make first-user` closes the bootstrap gap in one command:
+it creates the local account at the issuer, reads back the subject the issuer
+assigned, and records it so `make dev` provisions it on startup. The browser
+suite signs in once in a `setup` project and shares that session — 26 tests
+passing against the whole stack.
+
+Two things that went wrong on the way are worth keeping, because both looked
+like product bugs and neither was. The publish failed twice: once on tag casing,
+and once because the step read `.target."docker-metadata-action".tags` from
+`DOCKER_METADATA_OUTPUT_JSON` — that is the *bake file* layout, and the variable
+holds the flat `{"tags":[...]}` one, so correctly computed tags were thrown away
+by the filter meant to read them. And a health assertion started failing because
+the observer, doing its job against the same database, had probed the service the
+test asserts is at 100%. That spec now registers a service of its own per run
+rather than assuming nothing else has ever touched one.
+
+**The superseded question.** The browser suite needs an identity provider,
+because the console it drives needs somebody to sign in as. `make e2e` starts
+PostgreSQL, the control plane and the console; it does not start Storm-Gate, and
+Storm-Gate needs MongoDB of its own. Three ways out, none free:
+
+1. **Add Storm-Gate and MongoDB to compose.** Honest, and it makes `make e2e`
+   exercise the real thing. The wrinkle is that Storm-Gate lives in a different
+   repository, so compose would either build from a path outside this project —
+   which only works on a machine that has both — or pull a published image,
+   which does not exist yet.
+2. **Publish a Storm-Gate image** and depend on the tag. Cleanest for CI, and it
+   makes this project's tests depend on another project's release cadence.
+3. **A stub issuer for tests only.** No external dependency and fast, but it
+   proves the console agrees with a fake, and CLAUDE.md §3 rule 2 would require
+   labelling it as mocked wherever it appears.
+
+Worth choosing deliberately rather than by whichever is easiest at the time: it
+decides what "the tests pass" means from here on.
+
 **Deferred, with reasons:**
 
 - **Drift detection.** CLAUDE.md §5 lists it as the observer's job. It needs a
@@ -274,25 +394,29 @@ tests, the OpenAPI drift check, the console build and component tests, and the
 browser smoke test. README table finalised, `docs/architecture/slice-one.md`
 written, `CLAUDE.md` §2 rewritten.
 
-**Not verified:** the workflow has never run. The commands it runs are the same
-ones `make` runs locally, and those do pass — but that is not the same as the
-pipeline being green, and it should not be reported as if it were.
+**Verified after phase 8, and not before.** For the life of the project this
+entry read "the workflow has never run", and the reason it gave — no remote —
+had quietly stopped being true. The repository was on GitHub, public, with the
+workflow registered and active, and GitHub reported **zero runs**: `on: push`
+named `branches: [master]` and no branch by that name existed. A pipeline that
+looks present and fires on nothing is worse than no pipeline, because the
+badge-shaped absence reads as coverage.
 
-**Why it never ran, found after phase 8.** The original reason recorded here was
-"there is no remote configured". That stopped being true: the repository is on
-GitHub, public, with `slice-one-foundation` as its default branch, and the
-workflow is registered and active. It still reported **zero runs**, because
-`on: push` named `branches: [master]` and no branch by that name has ever
-existed in this repository. A pipeline that looks present and fires on nothing
-is worse than no pipeline, because the badge-shaped absence reads as coverage.
+Resolved by creating `master` and making it the default branch, so the trigger
+now names the branch work lands on. **Run #1 passed — all six jobs**, on commit
+`16b3435`: contract fixtures 23s, console 43s, observer 84s, control plane 119s,
+OpenAPI drift 119s, browser smoke 190s.
 
-The trigger is unfiltered now rather than renamed to the current branch: naming
-a branch is what caused this, and naming a different one fails the same way
-after the next rename. The workflow was also audited against the repository for
-the first time — every file, `make` target and pnpm script it references exists,
-the foojay resolver needed for the Java 21 toolchain is configured, and the
-Playwright job builds and starts the console itself. That is a static audit, not
-a run, and it is not evidence the pipeline is green.
+Three things had never been exercised anywhere but a developer's machine, and
+all three worked on a clean runner first time: the Java 21 toolchain provisioning
+itself through the foojay resolver with no JDK installed, Testcontainers starting
+PostgreSQL inside a GitHub runner, and the smoke job booting the control plane,
+building and serving the console and driving Playwright against both.
+
+**The trap is still armed, in a smaller way.** `slice-one-foundation` still
+exists, and a push to it triggers nothing; only `master` and pull requests into
+it do. The two branches point at the same commit today. Work landing on the
+wrong one produces a green history that describes nothing.
 
 ### Phase 8 — Telemetry ✓ **complete**
 
@@ -359,8 +483,10 @@ expanding scope.
 | ~~6~~ | ~~GitHub sync~~ — **done**, by polling rather than webhooks (ADR 0008). A GitHub App is still deferred: it needs a registered application, a private key, an installation flow and somewhere to keep per-installation tokens, and identity is still a stub. | |
 | ~~7~~ | ~~Go observer~~ — **done**. Drift detection is deferred: it needs a deployment concept to compare a declared version against a running one. | |
 | ~~8~~ | ~~OpenTelemetry, Prometheus, Tempo, Grafana~~ — **done**. Loki is still deferred: structured JSON on stdout already carries the correlation ID, and shipping it needs an agent, a retention policy and a second query language. | |
-| 9 | Transactional outbox, platform events, Redis read models | Only once there is a demonstrated need (§6) |
-| 10 | Terraform, Kubernetes, Helm, k6 load tests | Nothing to deploy until there is something to run |
+| ~~9~~ | ~~**Authentication and authorization**~~ (ADR 0013) — **done**. Every `/api/v1` endpoint needs a verified RS256 token, and a verified token is not a membership: a `principal` row keyed on issuer **and** subject is required, or the answer is 403. The stub resolver is deleted. The four items this row listed as open are all closed — the observer carries its own key on `X-OpsAtlas-Key`, `OrgIsolationIT` covers authorization across organizations and `no_endpoint_escapes_this_test` keeps it covering every endpoint, Prometheus scrapes with a credential, and Swagger UI is off unless asked for | |
+| ~~10~~ | ~~Packaging~~ — **done**. Multi-stage Dockerfiles for the control plane (JDK builds, JRE runs) and the console (Next standalone output), both non-root with their code read-only to the process. `make up-app` runs the stack containerised; verified by signing in through a real browser against it. Images are built from this repository rather than pulled — there is no published OpsAtlas image, and naming one that does not exist would be a promise the compose file cannot keep. | |
+| 11 | Transactional outbox, platform events, Redis read models | Only once there is a demonstrated need (§6). Nothing today has a second consumer of registration events, no observer needs coordinating, and no read model is slow |
+| **12** | **Deployment** — one box, compose behind Caddy (ADR 0014) | **Part done.** The configuration exists and is verified as far as it can be without a host: the compose file renders, publishes only 80 and 443, and refuses to start on a missing secret; the Caddyfile validates; all three images build, the observer's for the first time. **Still open:** it has not been run against a real server, no image has been published to GHCR, and there are no backups. Terraform, Kubernetes, Helm and k6 all still wait — this entry previously said they waited on "a deployed target worth measuring", which was circular, since phase 12 was where the target was meant to come from. Deploying first is how that gets untangled: the IaC should describe something that exists |
 
 ### Deferred decisions, recorded so they are not lost
 

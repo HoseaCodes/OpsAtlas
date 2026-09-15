@@ -1,0 +1,238 @@
+# OpsAtlas on one box.
+#
+# This is not deploy/compose/docker-compose.yml with different values. That file
+# describes a developer's machine, where the only thing that can reach a
+# published port is the developer. This one describes a host with a public IP,
+# and the differences are the point:
+#
+#   1. No database port is published. The local file publishes 5432 and 27017,
+#      the second with no authentication at all. On a public address that is not
+#      a weaker configuration, it is an open database.
+#   2. One public hostname, and one route in. Caddy holds 80 and 443 and serves
+#      the console only; the control plane and the identity provider are reached
+#      over the compose network and have no route from outside. Storm-Gate binds
+#      one port to 127.0.0.1 for the first-user bootstrap, reachable through an
+#      SSH tunnel and from nowhere else.
+#   3. No credential has a default. Every one is `${VAR:?...}`, so a missing
+#      secret stops the stack rather than silently starting it with the
+#      development value - ACCESS_TOKEN_SECRET above all, which falls back to a
+#      string committed to a public repository.
+#   4. Images are pulled, not built. A 4GB box running Gradle while it serves
+#      traffic is a bad afternoon, and `docker compose up` should not need a JDK.
+#   5. Logs are capped. Default json-file logging grows without bound, and the
+#      first outage of a small box is usually a full disk rather than the app.
+#
+# See docs/adr/0014-deployment-is-one-box.md for why one box, and what it costs.
+
+name: opsatlas
+
+x-logging: &logging
+  # 30MB per container, ceiling. The correlation ID is in every line and the
+  # lines are JSON, so these are worth keeping - just not all of them forever.
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  # ---------------------------------------------------------------------------
+  # The only route in from the internet. Caddy terminates TLS, obtains and renews
+  # Let's Encrypt certificates automatically, and serves the console - which is
+  # the only one of these six containers a person visits.
+  # ---------------------------------------------------------------------------
+  caddy:
+    image: caddy:2.8-alpine
+    container_name: opsatlas-caddy
+    depends_on:
+      console:
+        condition: service_healthy
+    environment:
+      OPSATLAS_CONSOLE_HOST: ${OPSATLAS_CONSOLE_HOST:?the console hostname, e.g. opsatlas.example.com}
+      OPSATLAS_ACME_EMAIL: ${OPSATLAS_ACME_EMAIL:?an address Let's Encrypt can reach about expiring certificates}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Certificates live here. Losing this volume means re-issuing every
+      # certificate, and Let's Encrypt rate-limits that to five per hostname per
+      # week - so a redeploy that drops it can lock you out of your own TLS.
+      - caddy-data:/data
+      - caddy-config:/config
+    logging: *logging
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # The application.
+  # ---------------------------------------------------------------------------
+  control-plane:
+    image: ghcr.io/hoseacodes/opsatlas-control-plane:${OPSATLAS_TAG:?the image tag to run, e.g. a commit SHA or a release tag}
+    container_name: opsatlas-control-plane
+    depends_on:
+      postgres:
+        condition: service_healthy
+      storm-gate:
+        condition: service_started
+    environment:
+      OPSATLAS_DB_URL: jdbc:postgresql://postgres:5432/opsatlas
+      OPSATLAS_DB_USERNAME: opsatlas
+      OPSATLAS_DB_PASSWORD: ${OPSATLAS_DB_PASSWORD:?set a database password; there is no default here on purpose}
+      # A token's `iss` is compared against this, as a string - Spring fetches
+      # keys from the JWKS URI below and never resolves this value, so it works
+      # whether or not the name has a DNS record. It is deliberately the name
+      # the issuer WOULD be published under rather than its container address:
+      # changing it later invalidates every token in circulation, so publishing
+      # the issuer becomes additive instead of a migration.
+      OPSATLAS_OIDC_ISSUER: ${OPSATLAS_ISSUER_ID:?the issuer identifier, e.g. https://auth.opsatlas.example.com - stamped into every token and effectively permanent}
+      # The key set, by contrast, is fetched server-to-server and never leaves
+      # this network, so it stays on the container address.
+      OPSATLAS_OIDC_JWKS_URI: http://storm-gate:8080/.well-known/jwks.json
+      OPSATLAS_BOOTSTRAP_ISSUER: ${OPSATLAS_ISSUER_ID:?}
+      OPSATLAS_BOOTSTRAP_SUBJECT: ${OPSATLAS_BOOTSTRAP_SUBJECT:-}
+      OPSATLAS_BOOTSTRAP_DISPLAY_NAME: ${OPSATLAS_BOOTSTRAP_DISPLAY_NAME:-}
+      OPSATLAS_OBSERVER_KEY: ${OPSATLAS_OBSERVER_KEY:?generate one with `make observer-key`}
+      OPSATLAS_GITHUB_TOKEN: ${OPSATLAS_GITHUB_TOKEN:-}
+      OPSATLAS_DEPLOYMENT_ENVIRONMENT: production
+      # Off unless a collector is running. An exporter retrying against a
+      # collector that is not there is cost with no telemetry to show for it.
+      OPSATLAS_TRACING_ENABLED: ${OPSATLAS_TRACING_ENABLED:-false}
+      OPSATLAS_OTLP_ENDPOINT: ${OPSATLAS_OTLP_ENDPOINT:-}
+      # Off, though less sharply than before: with no route to the API from
+      # outside, the page would only be reachable through a tunnel anyway.
+      OPSATLAS_SWAGGER_UI: ${OPSATLAS_SWAGGER_UI:-false}
+    logging: *logging
+    restart: unless-stopped
+
+  console:
+    image: ghcr.io/hoseacodes/opsatlas-console:${OPSATLAS_TAG:?}
+    container_name: opsatlas-console
+    depends_on:
+      control-plane:
+        condition: service_healthy
+    environment:
+      # Both container addresses: the console calls the control plane and the
+      # issuer from the server, never from the browser. That is why there is no
+      # CORS policy to configure, and why neither address needs to resolve
+      # anywhere outside this network.
+      OPSATLAS_API_URL: http://control-plane:8080
+      STORM_GATE_URL: http://storm-gate:8080
+    logging: *logging
+    restart: unless-stopped
+
+  # The prober. Without it the catalog records what services declare and never
+  # finds out whether any of them answer.
+  observer:
+    image: ghcr.io/hoseacodes/opsatlas-observer:${OPSATLAS_TAG:?}
+    container_name: opsatlas-observer
+    depends_on:
+      control-plane:
+        condition: service_healthy
+    environment:
+      OPSATLAS_API_URL: http://control-plane:8080
+      OPSATLAS_API_KEY: ${OPSATLAS_OBSERVER_KEY:?}
+      OPSATLAS_OBSERVER_ID: ${OPSATLAS_OBSERVER_ID:-production-1}
+      OPSATLAS_TRACING_ENABLED: ${OPSATLAS_TRACING_ENABLED:-false}
+      OPSATLAS_OTLP_ENDPOINT: ${OPSATLAS_OTLP_ENDPOINT:-}
+    logging: *logging
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Data. Neither of these publishes a port.
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:16.4-alpine
+    container_name: opsatlas-postgres
+    environment:
+      POSTGRES_DB: opsatlas
+      POSTGRES_USER: opsatlas
+      POSTGRES_PASSWORD: ${OPSATLAS_DB_PASSWORD:?}
+      POSTGRES_INITDB_ARGS: "--locale=C --encoding=UTF8"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U opsatlas -d opsatlas"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 10s
+    logging: *logging
+    restart: unless-stopped
+
+  mongo:
+    image: mongo:7
+    container_name: opsatlas-mongo
+    # Storm-Gate's store, not OpsAtlas's. PostgreSQL remains the system of
+    # record for everything this project owns; nothing in OpsAtlas reads this.
+    #
+    # Authentication enabled, unlike the local file. Defence in depth rather
+    # than a boundary: an unauthenticated Mongo one container-escape away from
+    # the internet is the kind of thing that only looks fine until it is not.
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${OPSATLAS_MONGO_USERNAME:-opsatlas}
+      MONGO_INITDB_ROOT_PASSWORD: ${OPSATLAS_MONGO_PASSWORD:?set a password for the issuer's database}
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test:
+        - CMD
+        - mongosh
+        - --quiet
+        - -u
+        - ${OPSATLAS_MONGO_USERNAME:-opsatlas}
+        - -p
+        - ${OPSATLAS_MONGO_PASSWORD:?}
+        - --authenticationDatabase
+        - admin
+        - --eval
+        - db.runCommand({ping:1}).ok
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+    logging: *logging
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # The identity provider. Pinned to a tag, never `main`: an issuer that changes
+  # underneath a deployment without anybody deciding is the one dependency here
+  # that can lock every user out at once.
+  # ---------------------------------------------------------------------------
+  storm-gate:
+    image: ghcr.io/hoseacodes/storm-gate:${STORM_GATE_TAG:?pin a released tag; tracking `main` is how an issuer changes under you}
+    container_name: opsatlas-storm-gate
+    depends_on:
+      mongo:
+        condition: service_healthy
+    environment:
+      PORT: 8080
+      NODE_ENV: production
+      JWT_SIGNING_ALG: RS256
+      # What lands in every token's `iss`, and what the control plane compares
+      # against. These two must agree or nothing authenticates.
+      JWT_ISSUER: ${OPSATLAS_ISSUER_ID:?}
+      JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY:?generate a signing key for this deployment; do not reuse the local one}
+      ACCESS_TOKEN_SECRET: ${ACCESS_TOKEN_SECRET:?set a real secret; the local default is committed to a public repository}
+      REFRESH_TOKEN_SECRET: ${REFRESH_TOKEN_SECRET:?set a real secret; the local default is committed to a public repository}
+      MONGODB_URL: mongodb://${OPSATLAS_MONGO_USERNAME:-opsatlas}:${OPSATLAS_MONGO_PASSWORD:?}@mongo:27017/stormgate?authSource=admin
+      CORS_ORIGINS: https://${OPSATLAS_CONSOLE_HOST:?}
+    ports:
+      # Bound to loopback, which is the whole point: `make prod-first-user` has
+      # to reach the issuer to create the first account, and there is no public
+      # route to it. Forward this over SSH and run the target against the tunnel.
+      #
+      # The 127.0.0.1 prefix is what makes this safe, not the host firewall -
+      # Docker writes its iptables rules ahead of ufw's, so a bare "8090:8080"
+      # here would be open to the internet whatever ufw is told.
+      - "127.0.0.1:${STORM_GATE_LOCAL_PORT:-8090}:8080"
+    logging: *logging
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+    name: opsatlas-postgres-data
+  mongo-data:
+    name: opsatlas-mongo-data
+  caddy-data:
+    name: opsatlas-caddy-data
+  caddy-config:
+    name: opsatlas-caddy-config

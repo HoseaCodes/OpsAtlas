@@ -1,6 +1,7 @@
 package com.ambitiousconcepts.opsatlas.identity;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -8,6 +9,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.ambitiousconcepts.opsatlas.support.AuthenticatedByDefault;
 import com.ambitiousconcepts.opsatlas.support.PostgresTestBase;
 import com.ambitiousconcepts.opsatlas.integrations.api.SourceCatalog;
 import com.ambitiousconcepts.opsatlas.integrations.api.SourceRef;
@@ -74,6 +76,9 @@ class OrgIsolationIT extends PostgresTestBase {
     @Autowired
     @Qualifier("requestMappingHandlerMapping")
     private RequestMappingHandlerMapping handlerMapping;
+
+    /** The subject of a caller provisioned in the other organization. */
+    private static final String THEIR_SUBJECT = "their-operator-subject";
 
     private UUID theirServiceId;
     private UUID theirSourceId;
@@ -183,6 +188,20 @@ class OrgIsolationIT extends PostgresTestBase {
                 UUID.randomUUID(),
                 THEIRS,
                 theirServiceId);
+
+        // Somebody who belongs to the other organization. Until this existed,
+        // every request in this file authenticated as the same caller, so a
+        // resolver that ignored the principal's organization and always returned
+        // the seeded one would have passed the whole suite.
+        jdbc.update(
+                """
+                insert into principal (id, org_id, issuer, subject, display_name, created_at, updated_at)
+                values (?, ?, ?, ?, 'Their Operator', now(), now())
+                """,
+                UUID.randomUUID(),
+                THEIRS,
+                AuthenticatedByDefault.ISSUER,
+                THEIR_SUBJECT);
 
         theirSourceId = UUID.randomUUID();
         jdbc.update(
@@ -411,6 +430,68 @@ class OrgIsolationIT extends PostgresTestBase {
                     .forEach(pattern -> patterns.add(pattern.getPatternString()));
         }
         return patterns;
+    }
+
+    // -- Authorization: the organization follows the caller --------------------
+
+    @Test
+    @DisplayName("a caller from the other organization sees their catalog, not ours")
+    void the_organization_comes_from_the_caller() throws Exception {
+        // Ours, registered as us.
+        mockMvc.perform(post("/api/v1/services")
+                        .contentType(YAML)
+                        .content(Files.readString(EXAMPLES.resolve("orders-api.yaml"))))
+                .andExpect(status().isCreated());
+
+        String theirs = mockMvc.perform(get("/api/v1/services").param("limit", "100").with(asThem()))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        assertThat(theirs)
+                .as("their token must reach their own catalog")
+                .contains("their-secret-api");
+        assertThat(theirs)
+                .as("and must not reach ours - this is the whole of what org scoping is for")
+                .doesNotContain("orders-api");
+    }
+
+    @Test
+    @DisplayName("our own caller still sees ours and not theirs")
+    void our_caller_is_unaffected() throws Exception {
+        mockMvc.perform(post("/api/v1/services")
+                        .contentType(YAML)
+                        .content(Files.readString(EXAMPLES.resolve("orders-api.yaml"))))
+                .andExpect(status().isCreated());
+
+        String ours = mockMvc.perform(get("/api/v1/services").param("limit", "100"))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        assertThat(ours).contains("orders-api").doesNotContain("their-secret-api");
+    }
+
+    @Test
+    @DisplayName("their caller is refused our service by slug, as absent rather than forbidden")
+    void their_caller_cannot_fetch_ours_by_name() throws Exception {
+        mockMvc.perform(post("/api/v1/services")
+                        .contentType(YAML)
+                        .content(Files.readString(EXAMPLES.resolve("orders-api.yaml"))))
+                .andExpect(status().isCreated());
+
+        // 404 rather than 403: telling them it exists but is not theirs would
+        // confirm the name, which is the thing being kept from them.
+        mockMvc.perform(get("/api/v1/services/orders-api").with(asThem()))
+                .andExpect(status().isNotFound());
+    }
+
+    /** A request authenticated as the other organization's operator. */
+    private static org.springframework.test.web.servlet.request.RequestPostProcessor asThem() {
+        return jwt().jwt(token ->
+                token.issuer(AuthenticatedByDefault.ISSUER).claim("id", THEIR_SUBJECT).subject(THEIR_SUBJECT));
     }
 
     // -- Scorecard and audit (phase 3) --------------------------------------

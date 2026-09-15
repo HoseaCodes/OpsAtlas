@@ -70,7 +70,7 @@ jobs — selection, focus ring, error-budget fill, open-incident emphasis. See
 | Semantic validation — duplicate environment names | **Real** | same |
 | Architecture decisions, phases 0–10 | **Real** (written down) | [`docs/adr/`](docs/adr/), [`docs/roadmap.md`](docs/roadmap.md) |
 | Design system extracted from the prototype | **Real** (written down) | [`docs/design/tokens.md`](docs/design/tokens.md) |
-| Control plane (Java 21 / Spring Boot) | **Real** | `make test` — 257 JVM tests |
+| Control plane (Java 21 / Spring Boot) | **Real** | `make test` — 286 JVM tests |
 | PostgreSQL schema and Flyway migrations | **Real** | `SeedConsistencyIT`, and Hibernate `ddl-auto: validate` refuses to start on drift |
 | `POST /api/v1/services` — register from a `service.yaml` | **Real** | `RegistrationApiIT`, plus 13 curl assertions against a running server |
 | Safe YAML ingestion — size cap, no alias expansion, no type construction | **Real** | `ManifestValidationTest` — billion-laughs, `!!java` tags, duplicate keys and a 70 KiB body are all refused |
@@ -78,24 +78,24 @@ jobs — selection, focus ring, error-budget fill, open-incident emphasis. See
 | Idempotent re-registration by manifest digest | **Real** | `RegistrationApiIT` — a replay returns 200 and does not move `version` |
 | `PUT` with `If-Match` optimistic locking (428 / 412) | **Real** | `RegistrationApiIT` |
 | `GET /api/v1/services` and `/{slug}` with cursor pagination | **Real** | `CatalogApiIT`, `RegistrationApiIT` |
-| Cross-organization isolation, on **every** org-scoped endpoint | **Real, and verified** | `OrgIsolationIT` — 22 tests covering services, sources, scorecard, audit log, both health endpoints and observation ingestion; two prove the database itself refuses a cross-org reference |
+| Cross-organization isolation, on **every** org-scoped endpoint | **Real, and verified** | `OrgIsolationIT` — 25 tests covering services, sources, scorecard, audit log, both health endpoints and observation ingestion; two prove the database itself refuses a cross-org reference |
 | That an endpoint cannot be added without covering its isolation | **Real, enforced** | `no_endpoint_escapes_this_test` enumerates every `/api/v1` mapping and fails the build on any that is neither covered nor exempt with a written reason |
 | That those isolation tests would catch a real leak | **Real, and verified** | removing the org filter from the audit log, the fleet health rollup and the environment lookup fails exactly three of them and nothing else |
 | OpenAPI document generated from the code, drift-checked | **Real** | `make check-openapi` fails the build on any difference |
 | Swagger UI over that document, at `/swagger-ui.html` | **Real** | served by springdoc; on by default locally, off when `OPSATLAS_SWAGGER_UI=false` |
 | Typed TypeScript client, no hand-written API types | **Real** | `make typecheck` |
-| Web console — catalog, detail, scorecard, register by paste | **Real** | 37 component tests, 23 Playwright tests against the real stack |
+| Web console — catalog, detail, scorecard, register by paste | **Real** | 37 component tests, 26 Playwright tests against the real stack |
 | A copyable prompt on `/register`, generated from the schema and the live rules | **Real** | `manifestPrompt.test.ts` walks the real schema and fails if a field is missing from the prompt; a Playwright test reads the clipboard |
 | Loading / empty / partial-failure / error / never-observed states | **Real** | `states.test.tsx`, and the detail page settles its two requests independently |
 | Status carried by shape and height, never by hue | **Real** | `status.test.tsx` — a pass differs from a fail by shape, a day's availability by height |
 | Keyboard navigation with a visible focus ring | **Real, and verified** | `keyboard.spec.ts` — tabs through the catalog in a real browser and fails if anything takes focus without showing it; deleting the `:focus-visible` rule fails it |
 | Polling a GitHub repository for its `service.yaml` | **Real** | `SourceSyncIT`, `SourceApiIT`, and a one-off check against the real api.github.com |
 | Conditional requests — an unchanged manifest costs a 304 and no ingestion | **Real** | `SourceSyncIT`; verified against real GitHub |
-| A failing sync leaves the registered service untouched | **Real, and verified** | `SourceSyncIT` — seven failure modes, each asserting the service survives |
+| A failing sync leaves the registered service untouched | **Real, and verified** | `SourceSyncIT` — eight failing-sync cases, each asserting the service survives |
 | Read-only by construction — no webhook, no write scope | **Real, enforced** | `ArchitectureTest` — only `integrations` may make outbound HTTP calls |
 | Sources page with sync status and per-source explanations | **Real** | 4 component tests, 5 Playwright tests |
-| **Go observer** — probes health endpoints, bounded concurrency, jitter, retries | **Real** | 33 Go tests, race-clean; run live against the control plane |
-| Probe availability, per environment and per UTC day | **Real** | `ObservationIngestIT` (23 tests), 5 Playwright tests |
+| **Go observer** — probes health endpoints, bounded concurrency, jitter, retries | **Real** | 35 Go tests, race-clean; run live against the control plane |
+| Probe availability, per environment and per UTC day | **Real** | `ObservationIngestIT` (17 tests), 5 Playwright tests |
 | Health meter and 30-day ribbon rendering real measurements | **Real** | `health.spec.ts` — 5 Playwright tests driving a real browser against real observations |
 | Idempotent observation ingestion | **Real** | a replayed batch applies nothing; counters are where a double-write is silent |
 | Retention — bounded storage, not a table that only grows | **Real, and verified** | `ObservationRetentionIT` (6 tests) calls the scheduled job directly against a fixed clock; disabling the pruning fails four of them |
@@ -109,8 +109,9 @@ jobs — selection, focus ring, error-budget fill, open-incident emphasis. See
 | Traces, metrics and dashboards locally (Tempo, Prometheus, Grafana) | **Real** | `make up-telemetry`; Prometheus scraping the control plane and the observer |
 | Logs shipped to a log store (Loki) | **Not built** | deferred with a reason — see below |
 | No credentials in source control | **Real, enforced** | `make check-secrets` — eight credential formats plus tracked `.env`/key files, run first in CI and by `make test`; verified by planting a token and a tracked `.env` and watching it fail. It raises the floor, it is not a proof — [ADR 0012](docs/adr/0012-secret-scanning-is-a-grep.md) says what it misses |
-| CI pipeline | **Written, never executed** | `.github/workflows/ci.yml` — registered and active on GitHub, but it reports zero runs: the push trigger named a branch that has never existed. Fixed; it fires on the next push. Not a passing pipeline until one does |
+| CI pipeline — six jobs on a clean runner | **Real, and green** | [run #1](https://github.com/HoseaCodes/OpsAtlas/actions/runs/34782671255) — contract fixtures, console, observer, control plane, OpenAPI drift and the browser smoke test all passed on first execution. The smoke job boots PostgreSQL, the control plane and the console and drives Playwright against them |
 | Scorecard — ten declaration rules, tier-conditional | **Real** | `PolicyCheckTest` (49), `ScorecardApiIT` (12) |
+| **The fleet table below is asserted, not maintained by hand** | **Real, enforced** | `PolicySetIT` registers all six manifests and compares the real scores to the table printed in this README; it also pins the rule-id set beside `PolicyCatalog.VERSION`, so a rule cannot change a verdict without the build noticing |
 | `NOT_APPLICABLE` as a real outcome, with a moving denominator | **Real** | a tier 3 service is scored out of 7, not 10 |
 | Scorecard + audit written in the registration transaction | **Real, and verified** | `ScorecardApiIT` — a forced mid-registration failure leaves no service, no scorecard and no audit row |
 | Audit log with correlation IDs, cursor-paged | **Real** | `ScorecardApiIT` |
@@ -118,7 +119,22 @@ jobs — selection, focus ring, error-budget fill, open-incident emphasis. See
 | RFC 9457 problem responses with `correlationId` and `violations[]` | **Real** | `CatalogApiIT` |
 | Correlation ID accepted, generated, echoed | **Real** | `CatalogApiIT` |
 | Module boundaries across all five modules | **Real, enforced** | `ArchitectureTest` — 15 rules |
-| Org scoping via stub `PrincipalResolver` | **Real, but unauthenticated** | `SeedConsistencyIT`, `OrgIsolationIT` |
+| **Authentication** — every `/api/v1` endpoint needs a verified RS256 token | **Real, and verified live** | `AuthenticationIT` (9 tests); and against a real Storm-Gate: no token → 401, a real token → 200, a token signed by an unpublished key → 401 |
+| **Authorization** — a verified token is not a membership | **Real, and verified live** | a genuine token from a second real Storm-Gate account, not provisioned here, gets 403 `not-provisioned` |
+| The organization comes from the caller, not a constant | **Real, and verified** | `OrgIsolationIT` authenticates as a principal in the *other* organization and asserts they reach their catalog and not ours; hardcoding the org in the resolver fails two tests |
+| The contract declares how to authenticate | **Real** | `bearerToken` and `serviceCredential` in the OpenAPI document, so Swagger UI can send either |
+| Metrics endpoints require a credential | **Real, and verified live** | anonymous scrape 401, credentialled scrape 200, Prometheus target back to `up` with series flowing |
+| Swagger UI off by default | **Real** | `OPSATLAS_SWAGGER_UI=true` turns it on; its assets load while the endpoints it calls still require a credential |
+| **Container images** for the control plane and console | **Real, and verified live** | multi-stage builds, non-root, code read-only to the process; `make up-app` runs the whole stack containerised and a browser signs in against it |
+| First-principal bootstrap from configuration, not from the first caller | **Real** | `PrincipalBootstrapIT` (5 tests), including that a bootstrapped identity can actually get in |
+| Org scoping resolved from the authenticated caller | **Real** | `SeedConsistencyIT`, `OrgIsolationIT` — scoping is covered; cross-org *authorization* is not yet |
+| Observer authenticating to the control plane | **Real, and verified live** | `ServiceCredentialIT` (9 tests) and 2 Go tests; run live, the observer reports `probed 4, applied 4` with its key and cannot refresh the catalog without it |
+| Keys stored hashed, never in the database | **Real** | SHA-256 of a 256-bit key — a fast hash on purpose, and `ServiceCredentialIT` asserts the stored value is not the key |
+| Rotating a key revokes the old one immediately | **Real** | `ServiceCredentialIT` — both keys working during a changeover would leave a leaked key live |
+| Console sign-in, session and sign-out | **Real, and verified live** | `signin.spec.ts` drives a real browser against a real Storm-Gate: redirect to sign-in, sign in, catalog renders, reload keeps the session, sign out ends it |
+| The console holds no credential of its own | **Real** | it forwards the reader's token, so the audit log names the person rather than "the console" |
+| The browser suite, signed in | **Real** | 26 Playwright tests against the whole stack — identity provider, control plane, PostgreSQL and the console — with a shared session from a real sign-in |
+| OpenAPI document declaring the bearer scheme | **Not done** | the generated contract says nothing about auth, so the typed client does not know a token exists |
 | Dependency graph and blast radius | **Not built** | needs trace data |
 | Real-user SLO measurement | **Not built** | probe availability is not an SLO — see below |
 | Latency percentiles over stored history | **Not built** | span durations are in Tempo; nothing aggregates them, and the rollups deliberately store mean and max only (ADR 0009) |
@@ -143,7 +159,10 @@ measurement will be labelled in the interface, not only in a comment.
   [ADR 0004](docs/adr/0004-scorecard-rule-model.md).
 - **Nothing has been load-tested, security-tested, or run in production.** No
   performance, scale, availability or security claim appears anywhere in this
-  repository, because none has been measured.
+  repository, because none has been measured. The configuration for a deployment
+  now exists — [`deploy/production/`](deploy/production/), [ADR 0014](docs/adr/0014-deployment-is-one-box.md) —
+  and has been verified as far as it can be without a host, which is not the same
+  as having been run on one.
 
 ---
 
@@ -333,7 +352,7 @@ transaction as the service row. Registering the six example manifests produces:
 service                  tier  score    failing
 orders-api               1     10/10    -
 pricing-engine           1     8/10     journeys-declared, runbook-linked
-billing-worker           2     7/10     environment-urls, liveness-probe, readiness-probe
+billing-worker           2     7/10     environment-urls-declared, liveness-probe-declared, readiness-probe-declared
 customer-portal          2     9/10     observability-service-name
 identity-bff             1     9/10     dependencies-declared
 legacy-report-runner     3     0/7      (7 failing; 3 not applicable at tier 3)
@@ -487,6 +506,35 @@ and both directions are exercised.
 
 ---
 
+## Deploying it
+
+One virtual machine running seven containers, fronted by Caddy, which terminates
+TLS and renews its own certificates. **One public hostname**, for the console:
+it calls the control plane and the identity provider from the server over the
+compose network, so neither needs a route in from outside. Not Kubernetes: the topology is five coupled
+containers on one host, and a cluster to run a control plane means operating a
+control plane to run a control plane. The reasoning, and what it costs, is
+[ADR 0014](docs/adr/0014-deployment-is-one-box.md); the steps are in
+[`deploy/production/README.md`](deploy/production/README.md).
+
+What makes it different from the local compose file is worth stating, because
+the two look alike and are not:
+
+| | Local | Deployment |
+|---|---|---|
+| Published ports | PostgreSQL 5432, MongoDB 27017, and every app port | 80 and 443 publicly; the issuer on `127.0.0.1` for bootstrap |
+| MongoDB auth | none | required |
+| Secrets | documented development defaults | no defaults; a missing one stops the stack |
+| Images | built from source | pulled by commit SHA or release tag, never `latest` |
+| TLS | none | Caddy, with automatic renewal |
+
+**It has not been run against a real host.** Each part is verified — the compose
+file renders and refuses a missing secret, the Caddyfile passes `caddy validate`,
+all three images build — but the sequence has not been executed end to end, and
+there are no backups yet.
+
+---
+
 ## Repository layout
 
 Only directories with real contents exist. The full target layout is in
@@ -495,6 +543,7 @@ Only directories with real contents exist. The full target layout is in
 ```text
 OpsAtlas/
 ├── apps/control-plane/     Java 21 / Spring Boot 3 modular monolith
+│   └── Dockerfile          multi-stage: JDK builds the jar, JRE runs it
 │   └── src/main/java/com/ambitiousconcepts/opsatlas/
 │       ├── shared/         errors, pagination, correlation — depends on nothing
 │       ├── identity/       the org-scoping stub
@@ -503,6 +552,7 @@ OpsAtlas/
 │       ├── integrations/   polling watched repositories (read-only)
 │       └── operations/     observations, rolled up; health read model
 ├── apps/observer/          Go — probes health endpoints, reports back
+├── apps/web/Dockerfile     multi-stage: Next standalone output, no dev deps
 ├── apps/web/               Next.js console — catalog, scorecard, register
 ├── packages/contracts/     service.yaml JSON Schema and the fixture validator
 ├── deploy/compose/         local PostgreSQL; collector, Tempo, Prometheus,

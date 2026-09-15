@@ -7,6 +7,7 @@ import java.util.stream.Collectors;
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.context.annotation.Import;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -33,6 +34,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * leave behind - see {@link #resetToTheSeededState()}.
  */
 @Testcontainers
+@Import(AuthenticatedByDefault.class)
 public abstract class PostgresTestBase {
 
     static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16.4-alpine")
@@ -106,6 +108,28 @@ public abstract class PostgresTestBase {
                     "delete from organization where id not in (" + placeholders + ")",
                     seededOrganizations.toArray());
         }
+
+        provisionTheDefaultCaller();
+    }
+
+    /**
+     * The caller {@link AuthenticatedByDefault} authenticates as.
+     *
+     * <p>Seeded here rather than by a migration, because it is test data: a real
+     * deployment provisions its own people, and a principal shipped in the
+     * schema would be an account nobody created and everybody inherits.
+     */
+    private void provisionTheDefaultCaller() {
+        UUID org = seededOrganizations.iterator().next();
+        jdbc.update(
+                """
+                insert into principal (id, org_id, issuer, subject, display_name, created_at, updated_at)
+                values (?, ?, ?, ?, 'Test Operator', now(), now())
+                """,
+                UUID.randomUUID(),
+                org,
+                AuthenticatedByDefault.ISSUER,
+                AuthenticatedByDefault.SUBJECT);
     }
 
     @DynamicPropertySource
