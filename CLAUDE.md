@@ -27,13 +27,14 @@ worse than no `terraform/` directory.
 > Update this section whenever it becomes inaccurate. It is the first thing
 > future sessions read.
 
-- **Phase:** **phases 0–10 done.** Authentication (9) and packaging (10) are
-  complete; what remains is deliberately deferred — see `docs/roadmap.md`. The system measures something and can explain
-  it: a Go observer probes declared health endpoints, the catalog reports what it
+- **Phase:** **phases 0–10 done, and 12 is part done.** Authentication (9) and
+  packaging (10) are complete. The system measures something and can explain it:
+  a Go observer probes declared health endpoints, the catalog reports what it
   found, and one identifier follows a request through the logs, the traces and
-  the audit log. Next is phase 9 — the transactional outbox and platform events —
-  which §6 says waits for a demonstrated need. The phase list is in
-  `docs/roadmap.md`.
+  the audit log. Phase 11 — the transactional outbox and platform events — waits
+  for a demonstrated need (§6). Phase 12 was split: the **deployment** exists as
+  configuration (ADR 0014) and has never been run on a host; **Terraform,
+  Kubernetes, Helm and k6 still wait.** The phase list is in `docs/roadmap.md`.
 - **What exists:** the `service.yaml` v1 JSON Schema and fixtures; a running
   control plane that registers services from a real manifest and serves them —
   `POST`, `GET /{slug}`, `GET` (cursor-paged), `PUT` with `If-Match` — with the
@@ -49,7 +50,8 @@ worse than no `terraform/` directory.
   `operations` module folding probe results into per-environment and per-day
   counters; a Go observer in `apps/observer`; W3C trace context across both
   processes with OTLP export, and a collector, Tempo, Prometheus and Grafana
-  behind the compose `telemetry` profile; ADRs 0001–0011;
+  behind the compose `telemetry` profile; a production deployment configuration
+  in `deploy/production` with a runbook beside it; ADRs 0001–0014;
   `docs/design/tokens.md`; `docs/architecture/slice-one.md`.
 - **Build:** pnpm workspace plus Gradle, `make` as the single entry point.
   `make up-app` builds and runs the control plane and console as containers,
@@ -88,6 +90,28 @@ worse than no `terraform/` directory.
   which branch work is landing on before trusting a green history.
 - **Database:** PostgreSQL 16 via `deploy/compose`. Flyway owns the schema;
   Hibernate runs `ddl-auto: validate` so entity/migration drift fails startup.
+- **`deploy/production` is not `deploy/compose` with different values**, and the
+  difference is the whole file (ADR 0014). The local file publishes PostgreSQL on
+  5432 and MongoDB on 27017, the second with no authentication — correct on a
+  laptop, an open database on a public IP. In the production file **only Caddy
+  publishes anything**, and only 80 and 443; Mongo requires authentication; every
+  secret is `${VAR:?message}` with no default, so a missing one stops the stack
+  naming itself rather than starting on `ACCESS_TOKEN_SECRET`'s local fallback,
+  which is a string committed to a public repository. Images are pulled by commit
+  SHA or release tag and **never `latest`** — a running version you cannot name
+  is one you cannot roll back. Do not "simplify" these back toward the local
+  file's shape.
+- **The deployment has never been run on a host.** Everything about it is
+  verified only as far as a laptop allows: the compose file renders and refuses a
+  missing secret, the Caddyfile passes `caddy validate`, all three images build,
+  and `make prod-first-user` works against the local issuer. No image has been
+  published to GHCR, and **there are no backups** — do not describe the data as
+  surviving the box until something copies it off.
+- **The observer is packaged now too** (`apps/observer/Dockerfile`), because a
+  deployment without it is a catalog rather than a monitoring platform: nothing
+  probes, so every environment reads "never probed" forever. Alpine rather than
+  scratch for two stated reasons — probes are HTTPS and need a CA bundle, and the
+  healthcheck needs something that can make a request.
 - **Every `/api/v1` endpoint requires a verified RS256 token** (ADR 0013).
   OpsAtlas is a resource server: it fetches public keys from the issuer's JWKS
   and holds no signing key, so it can check a token and cannot mint one. Open by

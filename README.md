@@ -159,7 +159,10 @@ measurement will be labelled in the interface, not only in a comment.
   [ADR 0004](docs/adr/0004-scorecard-rule-model.md).
 - **Nothing has been load-tested, security-tested, or run in production.** No
   performance, scale, availability or security claim appears anywhere in this
-  repository, because none has been measured.
+  repository, because none has been measured. The configuration for a deployment
+  now exists — [`deploy/production/`](deploy/production/), [ADR 0014](docs/adr/0014-deployment-is-one-box.md) —
+  and has been verified as far as it can be without a host, which is not the same
+  as having been run on one.
 
 ---
 
@@ -500,6 +503,33 @@ of the eight invalid fixtures fails at exactly the JSON Pointer recorded in
 `examples/services/invalid/expected.json`. It fails if a good manifest breaks
 *and* if a bad manifest stops being bad — a checker that cannot fail is worthless,
 and both directions are exercised.
+
+---
+
+## Deploying it
+
+One virtual machine running six containers behind Caddy, which terminates TLS
+and renews its own certificates. Not Kubernetes: the topology is five coupled
+containers on one host, and a cluster to run a control plane means operating a
+control plane to run a control plane. The reasoning, and what it costs, is
+[ADR 0014](docs/adr/0014-deployment-is-one-box.md); the steps are in
+[`deploy/production/README.md`](deploy/production/README.md).
+
+What makes it different from the local compose file is worth stating, because
+the two look alike and are not:
+
+| | Local | Deployment |
+|---|---|---|
+| Published ports | PostgreSQL 5432, MongoDB 27017, and every app port | 80 and 443, and nothing else |
+| MongoDB auth | none | required |
+| Secrets | documented development defaults | no defaults; a missing one stops the stack |
+| Images | built from source | pulled by commit SHA or release tag, never `latest` |
+| TLS | none | Caddy, with automatic renewal |
+
+**It has not been run against a real host.** Each part is verified — the compose
+file renders and refuses a missing secret, the Caddyfile passes `caddy validate`,
+all three images build — but the sequence has not been executed end to end, and
+there are no backups yet.
 
 ---
 
