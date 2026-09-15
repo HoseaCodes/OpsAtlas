@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
+import { deploymentEnvironment } from "@/lib/environment";
 import { SESSION_COOKIE, currentToken } from "@/lib/session";
 import { ThemeToggle } from "./ThemeToggle";
 
@@ -34,7 +35,7 @@ export async function AppShell({ children }: { children: ReactNode }) {
       >
         <div className="flex flex-none flex-col gap-0.5 px-1.5">
           <b className="text-[15px] font-semibold tracking-[-0.01em]">OpsAtlas</b>
-          <span className="mono text-[11.5px] text-ink-3">control-plane / local</span>
+          <span className="mono text-[11.5px] text-ink-3">control-plane / {deploymentEnvironment()}</span>
         </div>
 
         <nav aria-label="Sections" className="flex flex-row gap-4 md:flex-col md:gap-3.5">

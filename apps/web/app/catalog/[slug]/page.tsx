@@ -16,6 +16,7 @@ import { ServiceTabs } from "@/components/ServiceTabs";
 import { ErrorState, NotYetMeasured, PartialFailure } from "@/components/states";
 import { controlPlane, noStore } from "@/lib/api";
 import { absoluteTime, relativeTime, tierLabel } from "@/lib/format";
+import { dashboardUrl, observabilityServiceName } from "@/lib/manifestLinks";
 
 export const dynamic = "force-dynamic";
 
@@ -164,6 +165,9 @@ function OverviewPane({
   healthByEnvironment: Map<string, EnvironmentHealth>;
   healthError: unknown;
 }) {
+  const dashboard = dashboardUrl(service.manifest);
+  const telemetryName = observabilityServiceName(service.manifest);
+
   return (
     <div className="flex flex-col gap-7 px-4 py-5 md:px-6">
       <section>
@@ -193,6 +197,48 @@ function OverviewPane({
             {relativeTime(service.registeredAt)}
           </dd>
         </dl>
+      </section>
+
+      <section>
+        <h2 className="mb-2.5 text-[13px] font-semibold">Observability</h2>
+        <dl className="grid grid-cols-[minmax(0,150px)_minmax(0,1fr)] gap-x-3.5 gap-y-2 text-[13px]">
+          <dt className="text-ink-2">Dashboard</dt>
+          <dd className="m-0 break-words text-[12.5px]">
+            {dashboard ? (
+              <a
+                href={dashboard}
+                // A manifest is somebody else's document. noreferrer keeps this
+                // console's URLs out of their referrer log, and noopener stops
+                // the opened page reaching back into this window.
+                target="_blank"
+                rel="noreferrer noopener external"
+                className="mono underline"
+                style={{ color: "var(--accent)" }}
+              >
+                {dashboard}
+              </a>
+            ) : (
+              <span className="text-ink-3">
+                none declared — add <span className="mono">spec.observability.dashboard</span>
+              </span>
+            )}
+          </dd>
+
+          <dt className="text-ink-2">Telemetry name</dt>
+          {/* The class moves rather than nesting an override: a declared name is
+              an identifier and belongs in mono, an absence is prose and does not. */}
+          {telemetryName ? (
+            <dd className="mono m-0 text-[12.5px]">{telemetryName}</dd>
+          ) : (
+            <dd className="m-0 text-[12.5px] text-ink-3">
+              none declared, so traces cannot be joined to this entry
+            </dd>
+          )}
+        </dl>
+        <p className="mt-2 max-w-prose text-[12.5px] text-ink-3">
+          Both are declarations by the owning team, not something OpsAtlas verified. Nothing here
+          checks that the dashboard resolves or that telemetry arrives under that name.
+        </p>
       </section>
 
       <section>

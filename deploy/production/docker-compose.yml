@@ -121,6 +121,9 @@ services:
       # anywhere outside this network.
       OPSATLAS_API_URL: http://control-plane:8080
       STORM_GATE_URL: http://storm-gate:8080
+      # What the shell prints under the wordmark. It defaults to "local", which
+      # is right on a laptop and was being displayed by this deployment.
+      OPSATLAS_ENVIRONMENT: ${OPSATLAS_ENVIRONMENT:-production}
     logging: *logging
     restart: unless-stopped
 

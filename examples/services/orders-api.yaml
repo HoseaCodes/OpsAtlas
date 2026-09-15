@@ -20,6 +20,7 @@ spec:
     liveness: /actuator/health/liveness
   observability:
     serviceName: orders-api
+    dashboard: https://grafana.example.com/d/orders-api/orders-api
   operations:
     slo:
       availability: 99.9
