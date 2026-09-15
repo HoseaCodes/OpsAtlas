@@ -52,7 +52,7 @@ worse than no `terraform/` directory.
   counters; a Go observer in `apps/observer`; W3C trace context across both
   processes with OTLP export, and a collector, Tempo, Prometheus and Grafana
   behind the compose `telemetry` profile; a production deployment configuration
-  in `deploy/production` with a runbook beside it; ADRs 0001–0014;
+  in `deploy/production` with a runbook beside it; ADRs 0001–0015;
   `docs/design/tokens.md`; `docs/architecture/slice-one.md`.
 - **Build:** pnpm workspace plus Gradle, `make` as the single entry point.
   `make up-app` builds and runs the control plane and console as containers,
@@ -126,12 +126,19 @@ worse than no `terraform/` directory.
   `publish.yml` produced a `latest` tag that it, and ADR 0014, both claimed it
   never did. All three are fixed. **The `latest` tags published for `0.1.0` still
   exist** and should be deleted from GHCR.
-- **The box carries one temporary, uncommitted patch.** The `0.1.0` console image
-  still has the broken healthcheck, so `deploy/production/docker-compose.yml`
-  *on the droplet* has a `healthcheck:` block added to the `console` service,
-  marked TEMPORARY. It is wiped by the next `git pull` there — which is also when
-  the fixed image arrives. Running a tag later than `0.1.0` without removing it
-  is harmless but pointless.
+- **Deployment is pulled, not pushed (ADR 0015).** `deploy/production/VERSION`
+  holds the image tag the box should run, committed; a systemd timer runs
+  `converge.sh` every minute as `opsatlas`, which fetches `master`, hard-resets
+  to it, and applies the declared version. **Deploying is a commit**, rolling
+  back is `git revert`, and `git log -- deploy/production/VERSION` is the deploy
+  history. There is deliberately **no SSH key in GitHub Actions**: this
+  repository is public, and `docker` group membership on that box is
+  root-equivalent. Do not add a push-based deploy job while production is the
+  only target.
+- **The box hard-resets to `master` every minute.** Anything edited there is
+  lost without warning — that is the point, but it means the temporary-patch
+  trick used during the first deployment no longer survives. Change the
+  repository, not the machine.
 - **The operator's password is on the box, not in this repository**, at
   `~/operator-credentials.txt` (mode 600, owned by `opsatlas`). It was generated
   on the droplet and has never been transmitted or printed. The account is

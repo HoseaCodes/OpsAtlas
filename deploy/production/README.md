@@ -246,14 +246,32 @@ action, which makes it a better check than any of the above.
 
 ## Operating it
 
-**Update** — change `OPSATLAS_TAG` in `.env`, then:
+**Update** — edit one line and merge it. `deploy/production/VERSION` holds the
+image tag this box should run; a systemd timer converges to it within a minute
+(ADR 0015). Nothing needs an SSH session:
 
 ```bash
-docker compose pull && docker compose up -d
+echo 0.3.0 > deploy/production/VERSION   # then commit, and merge to master
 ```
 
-**Roll back** — the same thing with the previous tag. This is what `latest`
-would have cost you.
+**Roll back** — commit the previous tag, or `git revert` the commit that changed
+it. The deployment history is `git log -- deploy/production/VERSION`.
+
+**Watch a deploy happen:**
+
+```bash
+systemctl list-timers opsatlas-converge.timer
+journalctl -u opsatlas-converge.service -f
+```
+
+**Force one now**, rather than waiting for the timer:
+
+```bash
+sudo systemctl start opsatlas-converge.service
+```
+
+**Stop automatic deployment** — `sudo systemctl disable --now opsatlas-converge.timer`.
+Nothing announces that it is off, so turn it back on.
 
 **Logs** — `docker compose logs -f control-plane`. Capped at 30MB per container,
 so they will not fill the disk.
@@ -266,6 +284,29 @@ docker compose exec -T postgres pg_dump -U opsatlas opsatlas | gzip > opsatlas-$
 ```
 
 Copy it off the host. A backup on the machine it protects is not a backup.
+
+## Installing the converge agent
+
+Once, as root. The units live in the repository so they are reviewable; systemd
+needs them in its own directory.
+
+```bash
+install -m 644 /home/opsatlas/opsatlas/deploy/production/opsatlas-converge.service /etc/systemd/system/
+install -m 644 /home/opsatlas/opsatlas/deploy/production/opsatlas-converge.timer   /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now opsatlas-converge.timer
+systemctl start opsatlas-converge.service     # converge immediately rather than waiting
+journalctl -u opsatlas-converge.service -n 30 --no-pager
+```
+
+The script runs as `opsatlas`, not root: that user is already in the `docker`
+group, which is all it needs, and running something that pulls from the internet
+as root is a larger decision than this task warrants.
+
+> **The box hard-resets to `master` every minute.** Anything edited there is lost
+> without warning. That is deliberate — this machine is not where work happens —
+> but it means debugging by editing a file in place does not survive. Use
+> `docker compose logs` and `exec`, and make changes in the repository.
 
 ## Publishing the API or the issuer later
 

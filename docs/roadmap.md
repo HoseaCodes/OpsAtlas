@@ -42,7 +42,7 @@ OpsAtlas/
 │   └── services/                  ✓ example and fixture manifests
 ├── scripts/                       ✓ check-secrets.sh — a layout deviation, ADR 0012
 ├── docs/
-│   ├── adr/                       ✓ 0001-0014
+│   ├── adr/                       ✓ 0001-0015
 │   ├── architecture/              ✓ slice-one.md
 │   ├── design/                    ✓ tokens.md
 │   └── roadmap.md                 ✓ this file

@@ -1,0 +1,29 @@
+# Bring the box to the state master describes. See converge.sh.
+#
+# Type=oneshot because this is a task that finishes, not a daemon. The timer
+# beside it decides how often; this unit only knows how to do it once.
+[Unit]
+Description=Converge OpsAtlas to the version master declares
+Documentation=https://github.com/HoseaCodes/OpsAtlas/blob/master/deploy/production/README.md
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=opsatlas
+Group=opsatlas
+WorkingDirectory=/home/opsatlas/opsatlas/deploy/production
+ExecStart=/home/opsatlas/opsatlas/deploy/production/converge.sh
+
+# Not root. The opsatlas user is in the docker group, which is all this needs -
+# and running a script that git-pulls from the internet as root would be a
+# larger decision than this task warrants.
+NoNewPrivileges=true
+PrivateTmp=false
+
+# A convergence that hangs should not hold the lock until the next reboot.
+TimeoutStartSec=15min
+
+[Install]
+WantedBy=multi-user.target

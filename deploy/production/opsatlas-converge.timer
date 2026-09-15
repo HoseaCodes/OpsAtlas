@@ -1,0 +1,19 @@
+# How often the box asks whether it is still what master says it should be.
+#
+# One minute is frequent enough that a deploy feels immediate and cheap enough
+# that it costs nothing: a convergence with no change is a `git fetch` and two
+# string comparisons.
+[Unit]
+Description=Check for a new declared OpsAtlas version
+Documentation=https://github.com/HoseaCodes/OpsAtlas/blob/master/deploy/production/README.md
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=1min
+# So a reboot during an outage does not fire every timer on the box at once.
+RandomizedDelaySec=15s
+AccuracySec=5s
+Unit=opsatlas-converge.service
+
+[Install]
+WantedBy=timers.target
