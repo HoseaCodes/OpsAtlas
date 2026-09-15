@@ -46,7 +46,14 @@ ENV PORT=3000 HOSTNAME=0.0.0.0
 
 # /login is the one page that renders without a session, so it is the honest
 # thing to health-check: any other path answers a redirect.
+#
+# 127.0.0.1 rather than localhost, and not as a style preference: the container's
+# /etc/hosts maps localhost to both 127.0.0.1 and ::1, Next's standalone server
+# binds 0.0.0.0 and so listens on IPv4 only, and wget tries ::1 first. The
+# result is a permanently unhealthy container serving traffic perfectly well.
+# It passed locally, where the resolver happened to order them the other way,
+# and failed on the first real host - so the address has to be explicit.
 HEALTHCHECK --interval=10s --timeout=3s --start-period=20s --retries=5 \
-  CMD wget -qO- http://localhost:3000/login > /dev/null || exit 1
+  CMD wget -qO- http://127.0.0.1:3000/login > /dev/null || exit 1
 
 CMD ["node", "apps/web/server.js"]

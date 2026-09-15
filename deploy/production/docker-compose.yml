@@ -87,7 +87,12 @@ services:
       # The key set, by contrast, is fetched server-to-server and never leaves
       # this network, so it stays on the container address.
       OPSATLAS_OIDC_JWKS_URI: http://storm-gate:8080/.well-known/jwks.json
-      OPSATLAS_BOOTSTRAP_ISSUER: ${OPSATLAS_ISSUER_ID:?}
+      # Set only once there is a subject to pair it with. The control plane
+      # refuses to start on half an identity - correctly, because an issuer with
+      # no subject provisions nobody and would leave a deployment that looks
+      # configured and admits no one. Deriving this unconditionally therefore
+      # made the documented first start impossible, which is how it was found.
+      OPSATLAS_BOOTSTRAP_ISSUER: ${OPSATLAS_BOOTSTRAP_SUBJECT:+${OPSATLAS_ISSUER_ID}}
       OPSATLAS_BOOTSTRAP_SUBJECT: ${OPSATLAS_BOOTSTRAP_SUBJECT:-}
       OPSATLAS_BOOTSTRAP_DISPLAY_NAME: ${OPSATLAS_BOOTSTRAP_DISPLAY_NAME:-}
       OPSATLAS_OBSERVER_KEY: ${OPSATLAS_OBSERVER_KEY:?generate one with `make observer-key`}

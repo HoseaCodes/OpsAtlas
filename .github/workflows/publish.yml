@@ -58,6 +58,12 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/${{ github.repository_owner }}/opsatlas-${{ matrix.image }}
+          # metadata-action tags `latest` by default on a semver tag. This file
+          # and ADR 0014 both say it never produces one, and until this line was
+          # here that was simply untrue - v0.1.0 published a `latest` for all
+          # three images. A deployment you cannot name is one you cannot roll
+          # back, so the claim is worth keeping and the tag is not.
+          flavor: latest=false
           # A version tag when there is one, and the commit SHA always — so
           # every published image is traceable to the source that built it even
           # if it was cut by hand from master.
