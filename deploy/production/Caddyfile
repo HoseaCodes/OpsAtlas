@@ -1,0 +1,76 @@
+# The only thing on this box listening to the internet.
+#
+# Caddy obtains and renews Let's Encrypt certificates on its own, which is the
+# reason it is here rather than nginx: nothing in this file configures a
+# certificate, a renewal timer or a reload hook, and there is correspondingly
+# nothing to forget to renew.
+#
+# Hostnames come from the environment so this file is the same on any
+# deployment. They are set in deploy/production/.env.
+{
+	email {$OPSATLAS_ACME_EMAIL}
+
+	# Every site below inherits this. Caddy logs JSON by default, which matches
+	# what the control plane and the observer already write.
+	servers {
+		trusted_proxies static private_ranges
+	}
+}
+
+# Applied to all three sites.
+(common) {
+	encode zstd gzip
+
+	header {
+		# Two years, which is what a preload submission requires if this ever
+		# wants one. Safe to commit to: every hostname here is served by this
+		# proxy and nothing on these names needs plain HTTP.
+		Strict-Transport-Security "max-age=63072000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		# This deployment embeds nothing and should be embedded by nothing.
+		X-Frame-Options "DENY"
+		# Caddy advertises itself by default. Not a security measure - just no
+		# reason to publish the version of the thing holding the certificates.
+		-Server
+	}
+
+	log {
+		output stdout
+		format json
+	}
+}
+
+# ---------------------------------------------------------------------------
+# The console. The only one of the three a person visits directly.
+# ---------------------------------------------------------------------------
+{$OPSATLAS_CONSOLE_HOST} {
+	import common
+	reverse_proxy console:3000
+}
+
+# ---------------------------------------------------------------------------
+# The control plane.
+#
+# Published on purpose rather than by omission: the console reaches it over the
+# compose network and does not need this, but the observer may run from
+# somewhere else later, the generated OpenAPI document is worth being able to
+# fetch, and every endpoint behind it requires a verified token anyway (ADR
+# 0013). If that stops being true, this site block is the thing to delete.
+# ---------------------------------------------------------------------------
+{$OPSATLAS_API_HOST} {
+	import common
+	reverse_proxy control-plane:8080
+}
+
+# ---------------------------------------------------------------------------
+# The identity provider.
+#
+# This hostname is load-bearing in a way the other two are not: it is what
+# Storm-Gate stamps into every token's `iss` and what the control plane compares
+# against. Changing it invalidates every token in circulation.
+# ---------------------------------------------------------------------------
+{$OPSATLAS_AUTH_HOST} {
+	import common
+	reverse_proxy storm-gate:8080
+}
