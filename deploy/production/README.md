@@ -1,8 +1,9 @@
 # Deploying OpsAtlas
 
-One virtual machine running six containers behind Caddy. Why this shape and what
-it costs is [ADR 0014](../../docs/adr/0014-deployment-is-one-box.md); this file
-is how to do it.
+One virtual machine running seven containers, one of which is Caddy. Why this
+shape and what it costs is
+[ADR 0014](../../docs/adr/0014-deployment-is-one-box.md); this file is how to do
+it.
 
 Nothing here has been run against a real host yet. It is assembled from parts
 that were each verified locally — the compose file renders and refuses missing
@@ -12,25 +13,44 @@ sequence below has not been executed end to end. Expect to hit something.
 
 ## What you need first
 
-- A VM with **4GB of RAM** and about 20GB of disk, running Ubuntu 24.04. The JVM
-  wants roughly 1GB and PostgreSQL, MongoDB, two Node processes and Go fill most
-  of the rest. 2GB is not enough.
+- A VM running Ubuntu 24.04 with **2GB of RAM at minimum, 4GB recommended**, and
+  about 25GB of disk. Measured idle usage of all seven containers is ~665MB
+  (the JVM 371MB, MongoDB 120MB, the rest under 55MB each), and Ubuntu with
+  Docker adds ~450MB — so 2GB fits with roughly 800MB spare.
+
+  The reasons to take 4GB anyway: the JVM's heap ceiling is a *percentage* of
+  the box (`MaxRAMPercentage=75`) and MongoDB's WiredTiger cache is about half
+  of (RAM − 1GB), so both expand into whatever exists and neither is bounded by
+  that 665MB figure. And on a single vCPU the JVM ergonomically selects
+  **SerialGC** instead of G1, with one core shared by the prober, the retention
+  job and the GitHub sync. Fine for light traffic; less margin when something
+  goes wrong.
 - A domain you control.
 - The GitHub repository's packages, which is where the images come from.
 
 ## 1. DNS, before anything else
 
-Three A records, all pointing at the box's IP:
+One A record, pointing at the box's IP:
 
 ```text
 opsatlas.example.com        A    203.0.113.10
-api.opsatlas.example.com    A    203.0.113.10
-auth.opsatlas.example.com   A    203.0.113.10
 ```
 
-Do this first and let it propagate. Caddy asks Let's Encrypt for certificates
+That is the whole public surface. The console calls the control plane and the
+identity provider from the server over the compose network, so neither needs a
+hostname — and leaving the issuer unpublished means its open `/register` is not
+on the internet at all, which beats publishing it and relying on the 403 behind
+it.
+
+Do this first and let it propagate. Caddy asks Let's Encrypt for a certificate
 the moment it starts, and a name that does not resolve yet spends one of the
 **five attempts per hostname per week** that the rate limit allows.
+
+`OPSATLAS_ISSUER_ID` is a separate matter and needs no DNS. It is the string
+stamped into every token's `iss`, compared by the control plane and never
+fetched. Set it to the name you *would* publish the issuer under — changing it
+later invalidates every token in circulation, so choosing it now makes
+publishing the issuer additive rather than a migration.
 
 Check before continuing:
 
@@ -154,15 +174,27 @@ The stack is now running and **admits nobody**. Storm-Gate has no accounts, and
 a token only works once a `principal` row exists for it — so there is one
 account to create by hand, and everyone after that is added from inside.
 
-From a machine with the repository:
+The issuer has no public route, so reach it through an SSH tunnel. In one
+terminal:
+
+```bash
+ssh -N -L 8090:127.0.0.1:8090 opsatlas@<droplet-ip>
+```
+
+That forwards your local 8090 to the loopback port Storm-Gate is bound to on the
+box. In another terminal, from a machine with the repository:
 
 ```bash
 make prod-first-user \
-  ISSUER_URL_PROD=https://auth.opsatlas.example.com \
+  ISSUER_URL_PROD=http://localhost:8090 \
   PROD_EMAIL=you@example.com \
   PROD_PASSWORD='...' \
   PROD_NAME='Your Name'
 ```
+
+The tunnel is only needed for this one step; close it afterwards. The target
+reads the subject out of the token it gets back and does not care what `iss`
+says, so pointing it at the tunnel rather than the issuer's real name is fine.
 
 It prints two lines. Put them in `.env` on the box and restart the control plane
 so it provisions the principal on startup:
@@ -173,27 +205,38 @@ docker compose up -d control-plane
 
 > Between starting the stack and doing this, signing in succeeds and the catalog
 > answers **403 `not-provisioned`**. That is the intended behaviour, not a
-> fault: a verified token is not a membership. It is also why Storm-Gate's open
-> `/register` can face the internet — anyone can create an account there and it
-> gets them nothing here.
+> fault: a verified token is not a membership. It is also the property that would
+> make publishing the issuer survivable if you ever did — an account created at
+> an open `/register` gets 403 here until somebody adds a principal row. Right
+> now the issuer is not published at all, so the question does not arise.
 
 ## 7. Check it actually works
 
+On the box, since the API is not published:
+
 ```bash
 # Open by design
-curl -s https://api.opsatlas.example.com/actuator/health
+docker compose exec control-plane wget -qO- http://localhost:8080/actuator/health
 
-# Refused without a credential
-curl -s -o /dev/null -w '%{http_code}\n' https://api.opsatlas.example.com/api/v1/services   # 401
-
-# The issuer publishes its keys
-curl -s https://auth.opsatlas.example.com/.well-known/jwks.json | head -c 100
+# Every container healthy, none restarting
+docker compose ps
 
 # The observer is probing
 docker compose logs observer | tail -20
+
+# Caddy got its certificate
+docker compose logs caddy | grep -i "certificate obtained"
 ```
 
-Then sign in at `https://opsatlas.example.com` and register a service.
+From anywhere:
+
+```bash
+curl -sI https://opsatlas.example.com/login | head -3
+```
+
+Then sign in at `https://opsatlas.example.com` and register a service. That
+exercises the console, the control plane, the issuer and the database in one
+action, which makes it a better check than any of the above.
 
 ## Operating it
 
@@ -217,6 +260,35 @@ docker compose exec -T postgres pg_dump -U opsatlas opsatlas | gzip > opsatlas-$
 ```
 
 Copy it off the host. A backup on the machine it protects is not a backup.
+
+## Publishing the API or the issuer later
+
+Neither is wired up, and both are additive. Nothing about doing this
+invalidates a token, because `OPSATLAS_ISSUER_ID` already holds the public name.
+
+1. Add an A record for the hostname, pointing at the same IP.
+2. Add the variable to the `caddy` service's `environment` in
+   `docker-compose.yml` — `OPSATLAS_API_HOST` or `OPSATLAS_AUTH_HOST` — and set
+   it in `.env`.
+3. Add a site block to the `Caddyfile`:
+
+   ```caddyfile
+   {$OPSATLAS_API_HOST} {
+   	import common
+   	reverse_proxy control-plane:8080
+   }
+   ```
+
+4. `docker compose up -d caddy`.
+
+Worth doing for the API if you want to `curl` it, fetch the OpenAPI document
+over the wire, or run the observer somewhere other than this box. Every endpoint
+behind it requires a verified token, and an unprovisioned caller gets 403.
+
+Think harder before publishing the issuer. It puts an open registration endpoint
+on the internet. That is survivable — an account created there gets 403 from
+OpsAtlas until somebody adds a principal row — but it is a real thing to have
+exposed, and nothing currently needs it.
 
 ## Known gaps
 

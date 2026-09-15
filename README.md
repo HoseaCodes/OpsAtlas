@@ -508,8 +508,10 @@ and both directions are exercised.
 
 ## Deploying it
 
-One virtual machine running six containers behind Caddy, which terminates TLS
-and renews its own certificates. Not Kubernetes: the topology is five coupled
+One virtual machine running seven containers, fronted by Caddy, which terminates
+TLS and renews its own certificates. **One public hostname**, for the console:
+it calls the control plane and the identity provider from the server over the
+compose network, so neither needs a route in from outside. Not Kubernetes: the topology is five coupled
 containers on one host, and a cluster to run a control plane means operating a
 control plane to run a control plane. The reasoning, and what it costs, is
 [ADR 0014](docs/adr/0014-deployment-is-one-box.md); the steps are in
@@ -520,7 +522,7 @@ the two look alike and are not:
 
 | | Local | Deployment |
 |---|---|---|
-| Published ports | PostgreSQL 5432, MongoDB 27017, and every app port | 80 and 443, and nothing else |
+| Published ports | PostgreSQL 5432, MongoDB 27017, and every app port | 80 and 443 publicly; the issuer on `127.0.0.1` for bootstrap |
 | MongoDB auth | none | required |
 | Secrets | documented development defaults | no defaults; a missing one stops the stack |
 | Images | built from source | pulled by commit SHA or release tag, never `latest` |

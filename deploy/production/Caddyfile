@@ -42,35 +42,21 @@
 }
 
 # ---------------------------------------------------------------------------
-# The console. The only one of the three a person visits directly.
+# The console, and nothing else.
+#
+# One public hostname on purpose. The console calls the control plane and the
+# identity provider from the server over the compose network, so neither needs a
+# route in from outside — and leaving them without one means Storm-Gate's open
+# `/register` is not on the internet at all, which is a better position than
+# publishing it and relying on the 403 behind it.
+#
+# What this costs: you cannot curl the API or fetch the OpenAPI document over
+# the wire, and the observer has to run on this box rather than anywhere else.
+# Both are recoverable — see "Publishing the API or the issuer later" in
+# README.md. Neither invalidates a token, because the issuer identifier is
+# already the public name it would use.
 # ---------------------------------------------------------------------------
 {$OPSATLAS_CONSOLE_HOST} {
 	import common
 	reverse_proxy console:3000
-}
-
-# ---------------------------------------------------------------------------
-# The control plane.
-#
-# Published on purpose rather than by omission: the console reaches it over the
-# compose network and does not need this, but the observer may run from
-# somewhere else later, the generated OpenAPI document is worth being able to
-# fetch, and every endpoint behind it requires a verified token anyway (ADR
-# 0013). If that stops being true, this site block is the thing to delete.
-# ---------------------------------------------------------------------------
-{$OPSATLAS_API_HOST} {
-	import common
-	reverse_proxy control-plane:8080
-}
-
-# ---------------------------------------------------------------------------
-# The identity provider.
-#
-# This hostname is load-bearing in a way the other two are not: it is what
-# Storm-Gate stamps into every token's `iss` and what the control plane compares
-# against. Changing it invalidates every token in circulation.
-# ---------------------------------------------------------------------------
-{$OPSATLAS_AUTH_HOST} {
-	import common
-	reverse_proxy storm-gate:8080
 }

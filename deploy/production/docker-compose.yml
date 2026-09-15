@@ -8,9 +8,11 @@
 #   1. No database port is published. The local file publishes 5432 and 27017,
 #      the second with no authentication at all. On a public address that is not
 #      a weaker configuration, it is an open database.
-#   2. Nothing is exposed except the reverse proxy. Caddy holds 80 and 443 and
-#      is the only route in; every application port is reachable only from the
-#      compose network.
+#   2. One public hostname, and one route in. Caddy holds 80 and 443 and serves
+#      the console only; the control plane and the identity provider are reached
+#      over the compose network and have no route from outside. Storm-Gate binds
+#      one port to 127.0.0.1 for the first-user bootstrap, reachable through an
+#      SSH tunnel and from nowhere else.
 #   3. No credential has a default. Every one is `${VAR:?...}`, so a missing
 #      secret stops the stack rather than silently starting it with the
 #      development value - ACCESS_TOKEN_SECRET above all, which falls back to a
@@ -34,9 +36,9 @@ x-logging: &logging
 
 services:
   # ---------------------------------------------------------------------------
-  # The only service with a published port. Caddy terminates TLS, obtains and
-  # renews certificates from Let's Encrypt automatically, and proxies to three
-  # applications that are otherwise unreachable from outside this network.
+  # The only route in from the internet. Caddy terminates TLS, obtains and renews
+  # Let's Encrypt certificates automatically, and serves the console - which is
+  # the only one of these six containers a person visits.
   # ---------------------------------------------------------------------------
   caddy:
     image: caddy:2.8-alpine
@@ -44,14 +46,8 @@ services:
     depends_on:
       console:
         condition: service_healthy
-      control-plane:
-        condition: service_healthy
-      storm-gate:
-        condition: service_started
     environment:
       OPSATLAS_CONSOLE_HOST: ${OPSATLAS_CONSOLE_HOST:?the console hostname, e.g. opsatlas.example.com}
-      OPSATLAS_API_HOST: ${OPSATLAS_API_HOST:?the API hostname, e.g. api.opsatlas.example.com}
-      OPSATLAS_AUTH_HOST: ${OPSATLAS_AUTH_HOST:?the issuer hostname, e.g. auth.opsatlas.example.com}
       OPSATLAS_ACME_EMAIL: ${OPSATLAS_ACME_EMAIL:?an address Let's Encrypt can reach about expiring certificates}
     ports:
       - "80:80"
@@ -81,15 +77,17 @@ services:
       OPSATLAS_DB_URL: jdbc:postgresql://postgres:5432/opsatlas
       OPSATLAS_DB_USERNAME: opsatlas
       OPSATLAS_DB_PASSWORD: ${OPSATLAS_DB_PASSWORD:?set a database password; there is no default here on purpose}
-      # A token's `iss` is compared against this. It is the issuer's public
-      # address rather than its container name, because that is what Storm-Gate
-      # stamps into the tokens it signs - and a mismatch rejects every token
-      # with an error that reads like a key problem.
-      OPSATLAS_OIDC_ISSUER: https://${OPSATLAS_AUTH_HOST:?}
+      # A token's `iss` is compared against this, as a string - Spring fetches
+      # keys from the JWKS URI below and never resolves this value, so it works
+      # whether or not the name has a DNS record. It is deliberately the name
+      # the issuer WOULD be published under rather than its container address:
+      # changing it later invalidates every token in circulation, so publishing
+      # the issuer becomes additive instead of a migration.
+      OPSATLAS_OIDC_ISSUER: ${OPSATLAS_ISSUER_ID:?the issuer identifier, e.g. https://auth.opsatlas.example.com - stamped into every token and effectively permanent}
       # The key set, by contrast, is fetched server-to-server and never leaves
       # this network, so it stays on the container address.
       OPSATLAS_OIDC_JWKS_URI: http://storm-gate:8080/.well-known/jwks.json
-      OPSATLAS_BOOTSTRAP_ISSUER: https://${OPSATLAS_AUTH_HOST:?}
+      OPSATLAS_BOOTSTRAP_ISSUER: ${OPSATLAS_ISSUER_ID:?}
       OPSATLAS_BOOTSTRAP_SUBJECT: ${OPSATLAS_BOOTSTRAP_SUBJECT:-}
       OPSATLAS_BOOTSTRAP_DISPLAY_NAME: ${OPSATLAS_BOOTSTRAP_DISPLAY_NAME:-}
       OPSATLAS_OBSERVER_KEY: ${OPSATLAS_OBSERVER_KEY:?generate one with `make observer-key`}
@@ -99,8 +97,8 @@ services:
       # collector that is not there is cost with no telemetry to show for it.
       OPSATLAS_TRACING_ENABLED: ${OPSATLAS_TRACING_ENABLED:-false}
       OPSATLAS_OTLP_ENDPOINT: ${OPSATLAS_OTLP_ENDPOINT:-}
-      # Off by default here too. It is a page that helps a person explore the
-      # API, and this deployment's API is on the public internet.
+      # Off, though less sharply than before: with no route to the API from
+      # outside, the page would only be reachable through a tunnel anyway.
       OPSATLAS_SWAGGER_UI: ${OPSATLAS_SWAGGER_UI:-false}
     logging: *logging
     restart: unless-stopped
@@ -211,12 +209,21 @@ services:
       JWT_SIGNING_ALG: RS256
       # What lands in every token's `iss`, and what the control plane compares
       # against. These two must agree or nothing authenticates.
-      JWT_ISSUER: https://${OPSATLAS_AUTH_HOST:?}
+      JWT_ISSUER: ${OPSATLAS_ISSUER_ID:?}
       JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY:?generate a signing key for this deployment; do not reuse the local one}
       ACCESS_TOKEN_SECRET: ${ACCESS_TOKEN_SECRET:?set a real secret; the local default is committed to a public repository}
       REFRESH_TOKEN_SECRET: ${REFRESH_TOKEN_SECRET:?set a real secret; the local default is committed to a public repository}
       MONGODB_URL: mongodb://${OPSATLAS_MONGO_USERNAME:-opsatlas}:${OPSATLAS_MONGO_PASSWORD:?}@mongo:27017/stormgate?authSource=admin
       CORS_ORIGINS: https://${OPSATLAS_CONSOLE_HOST:?}
+    ports:
+      # Bound to loopback, which is the whole point: `make prod-first-user` has
+      # to reach the issuer to create the first account, and there is no public
+      # route to it. Forward this over SSH and run the target against the tunnel.
+      #
+      # The 127.0.0.1 prefix is what makes this safe, not the host firewall -
+      # Docker writes its iptables rules ahead of ufw's, so a bare "8090:8080"
+      # here would be open to the internet whatever ufw is told.
+      - "127.0.0.1:${STORM_GATE_LOCAL_PORT:-8090}:8080"
     logging: *logging
     restart: unless-stopped
 

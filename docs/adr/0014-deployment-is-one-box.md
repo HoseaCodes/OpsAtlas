@@ -25,9 +25,10 @@ that exists.
 The shape of what has to run was decided by ADR 0013 and is not small. Five
 containers: the control plane, the console, PostgreSQL, the identity provider
 and its MongoDB, plus the observer, which phase 10 never packaged and without
-which nothing probes. They are coupled — the control plane will not start
-without its database, and nothing authenticates unless the issuer's public
-hostname matches the `iss` in the tokens it signs.
+which nothing probes, and Caddy in front. They are coupled — the control plane
+will not start without its database, and nothing authenticates unless the
+identifier the issuer signs into `iss` is the one the control plane is
+configured to expect.
 
 ## Decision
 
@@ -45,15 +46,32 @@ Concretely:
   names a certificate, a renewal timer or a reload hook, so there is nothing to
   forget to renew. TLS is not optional here — the console keeps the signed-in
   user's token in a cookie and forwards it.
-- **Three hostnames**, one for the console, one for the API and one for the
-  issuer. The issuer's is load-bearing rather than cosmetic: it is stamped into
-  every token's `iss` and compared by the control plane, so changing it
-  invalidates every token in circulation.
+- **One public hostname, for the console.** The first draft of this decision
+  published three — console, API, issuer — and that was surface for no gain: the
+  console calls both the control plane and the issuer from the server over the
+  compose network, so neither needs a route in. Leaving the issuer unpublished
+  also keeps its open `/register` off the internet entirely, which is a stronger
+  position than publishing it and relying on the 403 behind it. Publishing
+  either later is additive (a DNS record and a Caddy block) and is described in
+  `deploy/production/README.md`.
+- **The issuer's identity is configuration, not a hostname.**
+  `OPSATLAS_ISSUER_ID` is stamped into every token's `iss` and compared by the
+  control plane as a string — Spring fetches keys from `jwk-set-uri` and never
+  resolves the issuer value, which is verifiable locally, where the control
+  plane's configured issuer points at a port nothing listens on and tokens
+  verify anyway. It is therefore set to the name the issuer *would* be published
+  under, even with no DNS record behind it: changing it invalidates every token
+  in circulation, so choosing the eventual name now makes publishing the issuer
+  an addition rather than a migration.
+- **Storm-Gate binds one port to `127.0.0.1`.** The first-user bootstrap has to
+  reach the issuer, and there is no public route to it; the tunnel is an SSH
+  port-forward. The loopback prefix is what makes that safe rather than the host
+  firewall, because Docker writes its iptables rules ahead of ufw's.
 - **Images are pulled, never built on the box**, by a tag that is a commit SHA
   or a release tag. `latest` is not a deployable identifier — a running version
   you cannot name is one you cannot roll back — so `.github/workflows/publish.yml`
   never produces one.
-- **Nothing is published except 80 and 443.** The local compose file publishes
+- **Nothing else is published at all.** The local compose file publishes
   PostgreSQL on 5432 and MongoDB on 27017, the second with no authentication at
   all. That is correct on a laptop and is an open database on a public address.
 - **No credential has a default.** Every secret is `${VAR:?message}`, so a
