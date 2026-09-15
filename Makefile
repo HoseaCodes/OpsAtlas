@@ -10,7 +10,7 @@ COMPOSE := docker compose -f deploy/compose/docker-compose.yml
 GRADLE  := ./gradlew --console=plain
 
 .DEFAULT_GOAL := help
-.PHONY: help install check-examples check-secrets observer-key issuer-key first-user prometheus-key up-app down-app typecheck test test-all test-java test-web test-observer check dev dev-web dev-observer e2e up up-telemetry down down-telemetry logs psql clean clean-db openapi check-openapi
+.PHONY: help install check-examples check-secrets observer-key issuer-key first-user prod-first-user prometheus-key up-app down-app typecheck test test-all test-java test-web test-observer check dev dev-web dev-observer e2e up up-telemetry down down-telemetry logs psql clean clean-db openapi check-openapi
 
 help: ## Show the targets that exist today
 	@echo ""
@@ -120,6 +120,57 @@ first-user: up ## Create the local account and record it for bootstrap
 	echo "  $(LOCAL_EMAIL) is ready at the issuer, subject $$subject."; \
 	echo "  Recorded in deploy/compose/.env, which is gitignored."; \
 	echo "  'make dev' will provision it on startup."; \
+	echo ""
+
+# The same problem as `first-user`, against a deployment instead of a laptop.
+#
+# Deliberately not `first-user` with a different ISSUER_URL: that target depends
+# on `up`, so pointing it at a server would start a local stack on the way, and
+# it writes the answer into deploy/compose/.env, which is the wrong machine. A
+# deployment's .env lives on the box and is never in this repository, so this
+# prints what to put there rather than writing it.
+#
+# Run it once, after the stack is up and before anybody can sign in.
+prod-first-user: ## Create the first account on a deployment and print its bootstrap values
+	@if [ -z "$(ISSUER_URL_PROD)" ]; then \
+		echo "Usage: make prod-first-user ISSUER_URL_PROD=https://auth.example.com \\"; \
+		echo "                            PROD_EMAIL=you@example.com PROD_PASSWORD='...'"; \
+		echo ""; \
+		echo "  Creates the account at the issuer and prints the two lines to add"; \
+		echo "  to deploy/production/.env on the server. Nothing is written here."; \
+		exit 1; \
+	fi
+	@if [ -z "$(PROD_EMAIL)" ] || [ -z "$(PROD_PASSWORD)" ]; then \
+		echo "PROD_EMAIL and PROD_PASSWORD are both required."; exit 1; \
+	fi
+	@set -e; \
+	body='{"name":"$(or $(PROD_NAME),Operator)","email":"$(PROD_EMAIL)","username":"$(or $(PROD_USERNAME),operator)",'; \
+	body="$$body\"password\":\"$(PROD_PASSWORD)\",\"role\":0,\"application\":\"opsatlas\"}"; \
+	token=$$(curl -sS -X POST $(ISSUER_URL_PROD)/register -H 'Content-Type: application/json' -d "$$body" \
+		| sed -n 's/.*"accesstoken":"\([^"]*\)".*/\1/p'); \
+	if [ -z "$$token" ]; then \
+		token=$$(curl -sS -X POST $(ISSUER_URL_PROD)/login -H 'Content-Type: application/json' \
+			-d '{"email":"$(PROD_EMAIL)","password":"$(PROD_PASSWORD)"}' \
+			| sed -n 's/.*"accesstoken":"\([^"]*\)".*/\1/p'); \
+	fi; \
+	if [ -z "$$token" ]; then \
+		echo "Could not create or sign in to $(PROD_EMAIL) at $(ISSUER_URL_PROD)."; \
+		echo "Is the issuer reachable, and is its certificate valid?"; exit 1; \
+	fi; \
+	subject=$$(printf '%s' "$$token" | cut -d. -f2 | tr '_-' '/+' \
+		| awk '{ while (length($$0) % 4) $$0 = $$0 "="; print }' | base64 -d 2>/dev/null \
+		| sed -n 's/.*"id":"\([^"]*\)".*/\1/p'); \
+	if [ -z "$$subject" ]; then echo "The issuer returned a token with no subject id."; exit 1; fi; \
+	echo ""; \
+	echo "  $(PROD_EMAIL) exists at $(ISSUER_URL_PROD)."; \
+	echo ""; \
+	echo "  Add these to deploy/production/.env on the server, then restart the"; \
+	echo "  control plane. Until you do, it authenticates this account and then"; \
+	echo "  refuses it 403 for having no principal row - which is ADR 0013"; \
+	echo "  working, not a fault."; \
+	echo ""; \
+	echo "    OPSATLAS_BOOTSTRAP_SUBJECT=$$subject"; \
+	echo "    OPSATLAS_BOOTSTRAP_DISPLAY_NAME='$(or $(PROD_NAME),Operator)'"; \
 	echo ""
 
 dev: up ## Start the database, then run the control plane on :8080
