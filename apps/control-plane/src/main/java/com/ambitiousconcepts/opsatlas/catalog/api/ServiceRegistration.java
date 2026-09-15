@@ -34,6 +34,30 @@ public interface ServiceRegistration {
     ServiceDetail update(UUID orgId, String slug, String document, Long ifMatchVersion, String sourceRef);
 
     /**
+     * Remove a service from the catalog.
+     *
+     * <p>A hard delete. The schema makes that safe: dependent rows in
+     * {@code environment}, {@code policy_result} and the observation tables
+     * cascade, {@code source.service_id} is set null so a watched repository
+     * stays watched, and {@code audit_event} declares no foreign key at all - so
+     * the history of a deleted service survives the service.
+     *
+     * <p>Retiring is usually the better answer. {@code spec.lifecycle: retired}
+     * keeps the entry, its scorecards and its probe record, which is what a
+     * catalog is for; this is for a registration that should not have happened.
+     *
+     * <p>Note the interaction with sources: deleting a service whose manifest
+     * comes from a watched repository removes the row, and the next sync
+     * registers it again. Stop watching the source first, or the delete is
+     * temporary.
+     *
+     * @param ifMatchVersion the version the caller read; null means the header was absent
+     * @throws com.ambitiousconcepts.opsatlas.shared.NotFoundException no such service in this organization
+     * @throws com.ambitiousconcepts.opsatlas.shared.PreconditionException If-Match was missing or stale
+     */
+    void delete(UUID orgId, String slug, Long ifMatchVersion);
+
+    /**
      * Apply a manifest read from the repository that owns it.
      *
      * <p>Unlike {@link #update}, this carries no {@code If-Match}, and that is a

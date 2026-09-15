@@ -98,6 +98,30 @@
             }
           }
         }
+      },
+      "delete" : {
+        "tags" : [ "service-controller" ],
+        "operationId" : "delete",
+        "parameters" : [ {
+          "name" : "slug",
+          "in" : "path",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "name" : "If-Match",
+          "in" : "header",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "204" : {
+            "description" : "No Content"
+          }
+        }
       }
     },
     "/api/v1/sources" : {

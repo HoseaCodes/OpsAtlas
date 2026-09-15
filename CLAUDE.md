@@ -70,9 +70,9 @@ worse than no `terraform/` directory.
   **No JDK needs to be installed** — the build declares a Java 21 toolchain and
   Gradle provisions Temurin 21 itself. Go 1.27+ **is** required for
   `apps/observer`; it is installed here via Homebrew.
-- **Tests:** `make test` — 14 schema fixtures, 37 console component tests,
-  35 Go tests (race-clean) and 286 JVM tests, all passing. `make test-all` adds
-  26 Playwright tests against the real stack. Integration tests use
+- **Tests:** `make test` — 14 schema fixtures, 50 console component tests,
+  35 Go tests (race-clean) and 288 JVM tests, all passing. `make test-all` adds
+  36 Playwright tests against the real stack. Integration tests use
   Testcontainers and need a running Docker daemon; the Playwright tests need the
   stack running.
 - **CI is green on `master`.** Run #3 on 2026-09-15, commit `4e23098`: all six
@@ -202,14 +202,14 @@ worse than no `terraform/` directory.
     UI can send either and the contract states what every endpoint requires.
     **`make check-openapi` stays red until the regenerated contract is
     committed** — that is the check doing its job, not a failure.
-- **`OrgIsolationIT` proves scoping *and* authorization.** Its 25 tests plant a
+- **`OrgIsolationIT` proves scoping *and* authorization.** Its 27 tests plant a
   second organization's rows, and now a principal who belongs to it, so three of
   them authenticate as that caller and assert they reach their own catalog and
   not ours. Worth remembering why: until those existed, a resolver that ignored
   the principal's organization and always returned the seeded one would have
   passed the entire suite. Checked by mutation — doing exactly that now fails
   two tests.
-- **Cross-organization isolation is verified** by `OrgIsolationIT` (25 tests),
+- **Cross-organization isolation is verified** by `OrgIsolationIT` (27 tests),
   and it now covers **every org-scoped endpoint in the contract** — services,
   sources, the scorecard, the audit log, both health endpoints and observation
   ingestion. `GET /api/v1/policy/rules` is the only operation it does not cover,
@@ -315,6 +315,30 @@ worse than no `terraform/` directory.
   commit the result. CI fails on the difference otherwise (ADR 0005).
 - **Extend `OrgIsolationIT` whenever an endpoint is added.** An endpoint it does
   not cover has unverified isolation and must be described that way.
+- **A service can now be edited and deleted from the console.** `PUT` existed
+  with no UI and `DELETE` did not exist; both are reachable from the detail
+  page's Manage section, each sending `If-Match` built from the version that
+  page was rendered with. **Retiring is the recommended path** —
+  `spec.lifecycle: retired` through the edit form keeps the entry, its
+  scorecards and its probe history. `DELETE` is for a registration that should
+  not exist.
+- **The hard delete is safe because of the schema, not because of care.**
+  `environment`, `policy_result` and the observation tables cascade;
+  `source.service_id` is set null so a watched repository stays watched; and
+  **`audit_event` declares no foreign key to `service`**, so `service.deleted`
+  outlives the row it describes. Do not add such a foreign key — it would turn
+  every deletion into the erasure of its own record. Deleting a service that a
+  source still watches is temporary: the next sync registers it again.
+- **The console's environment label is configuration, not decoration.** It read
+  the hardcoded string `local` and so announced the production deployment as a
+  laptop. It is now `OPSATLAS_ENVIRONMENT`, read at request time so one image
+  still runs anywhere; a `NEXT_PUBLIC_` variable would bake it in at build.
+- **`spec.observability.dashboard` is rendered now, and was not before.** It was
+  validated, parsed and dropped — no column, no rule, nothing shown — so
+  declaring one did nothing. `ServiceDetail` already carried the whole manifest,
+  so the fix was rendering rather than plumbing. The link is scheme-checked in
+  the console as well as the schema: a manifest is another repository's
+  document, and an `href` is a small execution of it.
 - **Catalog search and tier filtering happen in the console**, over one page
   only, because the control plane has no search endpoint. Do not describe it as
   fleet-wide search.

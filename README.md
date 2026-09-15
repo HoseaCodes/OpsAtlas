@@ -70,7 +70,7 @@ jobs — selection, focus ring, error-budget fill, open-incident emphasis. See
 | Semantic validation — duplicate environment names | **Real** | same |
 | Architecture decisions, phases 0–10 | **Real** (written down) | [`docs/adr/`](docs/adr/), [`docs/roadmap.md`](docs/roadmap.md) |
 | Design system extracted from the prototype | **Real** (written down) | [`docs/design/tokens.md`](docs/design/tokens.md) |
-| Control plane (Java 21 / Spring Boot) | **Real** | `make test` — 286 JVM tests |
+| Control plane (Java 21 / Spring Boot) | **Real** | `make test` — 288 JVM tests |
 | PostgreSQL schema and Flyway migrations | **Real** | `SeedConsistencyIT`, and Hibernate `ddl-auto: validate` refuses to start on drift |
 | `POST /api/v1/services` — register from a `service.yaml` | **Real** | `RegistrationApiIT`, plus 13 curl assertions against a running server |
 | Safe YAML ingestion — size cap, no alias expansion, no type construction | **Real** | `ManifestValidationTest` — billion-laughs, `!!java` tags, duplicate keys and a 70 KiB body are all refused |
@@ -78,13 +78,18 @@ jobs — selection, focus ring, error-budget fill, open-incident emphasis. See
 | Idempotent re-registration by manifest digest | **Real** | `RegistrationApiIT` — a replay returns 200 and does not move `version` |
 | `PUT` with `If-Match` optimistic locking (428 / 412) | **Real** | `RegistrationApiIT` |
 | `GET /api/v1/services` and `/{slug}` with cursor pagination | **Real** | `CatalogApiIT`, `RegistrationApiIT` |
-| Cross-organization isolation, on **every** org-scoped endpoint | **Real, and verified** | `OrgIsolationIT` — 25 tests covering services, sources, scorecard, audit log, both health endpoints and observation ingestion; two prove the database itself refuses a cross-org reference |
+| Cross-organization isolation, on **every** org-scoped endpoint | **Real, and verified** | `OrgIsolationIT` — 27 tests covering services, sources, scorecard, audit log, both health endpoints, observation ingestion and deletion; two prove the database itself refuses a cross-org reference |
 | That an endpoint cannot be added without covering its isolation | **Real, enforced** | `no_endpoint_escapes_this_test` enumerates every `/api/v1` mapping and fails the build on any that is neither covered nor exempt with a written reason |
 | That those isolation tests would catch a real leak | **Real, and verified** | removing the org filter from the audit log, the fleet health rollup and the environment lookup fails exactly three of them and nothing else |
 | OpenAPI document generated from the code, drift-checked | **Real** | `make check-openapi` fails the build on any difference |
 | Swagger UI over that document, at `/swagger-ui.html` | **Real** | served by springdoc; on by default locally, off when `OPSATLAS_SWAGGER_UI=false` |
 | Typed TypeScript client, no hand-written API types | **Real** | `make typecheck` |
-| Web console — catalog, detail, scorecard, register by paste | **Real** | 37 component tests, 26 Playwright tests against the real stack |
+| Web console — catalog, detail, scorecard, register by paste, edit and delete | **Real** | 50 component tests, 36 Playwright tests against the real stack |
+| A declared dashboard, rendered as a followable link | **Real** | `manifestLinks.test.ts` refuses `javascript:`, `data:`, `http:` and protocol-relative URLs; `observability.spec.ts` drives the real link in a browser |
+| Editing a manifest from the console, with `If-Match` | **Real** | `manage.spec.ts` — an invalid edit is refused with the control plane's own JSON Pointer |
+| Retiring a service, keeping its entry and history | **Real** | `manage.spec.ts` — `spec.lifecycle: retired` through the edit form, and it stays in the catalog |
+| Deleting a service, with the audit trail surviving it | **Real** | cross-org and positive-control coverage in the isolation suite, plus `manage.spec.ts` — `service.deleted` is still readable after the row is gone |
+| The deployment label under the wordmark | **Real** | `environment.test.ts` — read from configuration, not the hardcoded "local" it used to be |
 | A copyable prompt on `/register`, generated from the schema and the live rules | **Real** | `manifestPrompt.test.ts` walks the real schema and fails if a field is missing from the prompt; a Playwright test reads the clipboard |
 | Loading / empty / partial-failure / error / never-observed states | **Real** | `states.test.tsx`, and the detail page settles its two requests independently |
 | Status carried by shape and height, never by hue | **Real** | `status.test.tsx` — a pass differs from a fail by shape, a day's availability by height |
@@ -133,7 +138,7 @@ jobs — selection, focus ring, error-budget fill, open-incident emphasis. See
 | Rotating a key revokes the old one immediately | **Real** | `ServiceCredentialIT` — both keys working during a changeover would leave a leaked key live |
 | Console sign-in, session and sign-out | **Real, and verified live** | `signin.spec.ts` drives a real browser against a real Storm-Gate: redirect to sign-in, sign in, catalog renders, reload keeps the session, sign out ends it |
 | The console holds no credential of its own | **Real** | it forwards the reader's token, so the audit log names the person rather than "the console" |
-| The browser suite, signed in | **Real** | 26 Playwright tests against the whole stack — identity provider, control plane, PostgreSQL and the console — with a shared session from a real sign-in |
+| The browser suite, signed in | **Real** | 36 Playwright tests against the whole stack — identity provider, control plane, PostgreSQL and the console — with a shared session from a real sign-in |
 | OpenAPI document declaring the bearer scheme | **Not done** | the generated contract says nothing about auth, so the typed client does not know a token exists |
 | Dependency graph and blast radius | **Not built** | needs trace data |
 | Real-user SLO measurement | **Not built** | probe availability is not an SLO — see below |

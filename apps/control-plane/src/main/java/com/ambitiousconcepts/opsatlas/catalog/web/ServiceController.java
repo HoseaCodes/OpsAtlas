@@ -14,6 +14,7 @@ import java.net.URI;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -22,6 +23,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -128,6 +130,34 @@ class ServiceController {
                 currentPrincipal.get().orgId(), slug, document, parseIfMatch(ifMatch), sourceRef);
 
         return ResponseEntity.ok().eTag(etag(service)).body(service);
+    }
+
+    /**
+     * Remove a registered service.
+     *
+     * <p>{@code If-Match} is required, as it is on update. Deleting something
+     * that has changed since it was read is the one mistake in this API that
+     * cannot be undone from inside the system, so a delete with no stated
+     * version is refused with 428 rather than applied.
+     *
+     * <p>Answers 204. The audit entry survives the row it describes, because
+     * {@code audit_event} declares no foreign key to {@code service} - so "what
+     * happened to orders-api" stays answerable after orders-api is gone.
+     *
+     * <p>Consider {@code spec.lifecycle: retired} instead. It keeps the entry,
+     * its scorecard history and its probe record, and is what the catalog is
+     * built for; this is for a registration that should not exist.
+     */
+    // Declared rather than returned through a ResponseEntity, so the generated
+    // contract says 204. Springdoc cannot infer a status from ResponseEntity<Void>
+    // and documented it as 200, which would have been the contract stating
+    // something the endpoint does not do.
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @DeleteMapping("/{slug}")
+    void delete(
+            @PathVariable String slug,
+            @RequestHeader(value = HttpHeaders.IF_MATCH, required = false) String ifMatch) {
+        registration.delete(currentPrincipal.get().orgId(), slug, parseIfMatch(ifMatch));
     }
 
     private static String etag(ServiceDetail service) {

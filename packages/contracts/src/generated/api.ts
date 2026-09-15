@@ -14,7 +14,7 @@ export interface paths {
         get: operations["get"];
         put: operations["update"];
         post?: never;
-        delete?: never;
+        delete: operations["delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -477,6 +477,28 @@ export interface operations {
                 content: {
                     "*/*": components["schemas"]["ServiceDetail"];
                 };
+            };
+        };
+    };
+    delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string;
+            };
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

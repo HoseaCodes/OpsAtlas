@@ -230,6 +230,69 @@ class ServiceRegistrationService implements ServiceRegistration {
     }
 
     /**
+     * Remove a service from the catalog.
+     *
+     * <p>A hard delete, and safe to be one because of how the schema is built.
+     * {@code environment}, {@code policy_result}, {@code environment_state} and
+     * {@code environment_day} all declare {@code ON DELETE CASCADE}, so they go
+     * with it; {@code source.service_id} declares {@code ON DELETE SET NULL}, so
+     * a watched repository stays watched and merely stops pointing at a row that
+     * is gone. {@code ServiceEntity} maps no children, so this issues one
+     * statement and the database does the rest.
+     *
+     * <p><strong>The audit trail survives.</strong> {@code audit_event} holds
+     * {@code subject_type} and {@code subject_id} and declares no foreign key to
+     * {@code service}, so the record that this service was registered, updated
+     * and finally deleted outlives the service itself. The deletion is recorded
+     * before the row goes, in the same transaction, so there is no window in
+     * which one exists without the other.
+     *
+     * <p>{@code If-Match} is required for the same reason it is on update, only
+     * more so: deleting something that changed since you read it is the one
+     * mistake here that cannot be undone from inside this system.
+     *
+     * <p>Retiring is the other option and usually the better one -
+     * {@code spec.lifecycle: retired} keeps the entry and its history. This
+     * exists for the registration that should not have happened at all.
+     */
+    @Override
+    @Transactional
+    public void delete(UUID orgId, String slug, Long ifMatchVersion) {
+        ServiceEntity service = services.findByOrgIdAndSlug(orgId, slug)
+                .orElseThrow(() -> new NotFoundException("Service", slug));
+
+        if (ifMatchVersion == null) {
+            throw new PreconditionException(
+                    PreconditionException.Kind.REQUIRED,
+                    "Deleting a service requires an If-Match header carrying the version you read. The current"
+                            + " version is \"" + service.getVersion() + "\". Without it, a delete could remove a"
+                            + " service somebody has just changed.");
+        }
+        if (ifMatchVersion != service.getVersion()) {
+            throw new PreconditionException(
+                    PreconditionException.Kind.FAILED,
+                    "The service '" + slug + "' has changed since you read it: you sent If-Match \"" + ifMatchVersion
+                            + "\" but the current version is \"" + service.getVersion()
+                            + "\". Re-read it and decide again whether you still mean to delete it.");
+        }
+
+        Map<String, Object> payload = new java.util.LinkedHashMap<>();
+        payload.put("slug", service.getSlug());
+        payload.put("repository", service.getRepository());
+        payload.put("sourcePath", service.getSourcePath());
+        payload.put("tier", (int) service.getTier());
+        payload.put("lifecycle", service.getLifecycle());
+        payload.put("manifestDigest", service.getManifestDigest());
+        payload.put("schemaVersion", service.getSchemaVersion());
+        audit.record(orgId, "service.deleted", "service", service.getId(), payload);
+
+        services.delete(service);
+
+        log.info("Deleted service {} (repository {}, digest {})", slug, service.getRepository(),
+                service.getManifestDigest());
+    }
+
+    /**
      * What an audit reader needs to reconstruct the change without re-reading
      * the manifest. The digest identifies exactly which document was stored; the
      * score is what it was judged to be at that moment.

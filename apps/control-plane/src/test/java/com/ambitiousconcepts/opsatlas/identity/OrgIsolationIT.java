@@ -97,6 +97,7 @@ class OrgIsolationIT extends PostgresTestBase {
             "POST /api/v1/services",
             "GET /api/v1/services/{slug}",
             "PUT /api/v1/services/{slug}",
+            "DELETE /api/v1/services/{slug}",
             "GET /api/v1/services/{slug}/scorecard",
             "GET /api/v1/services/{slug}/health",
             "GET /api/v1/audit-events",
@@ -276,6 +277,49 @@ class OrgIsolationIT extends PostgresTestBase {
                         "select version from service where id = ?", Long.class, theirServiceId))
                 .as("their row must be untouched")
                 .isZero();
+    }
+
+    @Test
+    @DisplayName("deleting another organization's service is 404, and it survives")
+    void delete_cannot_reach_across_the_boundary() throws Exception {
+        // The worst thing a leaked endpoint could do. A 403 would confirm the
+        // service exists; 404 is the answer that tells a stranger nothing.
+        mockMvc.perform(delete("/api/v1/services/their-secret-api").header("If-Match", "\"0\""))
+                .andExpect(status().isNotFound());
+
+        assertThat(jdbc.queryForObject(
+                        "select count(*) from service where id = ?", Integer.class, theirServiceId))
+                .as("their service must still exist")
+                .isOne();
+    }
+
+    @Test
+    @DisplayName("we can delete our own service, so the 404 above is scoping and not a broken endpoint")
+    void delete_works_for_our_own_service() throws Exception {
+        // The positive control. Without it, an endpoint that answered 404 to
+        // everybody would pass the test above while being entirely broken -
+        // which is the failure mode this class exists to rule out.
+        String manifest = Files.readString(EXAMPLES.resolve("orders-api.yaml"));
+        mockMvc.perform(post("/api/v1/services").contentType(YAML).content(manifest))
+                .andExpect(status().isCreated());
+
+        String etag = mockMvc.perform(get("/api/v1/services/orders-api"))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getHeader("ETag");
+
+        mockMvc.perform(delete("/api/v1/services/orders-api").header("If-Match", etag))
+                .andExpect(status().isNoContent());
+
+        mockMvc.perform(get("/api/v1/services/orders-api")).andExpect(status().isNotFound());
+
+        // The audit trail outlives the row: audit_event declares no foreign key
+        // to service, which is what makes a hard delete acceptable at all.
+        assertThat(jdbc.queryForObject(
+                        "select count(*) from audit_event where action = 'service.deleted'", Integer.class))
+                .as("the deletion must be recorded even though the service is gone")
+                .isOne();
     }
 
     @Test

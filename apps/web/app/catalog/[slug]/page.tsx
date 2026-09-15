@@ -12,6 +12,7 @@ import { CheckMark, type CheckStatus } from "@/components/CheckMark";
 import { HealthMeter, toHealthState } from "@/components/HealthMeter";
 import { NotObservedBadge } from "@/components/MockedBadge";
 import { Ribbon } from "@/components/Ribbon";
+import { ServiceAdmin } from "@/components/ServiceAdmin";
 import { ServiceTabs } from "@/components/ServiceTabs";
 import { ErrorState, NotYetMeasured, PartialFailure } from "@/components/states";
 import { controlPlane, noStore } from "@/lib/api";
@@ -181,6 +182,9 @@ function OverviewPane({
           <dt className="text-ink-2">Repository</dt>
           <dd className="mono m-0 break-words text-[12.5px]">{service.repository}</dd>
 
+          <dt className="text-ink-2">Lifecycle</dt>
+          <dd className="mono m-0 text-[12.5px]">{service.lifecycle}</dd>
+
           <dt className="text-ink-2">Manifest path</dt>
           <dd className="mono m-0 text-[12.5px]">{service.sourcePath}</dd>
 
@@ -240,6 +244,13 @@ function OverviewPane({
           checks that the dashboard resolves or that telemetry arrives under that name.
         </p>
       </section>
+
+      <ServiceAdmin
+        slug={service.slug}
+        version={service.version}
+        manifest={service.manifest}
+        lifecycle={service.lifecycle}
+      />
 
       <section>
         <h2 className="mb-2.5 text-[13px] font-semibold">Environments</h2>
