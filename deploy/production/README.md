@@ -79,6 +79,12 @@ ufw enable
 > publishes 80 and 443, so there is nothing exposed for it to bypass — but if
 > you ever add a `ports:` entry, ufw will not protect it. Bind to `127.0.0.1`
 > explicitly in that case.
+>
+> If your provider has a firewall that runs outside the machine — DigitalOcean's
+> Cloud Firewall, AWS security groups — use it as well, and treat it as the real
+> one. It filters before the packet reaches the host, so nothing Docker does to
+> iptables can undo it. `ufw` then becomes defence in depth rather than the only
+> thing standing between a misconfigured `ports:` line and the internet.
 
 ## 3. Images
 
