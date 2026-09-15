@@ -157,12 +157,12 @@ measurement will be labelled in the interface, not only in a comment.
   actually scanned, whether coverage is actually above the gate — none of that is
   checked yet, because the integrations that would check it do not exist. See
   [ADR 0004](docs/adr/0004-scorecard-rule-model.md).
-- **Nothing has been load-tested, security-tested, or run in production.** No
-  performance, scale, availability or security claim appears anywhere in this
-  repository, because none has been measured. The configuration for a deployment
-  now exists — [`deploy/production/`](deploy/production/), [ADR 0014](docs/adr/0014-deployment-is-one-box.md) —
-  and has been verified as far as it can be without a host, which is not the same
-  as having been run on one.
+- **Nothing has been load-tested or security-tested.** No performance, scale,
+  availability or security claim appears anywhere in this repository, because
+  none has been measured. It *is* deployed — [`deploy/production/`](deploy/production/),
+  [ADR 0014](docs/adr/0014-deployment-is-one-box.md) — on one box, with no
+  backups and no redundancy. Reachable is not the same as production-grade, and
+  this document will not call it the latter.
 
 ---
 
@@ -528,10 +528,15 @@ the two look alike and are not:
 | Images | built from source | pulled by commit SHA or release tag, never `latest` |
 | TLS | none | Caddy, with automatic renewal |
 
-**It has not been run against a real host.** Each part is verified — the compose
-file renders and refuses a missing secret, the Caddyfile passes `caddy validate`,
-all three images build — but the sequence has not been executed end to end, and
-there are no backups yet.
+**It is running.** Deployed to a DigitalOcean droplet on 2026-09-15 and serving
+at `https://opsatlas.hoseacodes.com` — seven containers healthy, a Let's Encrypt
+certificate over `tls-alpn-01`, HTTP redirecting to HTTPS, and the API answering
+200 for a provisioned caller and 401 without a token.
+
+Still true, and worth saying in the same breath: **there are no backups**, it is
+one box with no redundancy and no zero-downtime deploy, and nothing has been
+load-tested or security-tested. Deploying something does not make it production-
+grade; it makes it reachable.
 
 ---
 

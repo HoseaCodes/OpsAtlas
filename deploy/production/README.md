@@ -5,11 +5,17 @@ shape and what it costs is
 [ADR 0014](../../docs/adr/0014-deployment-is-one-box.md); this file is how to do
 it.
 
-Nothing here has been run against a real host yet. It is assembled from parts
-that were each verified locally — the compose file renders and refuses missing
-secrets, the Caddyfile passes `caddy validate`, all three images build,
-`make prod-first-user` creates an account and reads back its subject — but the
-sequence below has not been executed end to end. Expect to hit something.
+**This has been run.** It was executed end to end against a DigitalOcean droplet
+on 2026-09-15 and the result is serving at `https://opsatlas.hoseacodes.com`:
+seven containers healthy, a Let's Encrypt certificate obtained over
+`tls-alpn-01`, and `GET /api/v1/services` answering 200 for the provisioned
+operator and 401 without a token.
+
+It found three faults that a laptop could not have surfaced, all now fixed —
+the documented first start was impossible, the console image was permanently
+unhealthy while serving traffic correctly, and `publish.yml` produced a `latest`
+tag it claimed never to produce. If you are reading this to deploy a second one,
+you are following a path that has been walked.
 
 ## What you need first
 

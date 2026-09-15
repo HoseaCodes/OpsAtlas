@@ -27,14 +27,15 @@ worse than no `terraform/` directory.
 > Update this section whenever it becomes inaccurate. It is the first thing
 > future sessions read.
 
-- **Phase:** **phases 0–10 done, and 12 is part done.** Authentication (9) and
+- **Phase:** **phases 0–10 done, and 12's deployment is live.** Authentication (9) and
   packaging (10) are complete. The system measures something and can explain it:
   a Go observer probes declared health endpoints, the catalog reports what it
   found, and one identifier follows a request through the logs, the traces and
   the audit log. Phase 11 — the transactional outbox and platform events — waits
-  for a demonstrated need (§6). Phase 12 was split: the **deployment** exists as
-  configuration (ADR 0014) and has never been run on a host; **Terraform,
-  Kubernetes, Helm and k6 still wait.** The phase list is in `docs/roadmap.md`.
+  for a demonstrated need (§6). Phase 12 was split: the **deployment is live**
+  (ADR 0014), and **Terraform, Kubernetes, Helm and k6 still wait** — no longer
+  circularly, since there is now something for them to describe. The phase list
+  is in `docs/roadmap.md`.
 - **What exists:** the `service.yaml` v1 JSON Schema and fixtures; a running
   control plane that registers services from a real manifest and serves them —
   `POST`, `GET /{slug}`, `GET` (cursor-paged), `PUT` with `If-Match` — with the
@@ -74,13 +75,15 @@ worse than no `terraform/` directory.
   26 Playwright tests against the real stack. Integration tests use
   Testcontainers and need a running Docker daemon; the Playwright tests need the
   stack running.
-- **CI has run, and it is green.** Run #1 on 2026-09-13, commit `16b3435`,
-  branch `master`: all six jobs passed — contract fixtures (23s), console (43s),
-  observer (84s), control plane (119s), OpenAPI drift (119s) and the browser
-  smoke test (190s). That last one is the one worth knowing passed: it starts
-  PostgreSQL, boots the control plane, builds and serves the console and drives
-  Playwright against all three on a clean runner. The Java 21 toolchain
-  provisions itself there via the foojay resolver, with no JDK installed.
+- **CI is green on `master`.** Run #3 on 2026-09-15, commit `4e23098`: all six
+  jobs — contract fixtures (20s), observer (21s), console (54s), OpenAPI drift
+  (130s), browser smoke (152s), control plane (201s). The browser smoke job is
+  the one worth knowing passed, and it had been **silently broken** since
+  authentication landed: it started PostgreSQL and nothing else, while
+  `auth.setup.ts` needs an issuer to sign in against. It now runs `make up` and
+  `make first-user` — what a developer runs — so a fresh runner brings
+  PostgreSQL, MongoDB and Storm-Gate and generates a throwaway signing key into
+  a gitignored `.env`, which is why `make check-secrets` still passes.
   Still do not describe a *later* state of the pipeline as passing without
   checking: `/repos/HoseaCodes/OpsAtlas/actions/runs` answers unauthenticated.
 - **Only pushes to `master` run CI.** That is the trigger (`branches: [master]`)
@@ -101,12 +104,39 @@ worse than no `terraform/` directory.
   SHA or release tag and **never `latest`** — a running version you cannot name
   is one you cannot roll back. Do not "simplify" these back toward the local
   file's shape.
-- **The deployment has never been run on a host.** Everything about it is
-  verified only as far as a laptop allows: the compose file renders and refuses a
-  missing secret, the Caddyfile passes `caddy validate`, all three images build,
-  and `make prod-first-user` works against the local issuer. No image has been
-  published to GHCR, and **there are no backups** — do not describe the data as
-  surviving the box until something copies it off.
+- **It is deployed, and the URL is `https://opsatlas.hoseacodes.com`.** A
+  DigitalOcean droplet (2 vCPU, 4GB, Ubuntu 24.04) since 2026-09-15, running
+  `deploy/production` at image tag `0.1.0` from GHCR, TLS from Let's Encrypt.
+  Seven containers, one public hostname. The box is reached as `opsatlas@` with
+  `~/.ssh/id_ed25519_ocean`; root login still works and **the SSH hardening was
+  never applied** (see below).
+- **There are still no backups**, no zero-downtime deploy and no redundancy —
+  `docker compose up -d` stops and starts containers. Do not describe the data as
+  surviving the box until something copies it off, and never call this highly
+  available. DigitalOcean's droplet-level backups may be enabled; that has not
+  been confirmed from inside the box.
+- **Deploying it found three faults nothing local could have.** Worth knowing
+  because each was a confident-looking configuration that had never met a host:
+  the documented first start was impossible (the compose file derived
+  `OPSATLAS_BOOTSTRAP_ISSUER` unconditionally, and the control plane rightly
+  refuses half an identity); the console image was permanently unhealthy while
+  serving traffic perfectly, because its healthcheck used `localhost`, which
+  resolves to `::1` first while Next binds IPv4 only — the control plane is
+  unaffected and was *checked*, since Tomcat listens dual-stack; and
+  `publish.yml` produced a `latest` tag that it, and ADR 0014, both claimed it
+  never did. All three are fixed. **The `latest` tags published for `0.1.0` still
+  exist** and should be deleted from GHCR.
+- **The box carries one temporary, uncommitted patch.** The `0.1.0` console image
+  still has the broken healthcheck, so `deploy/production/docker-compose.yml`
+  *on the droplet* has a `healthcheck:` block added to the `console` service,
+  marked TEMPORARY. It is wiped by the next `git pull` there — which is also when
+  the fixed image arrives. Running a tag later than `0.1.0` without removing it
+  is harmless but pointless.
+- **The operator's password is on the box, not in this repository**, at
+  `~/operator-credentials.txt` (mode 600, owned by `opsatlas`). It was generated
+  on the droplet and has never been transmitted or printed. The account is
+  `info@ambitiousconcept.com`, subject `6aa8b8d71a306f969fee6ac3`, issuer
+  `https://auth.opsatlas.hoseacodes.com`.
 - **The observer is packaged now too** (`apps/observer/Dockerfile`), because a
   deployment without it is a catalog rather than a monitoring platform: nothing
   probes, so every environment reads "never probed" forever. Alpine rather than
