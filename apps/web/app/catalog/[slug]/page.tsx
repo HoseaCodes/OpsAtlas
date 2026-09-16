@@ -195,6 +195,15 @@ function OverviewPane({
           <dt className="text-ink-2">Repository</dt>
           <dd className="mono m-0 break-words text-[12.5px]">{service.repository}</dd>
 
+          <dt className="text-ink-2">Tier</dt>
+          {/* Also in the header above the tabs. Repeated here because this is the
+              block a reader scans for "what is this service's standing", and the
+              tier is what decides which policy rules even apply to it. */}
+          <dd className="m-0 text-[12.5px]">
+            <span className="mono">{service.tier}</span>
+            <span className="text-ink-2"> — {tierLabel(service.tier)}</span>
+          </dd>
+
           <dt className="text-ink-2">Lifecycle</dt>
           <dd className="mono m-0 text-[12.5px]">{service.lifecycle}</dd>
 

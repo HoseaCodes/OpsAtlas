@@ -49,10 +49,12 @@ test.beforeAll(async () => {
   // orders-api declares all five. customer-portal is the only fixture whose
   // runbook is an https URL rather than a repository path. legacy-report-runner
   // declares none of them, which is what makes the absence assertions mean
-  // something.
+  // something. docs-portal is the only one that states an empty dependency
+  // list, which is a different answer from declaring none.
   await ensure("orders-api.yaml");
   await ensure("customer-portal.yaml");
   await ensure("legacy-report-runner.yaml");
+  await ensure("docs-portal.yaml");
 });
 
 test("a declared contact is shown", async ({ page }) => {
@@ -145,4 +147,33 @@ test("every undeclared field says so rather than rendering an empty row", async 
   ]) {
     await expect(page.getByText(field, { exact: true })).toBeVisible();
   }
+});
+
+test("an empty dependency list reads as an answer, not as an absence", async ({ page }) => {
+  // The other half of the distinction above, and the reason docs-portal exists.
+  // Until it did, this branch was covered by a unit test and by nothing a
+  // browser ever rendered.
+  await page.goto("/catalog/docs-portal");
+
+  await expect(page.getByRole("heading", { name: "Depends on" })).toBeVisible();
+  await expect(page.getByText("Stated: this service calls nothing.")).toBeVisible();
+  await expect(page.getByText(/a question nobody answered/)).toHaveCount(0);
+});
+
+test("a service declaring everything has no 'none declared' anywhere on it", async ({ page }) => {
+  // docs-portal declares every field the overview renders. If any of them stops
+  // being read, this page starts admitting an absence it does not have.
+  await page.goto("/catalog/docs-portal");
+
+  await expect(page.getByText("#docs-eng", { exact: true })).toBeVisible();
+  await expect(page.getByText("99.5% over 30d")).toBeVisible();
+  await expect(page.getByText("Read the documentation", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "https://example.com/runbooks/docs-portal" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "https://grafana.example.com/d/docs-portal/docs-portal" }),
+  ).toBeVisible();
+
+  await expect(page.getByText(/none declared/)).toHaveCount(0);
 });

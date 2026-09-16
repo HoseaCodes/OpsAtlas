@@ -70,7 +70,7 @@ jobs — selection, focus ring, error-budget fill, open-incident emphasis. See
 | Semantic validation — duplicate environment names | **Real** | same |
 | Architecture decisions, phases 0–10 | **Real** (written down) | [`docs/adr/`](docs/adr/), [`docs/roadmap.md`](docs/roadmap.md) |
 | Design system extracted from the prototype | **Real** (written down) | [`docs/design/tokens.md`](docs/design/tokens.md) |
-| Control plane (Java 21 / Spring Boot) | **Real** | `make test` — 288 JVM tests |
+| Control plane (Java 21 / Spring Boot) | **Real** | `make test` — 290 JVM tests |
 | PostgreSQL schema and Flyway migrations | **Real** | `SeedConsistencyIT`, and Hibernate `ddl-auto: validate` refuses to start on drift |
 | `POST /api/v1/services` — register from a `service.yaml` | **Real** | `RegistrationApiIT`, plus 13 curl assertions against a running server |
 | Safe YAML ingestion — size cap, no alias expansion, no type construction | **Real** | `ManifestValidationTest` — billion-laughs, `!!java` tags, duplicate keys and a 70 KiB body are all refused |
@@ -84,7 +84,7 @@ jobs — selection, focus ring, error-budget fill, open-incident emphasis. See
 | OpenAPI document generated from the code, drift-checked | **Real** | `make check-openapi` fails the build on any difference |
 | Swagger UI over that document, at `/swagger-ui.html` | **Real** | served by springdoc; on by default locally, off when `OPSATLAS_SWAGGER_UI=false` |
 | Typed TypeScript client, no hand-written API types | **Real** | `make typecheck` |
-| Web console — catalog, detail, scorecard, register by paste, edit and delete | **Real** | 67 component and unit tests, 45 Playwright tests against the real stack |
+| Web console — catalog, detail, scorecard, register by paste, edit and delete | **Real** | 67 component and unit tests, 47 Playwright tests against the real stack |
 | A declared dashboard, rendered as a followable link | **Real** | `manifestLinks.test.ts` refuses `javascript:`, `data:`, `http:` and protocol-relative URLs; `observability.spec.ts` drives the real link in a browser |
 | Declared runbook, contact, SLO target, dependencies and journeys, rendered | **Real** | all five were validated, stored and shown nowhere until now. `manifestLinks.test.ts` (26 tests) and `declarations.spec.ts` (9 Playwright tests); a repository-relative runbook stays a path rather than being guessed into a github.com link |
 | Declared SLO target, shown as a declaration | **Real, and labelled** | the page says outright that nothing measures against it — the ribbon beside it is probe availability from one vantage point, which is a different measurement |
@@ -140,7 +140,7 @@ jobs — selection, focus ring, error-budget fill, open-incident emphasis. See
 | Rotating a key revokes the old one immediately | **Real** | `ServiceCredentialIT` — both keys working during a changeover would leave a leaked key live |
 | Console sign-in, session and sign-out | **Real, and verified live** | `signin.spec.ts` drives a real browser against a real Storm-Gate: redirect to sign-in, sign in, catalog renders, reload keeps the session, sign out ends it |
 | The console holds no credential of its own | **Real** | it forwards the reader's token, so the audit log names the person rather than "the console" |
-| The browser suite, signed in | **Real** | 45 Playwright tests against the whole stack — identity provider, control plane, PostgreSQL and the console — with a shared session from a real sign-in |
+| The browser suite, signed in | **Real** | 47 Playwright tests against the whole stack — identity provider, control plane, PostgreSQL and the console — with a shared session from a real sign-in |
 | OpenAPI document declaring the bearer scheme | **Not done** | the generated contract says nothing about auth, so the typed client does not know a token exists |
 | Declared dependency list, with kinds | **Real** | rendered on the service detail page; an absent `spec.dependencies` reads as unanswered and an empty list as "this calls nothing", which is the distinction the schema exists to keep |
 | Dependency *graph* and blast radius | **Not built** | forward edges only. Nothing computes which registered services call a given one, so the page says it is not a blast radius |
@@ -355,7 +355,7 @@ processes; `OPSATLAS_OTLP_ENDPOINT` points them somewhere else.
 ### The scorecard, and what it does not check
 
 Registering a service evaluates ten rules and stores the result in the same
-transaction as the service row. Registering the six example manifests produces:
+transaction as the service row. Registering the seven example manifests produces:
 
 ```text
 service                  tier  score    failing
@@ -365,6 +365,7 @@ billing-worker           2     7/10     environment-urls-declared, liveness-prob
 customer-portal          2     9/10     observability-service-name
 identity-bff             1     9/10     dependencies-declared
 legacy-report-runner     3     0/7      (7 failing; 3 not applicable at tier 3)
+docs-portal              2     10/10    -
 ```
 
 Two things in that table are the whole design:
@@ -507,7 +508,7 @@ curl -s -X POST localhost:8080/api/v1/services \
 }
 ```
 
-`make check-examples` validates the six example manifests, then asserts that each
+`make check-examples` validates the seven example manifests, then asserts that each
 of the eight invalid fixtures fails at exactly the JSON Pointer recorded in
 `examples/services/invalid/expected.json`. It fails if a good manifest breaks
 *and* if a bad manifest stops being bad — a checker that cannot fail is worthless,

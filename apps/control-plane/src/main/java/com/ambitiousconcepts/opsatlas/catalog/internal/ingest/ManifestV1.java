@@ -52,7 +52,44 @@ public record ManifestV1(String apiVersion, Metadata metadata, Spec spec) {
 
     public record Observability(Optional<String> serviceName, Optional<String> dashboard) {}
 
-    public record Operations(Optional<Slo> slo, Optional<String> runbook, Optional<String> contact) {}
+    public record Operations(
+            Optional<Slo> slo, Optional<String> runbook, Optional<String> contact, Optional<Oncall> oncall) {}
+
+    /**
+     * Where the rotation lives and what it covers.
+     *
+     * <p>Not who is on call. That is live state held by a paging provider, and a
+     * name this system could not refresh would go stale into the one page
+     * somebody reads at 03:00 - see ADR 0016.
+     */
+    public record Oncall(Optional<String> rotation, Optional<Coverage> coverage, Optional<String> escalation) {}
+
+    /** What hours the rotation actually answers in. */
+    public enum Coverage {
+        TWENTY_FOUR_BY_SEVEN("24x7"),
+        BUSINESS_HOURS("business-hours"),
+        BEST_EFFORT("best-effort");
+
+        private final String wire;
+
+        Coverage(String wire) {
+            this.wire = wire;
+        }
+
+        public String wireValue() {
+            return wire;
+        }
+
+        static Coverage parse(String value) {
+            // The schema constrains this to the three values below, so an
+            // unrecognised one cannot reach here from a validated document.
+            return switch (value) {
+                case "business-hours" -> BUSINESS_HOURS;
+                case "best-effort" -> BEST_EFFORT;
+                default -> TWENTY_FOUR_BY_SEVEN;
+            };
+        }
+    }
 
     public record Slo(double availability, String window) {}
 

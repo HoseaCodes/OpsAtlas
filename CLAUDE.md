@@ -72,9 +72,9 @@ worse than no `terraform/` directory.
   **No JDK needs to be installed** — the build declares a Java 21 toolchain and
   Gradle provisions Temurin 21 itself. Go 1.27+ **is** required for
   `apps/observer`; it is installed here via Homebrew.
-- **Tests:** `make test` — 14 schema fixtures, 67 console component and unit
-  tests, 35 Go tests (race-clean) and 288 JVM tests, all passing. `make test-all`
-  adds 45 Playwright tests against the real stack. Integration tests use
+- **Tests:** `make test` — 15 schema fixtures, 67 console component and unit
+  tests, 35 Go tests (race-clean) and 290 JVM tests, all passing. `make test-all`
+  adds 47 Playwright tests against the real stack. Integration tests use
   Testcontainers and need a running Docker daemon; the Playwright tests need the
   stack running.
 - **CI is green on `master`.** Run #3 on 2026-09-15, commit `4e23098`: all six
@@ -315,7 +315,20 @@ worse than no `terraform/` directory.
   a rule that quietly changes its mind about a manifest fails the build.
 - **The README's fleet table is a test fixture, not prose.** `PolicySetIT` parses
   it and compares it to real scores. When it fails it prints the correct table in
-  the README's own column widths, ready to paste.
+  the README's own column widths, ready to paste. **Adding an example manifest
+  means adding it to `FLEET` and to that table** — and that is now enforced:
+  `no_example_manifest_escapes_the_fleet_table` reads `examples/services` off
+  disk, so a manifest nobody documented fails the build instead of quietly making
+  the README describe a fleet that is missing one. It was added because exactly
+  that happened when `docs-portal` was written.
+- **`docs-portal` is the empty-dependency fixture.** It is the only manifest that
+  states `spec.dependencies: []` — "this service calls nothing", which is an
+  answer, as against an absent key, which is a question nobody answered. Both the
+  scorecard and the detail page distinguish them, and before `docs-portal`
+  existed the second branch was covered by a unit test and by nothing a browser
+  ever rendered. It is also the only manifest declaring every field the overview
+  can show, which is what `declarations.spec.ts` uses to assert that a fully
+  declared service shows no "none declared" anywhere.
 - **A file a test reads at runtime must be declared as a Gradle input.** README.md,
   `examples/services` and `packages/contracts/schemas` are. An undeclared one
   leaves the test task up-to-date and the test unrun — green for having been

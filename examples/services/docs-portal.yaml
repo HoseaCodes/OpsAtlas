@@ -1,0 +1,41 @@
+# Every field the console renders, in one manifest — and the one case no other
+# fixture covers: dependencies stated as an empty list.
+#
+# "This service calls nothing" is an answer somebody gave. An absent key is a
+# question nobody answered. The scorecard distinguishes them
+# (DependenciesDeclaredCheck passes an empty list and fails an absent key) and
+# so does the detail page, which is why a fixture for it has to exist.
+#
+# A static documentation site is the honest place to put it: this is a service
+# that genuinely calls nothing, rather than one contrived to say so.
+apiVersion: opsatlas.ambitiousconcepts.io/v1
+kind: Service
+metadata:
+  name: docs-portal
+  displayName: Docs Portal
+  owner: ambitious-concepts
+  repository: ambitious-concepts/docs-portal
+  description: Serves the published documentation. Static, and calls nothing.
+spec:
+  tier: 2
+  runtime: static
+  environments:
+    - name: production
+      url: https://docs.example.com
+    - name: staging
+      url: https://docs.staging.example.com
+  health:
+    readiness: /healthz
+    liveness: /healthz
+  observability:
+    serviceName: docs-portal
+    dashboard: https://grafana.example.com/d/docs-portal/docs-portal
+  operations:
+    slo:
+      availability: 99.5
+      window: 30d
+    runbook: https://example.com/runbooks/docs-portal
+    contact: "#docs-eng"
+  journeys:
+    - Read the documentation
+  dependencies: []
