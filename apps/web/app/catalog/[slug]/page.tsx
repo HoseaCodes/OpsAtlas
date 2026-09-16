@@ -5,6 +5,7 @@ import {
   ApiError,
   type EnvironmentHealth,
   type Scorecard,
+  type ServiceDeployments,
   type ServiceDetail,
   type ServiceHealth,
 } from "@opsatlas/contracts";
@@ -17,7 +18,17 @@ import { ServiceTabs } from "@/components/ServiceTabs";
 import { ErrorState, NotYetMeasured, PartialFailure } from "@/components/states";
 import { controlPlane, noStore } from "@/lib/api";
 import { absoluteTime, relativeTime, tierLabel } from "@/lib/format";
-import { dashboardUrl, observabilityServiceName } from "@/lib/manifestLinks";
+import {
+  dashboardUrl,
+  dependencyList,
+  journeyList,
+  observabilityServiceName,
+  operationsContact,
+  oncall,
+  coverageLabel,
+  runbookRef,
+  sloTarget,
+} from "@/lib/manifestLinks";
 
 export const dynamic = "force-dynamic";
 
@@ -39,10 +50,11 @@ export default async function ServicePage({
   // plane: if the scorecard cannot be read, the service detail is still worth
   // showing, and the page says which half is missing instead of failing whole.
   const api = await controlPlane();
-  const [detailResult, scorecardResult, healthResult] = await Promise.allSettled([
+  const [detailResult, scorecardResult, healthResult, deploymentResult] = await Promise.allSettled([
     api.getService(slug, noStore),
     api.getScorecard(slug, noStore),
     api.getServiceHealth(slug, noStore),
+    api.getServiceDeployments(slug, noStore),
   ]);
 
   if (detailResult.status === "rejected") {
@@ -69,6 +81,10 @@ export default async function ServicePage({
 
   const health: ServiceHealth | null = healthResult.status === "fulfilled" ? healthResult.value : null;
   const healthError = healthResult.status === "rejected" ? healthResult.reason : null;
+
+  const deployments: ServiceDeployments | null =
+    deploymentResult.status === "fulfilled" ? deploymentResult.value : null;
+  const deploymentError = deploymentResult.status === "rejected" ? deploymentResult.reason : null;
 
   // Keyed by environment so the overview can join without a second pass.
   // Absent means this environment has never been probed.
@@ -134,6 +150,8 @@ export default async function ServicePage({
           health={health}
           healthByEnvironment={healthByEnvironment}
           healthError={healthError}
+          deployments={deployments}
+          deploymentError={deploymentError}
         />
       )}
     </>
@@ -158,6 +176,8 @@ function OverviewPane({
   health,
   healthByEnvironment,
   healthError,
+  deployments,
+  deploymentError,
 }: {
   service: ServiceDetail;
   scorecard: Scorecard | null;
@@ -165,9 +185,42 @@ function OverviewPane({
   health: ServiceHealth | null;
   healthByEnvironment: Map<string, EnvironmentHealth>;
   healthError: unknown;
+  deployments: ServiceDeployments | null;
+  deploymentError: unknown;
 }) {
   const dashboard = dashboardUrl(service.manifest);
   const telemetryName = observabilityServiceName(service.manifest);
+  const runbook = runbookRef(service.manifest);
+  const contact = operationsContact(service.manifest);
+  const slo = sloTarget(service.manifest);
+  const dependencies = dependencyList(service.manifest);
+  const journeys = journeyList(service.manifest);
+  const rotation = oncall(service.manifest);
+  // Distinct, because spec.health is one declaration copied onto every
+  // environment row; listing it per environment would repeat one fact N times.
+  const readinessPaths = [
+    ...new Set(service.environments.map((e) => e.readinessPath).filter((p): p is string => !!p)),
+  ];
+  const livenessPaths = [
+    ...new Set(service.environments.map((e) => e.livenessPath).filter((p): p is string => !!p)),
+  ];
+  // Only entries with a real https destination. A repository-relative runbook
+  // is deliberately absent: it is shown as a path above, and a link that cannot
+  // be built is not a link.
+  const deployedByEnvironment = new Map<string, NonNullable<ServiceDeployments["current"]>[string]>(
+    Object.entries(deployments?.current ?? {}),
+  );
+  // Distinct versions across environments. Two or more means something is
+  // mid-promotion, which is normal and worth saying so nobody reads it as drift.
+  const deployedVersions = [...new Set([...deployedByEnvironment.values()].map((d) => d.version))];
+  // history is newest first from the control plane, so the head is the last deploy.
+  const lastDeploy = deployments?.history?.[0];
+
+  const operationsLinks = [
+    runbook?.kind === "url" ? { label: "Runbook", href: runbook.href } : null,
+    dashboard ? { label: "Grafana dashboard", href: dashboard } : null,
+    rotation?.rotation ? { label: "On-call rotation", href: rotation.rotation } : null,
+  ].filter((link): link is { label: string; href: string } => link !== null);
 
   return (
     <div className="flex flex-col gap-7 px-4 py-5 md:px-6">
@@ -181,6 +234,15 @@ function OverviewPane({
 
           <dt className="text-ink-2">Repository</dt>
           <dd className="mono m-0 break-words text-[12.5px]">{service.repository}</dd>
+
+          <dt className="text-ink-2">Tier</dt>
+          {/* Also in the header above the tabs. Repeated here because this is the
+              block a reader scans for "what is this service's standing", and the
+              tier is what decides which policy rules even apply to it. */}
+          <dd className="m-0 text-[12.5px]">
+            <span className="mono">{service.tier}</span>
+            <span className="text-ink-2"> — {tierLabel(service.tier)}</span>
+          </dd>
 
           <dt className="text-ink-2">Lifecycle</dt>
           <dd className="mono m-0 text-[12.5px]">{service.lifecycle}</dd>
@@ -201,6 +263,97 @@ function OverviewPane({
             {relativeTime(service.registeredAt)}
           </dd>
         </dl>
+      </section>
+
+      <section>
+        <h2 className="mb-2.5 text-[13px] font-semibold">Operations</h2>
+        <dl className="grid grid-cols-[minmax(0,150px)_minmax(0,1fr)] gap-x-3.5 gap-y-2 text-[13px]">
+          <dt className="text-ink-2">Runbook</dt>
+          <dd className="m-0 break-words text-[12.5px]">
+            {runbook?.kind === "url" ? (
+              <a
+                href={runbook.href}
+                target="_blank"
+                rel="noreferrer noopener external"
+                className="mono underline"
+                style={{ color: "var(--accent)" }}
+              >
+                {runbook.href}
+              </a>
+            ) : runbook ? (
+              // A repository-relative path, shown as a path. The repository is
+              // owner/name with no host, so linking it would mean guessing a
+              // forge the manifest never named.
+              <>
+                <span className="mono">{runbook.path}</span>{" "}
+                <span className="text-ink-3">in {service.repository}</span>
+              </>
+            ) : (
+              <span className="text-ink-3">
+                none declared — add <span className="mono">spec.operations.runbook</span>
+              </span>
+            )}
+          </dd>
+
+          <dt className="text-ink-2">Contact</dt>
+          {contact ? (
+            <dd className="mono m-0 break-words text-[12.5px]">{contact}</dd>
+          ) : (
+            <dd className="m-0 text-[12.5px] text-ink-3">
+              none declared — add <span className="mono">spec.operations.contact</span>
+            </dd>
+          )}
+
+          <dt className="text-ink-2">On-call rotation</dt>
+          <dd className="m-0 break-words text-[12.5px]">
+            {rotation?.rotation ? (
+              <a
+                href={rotation.rotation}
+                target="_blank"
+                rel="noreferrer noopener external"
+                className="mono underline"
+                style={{ color: "var(--accent)" }}
+              >
+                {rotation.rotation}
+              </a>
+            ) : (
+              <span className="text-ink-3">
+                none declared — add <span className="mono">spec.operations.oncall.rotation</span>
+              </span>
+            )}
+          </dd>
+
+          <dt className="text-ink-2">Coverage</dt>
+          {rotation?.coverage ? (
+            <dd className="m-0 text-[12.5px]">{coverageLabel(rotation.coverage)}</dd>
+          ) : (
+            <dd className="m-0 text-[12.5px] text-ink-3">not declared</dd>
+          )}
+
+          {rotation?.escalation ? (
+            <>
+              <dt className="text-ink-2">Escalates to</dt>
+              <dd className="mono m-0 break-words text-[12.5px]">{rotation.escalation}</dd>
+            </>
+          ) : null}
+
+          <dt className="text-ink-2">SLO target</dt>
+          {slo ? (
+            <dd className="mono m-0 text-[12.5px]">
+              {slo.availability}% over {slo.window}
+            </dd>
+          ) : (
+            <dd className="m-0 text-[12.5px] text-ink-3">
+              none declared — add <span className="mono">spec.operations.slo</span>
+            </dd>
+          )}
+        </dl>
+        <p className="mt-2 max-w-prose text-[12.5px] text-ink-3">
+          Declarations by the owning team. Nothing here measures against the target: the 30-day ribbon
+          below is probe availability from one vantage point, which is a different measurement and
+          cannot be compared to this number. The rotation is a link to a schedule, not a claim about
+          who is on call now — OpsAtlas has no paging provider to ask.
+        </p>
       </section>
 
       <section>
@@ -253,11 +406,49 @@ function OverviewPane({
       />
 
       <section>
+        <h2 className="mb-2.5 text-[13px] font-semibold">Health checks</h2>
+        {/* readinessPath and livenessPath were in the API response and rendered
+            nowhere - the same "validated, stored, dropped" failure as the
+            manifest fields above. They are per environment in the contract, but
+            spec.health applies to all of them, so the distinct values are shown
+            rather than one row per environment repeating itself. */}
+        <dl className="grid grid-cols-[minmax(0,150px)_minmax(0,1fr)] gap-x-3.5 gap-y-2 text-[13px]">
+          <dt className="text-ink-2">Readiness</dt>
+          {readinessPaths.length > 0 ? (
+            <dd className="mono m-0 break-all text-[12.5px]">{readinessPaths.join(", ")}</dd>
+          ) : (
+            <dd className="m-0 text-[12.5px] text-ink-3">
+              none declared — add <span className="mono">spec.health.readiness</span>, and nothing can
+              be probed without it
+            </dd>
+          )}
+
+          <dt className="text-ink-2">Liveness</dt>
+          {livenessPaths.length > 0 ? (
+            <dd className="mono m-0 break-all text-[12.5px]">{livenessPaths.join(", ")}</dd>
+          ) : (
+            <dd className="m-0 text-[12.5px] text-ink-3">
+              none declared — add <span className="mono">spec.health.liveness</span>
+            </dd>
+          )}
+        </dl>
+        <p className="mt-2 max-w-prose text-[12.5px] text-ink-3">
+          The probe interval and timeout are the observer&rsquo;s own configuration, not this
+          service&rsquo;s, so they are not shown here as though the manifest set them. There is no
+          per-instance count either: a probe reaches one URL through whatever sits in front of it and
+          cannot see how many replicas answered.
+        </p>
+      </section>
+
+      <section>
         <h2 className="mb-2.5 text-[13px] font-semibold">Environments</h2>
         <table className="plain">
           <thead>
             <tr>
               <th>Environment</th>
+              <th>Version</th>
+              <th>Commit</th>
+              <th>In place for</th>
               <th>Health</th>
               <th>URL</th>
               <th>Probe availability</th>
@@ -267,9 +458,31 @@ function OverviewPane({
           <tbody>
             {service.environments.map((environment) => {
               const state = healthByEnvironment.get(environment.id);
+              const deployed = deployedByEnvironment.get(environment.id);
               return (
                 <tr key={environment.id}>
                   <td className="mono text-[12.5px]">{environment.name}</td>
+                  <td className="mono text-[12.5px]">
+                    {deployed ? (
+                      deployed.version
+                    ) : (
+                      // Nothing reported is not "not deployed". Rendering a dash
+                      // as though it were a reading is the failure §10 rules out.
+                      <NotYetMeasured>not reported</NotYetMeasured>
+                    )}
+                  </td>
+                  <td className="mono text-[12.5px]">
+                    {deployed?.commitSha ?? <span className="text-ink-3">—</span>}
+                  </td>
+                  <td className="text-[12.5px]">
+                    {deployed ? (
+                      <span title={absoluteTime(deployed.deployedAt)}>
+                        {relativeTime(deployed.deployedAt).replace(/ ago$/, "")}
+                      </span>
+                    ) : (
+                      <span className="text-ink-3">—</span>
+                    )}
+                  </td>
                   <td>
                     <HealthMeter state={toHealthState(state?.status)} detail={state?.detail} />
                   </td>
@@ -300,6 +513,63 @@ function OverviewPane({
       </section>
 
       <section>
+        <h2 className="mb-2.5 text-[13px] font-semibold">Deployments</h2>
+        {deploymentError ? (
+          <PartialFailure
+            what="The deployment history"
+            detail={
+              deploymentError instanceof ApiError
+                ? deploymentError.detail
+                : "The deployment read did not complete."
+            }
+            correlationId={deploymentError instanceof ApiError ? deploymentError.correlationId : undefined}
+          />
+        ) : (
+          <>
+            {lastDeploy ? (
+              <dl className="grid grid-cols-[minmax(0,150px)_minmax(0,1fr)] gap-x-3.5 gap-y-2 text-[13px]">
+                <dt className="text-ink-2">Last deploy</dt>
+                <dd className="m-0 text-[12.5px]" title={absoluteTime(lastDeploy.deployedAt)}>
+                  {relativeTime(lastDeploy.deployedAt)} to{" "}
+                  <span className="mono">{lastDeploy.environmentName}</span>
+                  {lastDeploy.deployedBy ? (
+                    <>
+                      {" "}
+                      by <span className="mono">{lastDeploy.deployedBy}</span>
+                    </>
+                  ) : null}
+                </dd>
+              </dl>
+            ) : (
+              <p className="max-w-prose text-[12.5px] text-ink-3">
+                Nothing has reported a deployment for this service. That means nothing told OpsAtlas,
+                not that nothing was deployed — a version is reported by whoever deploys it, and
+                OpsAtlas neither reads a registry nor asks a cluster.
+              </p>
+            )}
+
+            {deployedVersions.length > 1 ? (
+              <p className="mt-2 max-w-prose text-[12.5px] text-ink-2">
+                Environments are running different versions. That is normal for an in-flight change —
+                a promotion is a later stage of the same run — and it is not drift: nothing here
+                compares a declared version to a running one.
+              </p>
+            ) : null}
+
+            {/* Only when there is something to caveat. With nothing reported the
+                empty state above already says the same thing, and printing both
+                is two paragraphs telling a reader one fact. */}
+            {lastDeploy ? (
+              <p className="mt-2 max-w-prose text-[12.5px] text-ink-3">
+                {deployments?.notice ??
+                  "Versions are reported by whoever deployed them and are not verified."}
+              </p>
+            ) : null}
+          </>
+        )}
+      </section>
+
+      <section>
         <h2 className="mb-2.5 text-[13px] font-semibold">Last 30 days</h2>
 
         {healthError ? (
@@ -326,6 +596,92 @@ function OverviewPane({
         <p className="mt-1.5 max-w-[68ch] text-[12.5px] text-ink-3">
           {health?.notice ??
             "This is probe availability from one vantage point against a health endpoint, not an SLO."}
+        </p>
+      </section>
+
+      <section>
+        <h2 className="mb-2.5 text-[13px] font-semibold">Depends on</h2>
+        {!dependencies.stated ? (
+          <p className="max-w-prose text-[12.5px] text-ink-3">
+            Not stated. <span className="mono">spec.dependencies</span> is absent, which is a question
+            nobody answered — an empty list would be the answer “this service calls nothing”.
+          </p>
+        ) : dependencies.entries.length === 0 ? (
+          <p className="max-w-prose text-[12.5px] text-ink-2">
+            Stated: this service calls nothing.
+          </p>
+        ) : (
+          <ul className="flex flex-wrap gap-1.5 p-0">
+            {dependencies.entries.map((dependency) => (
+              <li
+                key={`${dependency.kind}:${dependency.name}`}
+                className="list-none rounded border border-rule-2 px-2 py-1 text-[12.5px]"
+              >
+                <span className="mono">{dependency.name}</span>
+                {dependency.kind === "service" ? null : (
+                  <span className="text-ink-3"> ({dependency.kind})</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+        <p className="mt-2 max-w-prose text-[12.5px] text-ink-3">
+          What this service declares it calls, unverified. OpsAtlas does not compute the reverse — nothing
+          here knows which registered services call this one — so this is not a blast radius.
+        </p>
+      </section>
+
+      <section>
+        <h2 className="mb-2.5 text-[13px] font-semibold">Journeys</h2>
+        {journeys.length > 0 ? (
+          <ul className="flex flex-wrap gap-1.5 p-0">
+            {journeys.map((journey) => (
+              <li key={journey} className="list-none rounded border border-rule-2 px-2 py-1 text-[12.5px]">
+                {journey}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="max-w-prose text-[12.5px] text-ink-3">
+            none declared — add <span className="mono">spec.journeys</span>, the customer-visible
+            experiences this service is on the path for. It is the one field telemetry cannot supply.
+          </p>
+        )}
+      </section>
+
+      <section>
+        <h2 className="mb-2.5 text-[13px] font-semibold">Operations links</h2>
+        {/* Only links that go somewhere. The prototype's row also had Traces,
+            Logs and API spec: there is no log store to link to (Loki is deferred,
+            ADR 0011), no per-service trace URL because nothing here knows where
+            Grafana lives, and no apiSpec field in the schema. CLAUDE.md §10 rules
+            out an element that implies a capability the backend does not have,
+            and a dead link is exactly that. */}
+        {operationsLinks.length > 0 ? (
+          <ul className="flex flex-wrap gap-x-5 gap-y-2 p-0">
+            {operationsLinks.map((link) => (
+              <li key={link.label} className="list-none">
+                <a
+                  href={link.href}
+                  target="_blank"
+                  rel="noreferrer noopener external"
+                  className="text-[13px] underline"
+                  style={{ color: "var(--accent)" }}
+                >
+                  {link.label}
+                </a>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="max-w-prose text-[12.5px] text-ink-3">
+            No linkable declarations. A runbook, dashboard or rotation declared as an{" "}
+            <span className="mono">https</span> URL appears here.
+          </p>
+        )}
+        <p className="mt-2 max-w-prose text-[12.5px] text-ink-3">
+          Every link here came out of this service&rsquo;s manifest. Nothing checks that any of them
+          resolves.
         </p>
       </section>
 

@@ -22,7 +22,7 @@ OpsAtlas/
 │   ├── control-plane/             ✓ Java 21 / Spring Boot 3 modular monolith
 │   │   └── src/main/java/com/ambitiousconcepts/opsatlas/
 │   │       ├── shared/            ✓ errors, pagination, correlation
-│   │       ├── identity/          ✓ the org-scoping stub
+│   │       ├── identity/          ✓ organizations, principals, token resolution
 │   │       ├── catalog/           ✓ services, environments, service.yaml ingestion
 │   │       ├── governance/        ✓ policy rules, scorecards, audit
 │   │       ├── operations/        ✓ observations, rolled up; health read model
@@ -36,17 +36,17 @@ OpsAtlas/
 │   ├── compose/                   ✓ local PostgreSQL
 │   │   └── telemetry/             ✓ collector, Tempo, Prometheus, Grafana
 │   ├── production/                ✓ one box, compose behind Caddy — ADR 0014
-│   ├── k8s/                         phase 12
-│   └── helm/                        phase 12
+│   ├── k8s/                         phase 28
+│   └── helm/                        phase 28
 ├── examples/
 │   └── services/                  ✓ example and fixture manifests
 ├── scripts/                       ✓ check-secrets.sh — a layout deviation, ADR 0012
 ├── docs/
-│   ├── adr/                       ✓ 0001-0014
+│   ├── adr/                       ✓ 0001-0015
 │   ├── architecture/              ✓ slice-one.md
 │   ├── design/                    ✓ tokens.md
 │   └── roadmap.md                 ✓ this file
-├── terraform/                       phase 12
+├── terraform/                       phase 27
 └── .github/workflows/             ✓ ci.yml, publish.yml
 ```
 
@@ -109,7 +109,8 @@ integration can see file renames in a diff.
 
 ### Phase 3 — Scorecard and audit ✓ **complete**
 
-`governance` module, the ten declaration checks from ADR 0004, `PolicyCatalog`,
+`governance` module, the declaration checks from ADR 0004 (ten at the time, eleven
+since ADR 0016), `PolicyCatalog`,
 evaluation inside the registration transaction, `policy_result`,
 `policy_result_check`, `audit_event`, `GET /api/v1/services/{slug}/scorecard`,
 `GET /api/v1/policy/rules`, `GET /api/v1/audit-events`.
@@ -147,7 +148,7 @@ link, and 375px does not scroll horizontally.
 **Known limitation:** catalog search and tier filtering are applied in the
 console, over the current page only, because the control plane has no search
 endpoint. The empty state says so rather than implying a fleet-wide search.
-Server-side filtering is the obvious next API change.
+Server-side filtering is phase 18.
 
 ### Phase 7 — The observer ✓ **complete**
 
@@ -472,6 +473,28 @@ silently:**
 
 ---
 
+## Unfinished business from slice one
+
+Slice one's definition of done named four commands. Three of them do not exist,
+and the fourth was replaced without the swap being written down. They are
+recorded here rather than quietly dropped, because a definition of done that
+names a command nobody can run teaches everybody to skim the list.
+
+| Asked for | State | What it would take |
+|---|---|---|
+| `make lint` | **Missing.** `apps/web/package.json` declares a `lint` script wrapping `next lint`, but **eslint is not a dependency**, so the script cannot run. Nothing lints the Java at all | An eslint config and dependency for the console, and a Java linter — Checkstyle, or Spotless with `palantir-java-format` — as a Gradle plugin. Both are dependencies under `CLAUDE.md` §5 and need the one-line justification |
+| `make format:check` | **Missing**, and the name is wrong for this Makefile besides: every other check is hyphenated (`check-openapi`, `check-secrets`), so it would be `make check-format` | Prettier for the workspace, Spotless for the JVM. The cost is one formatting commit that touches nearly every file |
+| `make build` | **Missing.** The work happens — the console's standalone build and the control plane's bootable jar are both produced inside the phase 10 Dockerfiles — but nothing exposes it, so there is no way to check that both still build without building images | A thin target over `pnpm --filter @opsatlas/web build` and `./gradlew :control-plane:bootJar` |
+| `make seed` | **Superseded, not dropped.** Registering the example manifests is now `make first-user` plus the console, or a watched source, or curl with a token. Seeding stopped being one command when authentication landed (ADR 0013): a seeder needs a credential, and one committed for convenience is exactly what §3 rule 5 exists to stop | Either a target that reuses the operator token `make first-user` already produces, or a decision to leave it and say so |
+
+**None of this is a correctness risk, and that is why it survived this long.**
+`make test` already runs `check-secrets`, `check-examples`, `typecheck` and
+three test suites, and CI runs the same six jobs a developer does. What is
+missing is style enforcement, not verification. It is listed because slice one
+claimed it and slice one did not deliver it.
+
+---
+
 ## After slice one
 
 Not implemented, not scaffolded, not configured. `CLAUDE.md` §14: if one of these
@@ -480,21 +503,1399 @@ expanding scope.
 
 | Phase | What | Why it waits |
 |---|---|---|
-| ~~6~~ | ~~GitHub sync~~ — **done**, by polling rather than webhooks (ADR 0008). A GitHub App is still deferred: it needs a registered application, a private key, an installation flow and somewhere to keep per-installation tokens, and identity is still a stub. | |
+| ~~6~~ | ~~GitHub sync~~ — **done**, by polling rather than webhooks (ADR 0008). A GitHub App is still deferred, though no longer because identity is stubbed — it needs a registered application, a private key, an installation flow, and somewhere to keep a per-installation secret at rest. That last one is the same missing piece phases 16 and 17 need, and it should be solved once for all three. | |
 | ~~7~~ | ~~Go observer~~ — **done**. Drift detection is deferred: it needs a deployment concept to compare a declared version against a running one. | |
 | ~~8~~ | ~~OpenTelemetry, Prometheus, Tempo, Grafana~~ — **done**. Loki is still deferred: structured JSON on stdout already carries the correlation ID, and shipping it needs an agent, a retention policy and a second query language. | |
 | ~~9~~ | ~~**Authentication and authorization**~~ (ADR 0013) — **done**. Every `/api/v1` endpoint needs a verified RS256 token, and a verified token is not a membership: a `principal` row keyed on issuer **and** subject is required, or the answer is 403. The stub resolver is deleted. The four items this row listed as open are all closed — the observer carries its own key on `X-OpsAtlas-Key`, `OrgIsolationIT` covers authorization across organizations and `no_endpoint_escapes_this_test` keeps it covering every endpoint, Prometheus scrapes with a credential, and Swagger UI is off unless asked for | |
 | ~~10~~ | ~~Packaging~~ — **done**. Multi-stage Dockerfiles for the control plane (JDK builds, JRE runs) and the console (Next standalone output), both non-root with their code read-only to the process. `make up-app` runs the stack containerised; verified by signing in through a real browser against it. Images are built from this repository rather than pulled — there is no published OpsAtlas image, and naming one that does not exist would be a promise the compose file cannot keep. | |
 | 11 | Transactional outbox, platform events, Redis read models | Only once there is a demonstrated need (§6). Nothing today has a second consumer of registration events, no observer needs coordinating, and no read model is slow |
-| **12** | **Deployment** — one box, compose behind Caddy (ADR 0014) | **Deployed.** Running on a DigitalOcean droplet since 2026-09-15 at `https://opsatlas.hoseacodes.com`: seven containers, images pulled from GHCR by tag, TLS from Let's Encrypt, one public hostname. Doing it found three faults no local check could have — an impossible first start, a console image permanently unhealthy while working, and a `latest` tag the workflow claimed not to produce. **Still open:** no backups, no zero-downtime deploy, no redundancy, and the telemetry stack is not deployed. Terraform, Kubernetes, Helm and k6 still wait, but no longer circularly — there is now something for the IaC to describe |
+| **12** | **Deployment** — one box, compose behind Caddy (ADR 0014) | **Deployed.** Running on a DigitalOcean droplet since 2026-09-15 at `https://opsatlas.hoseacodes.com`: seven containers, images pulled from GHCR by tag, TLS from Let's Encrypt, one public hostname. Doing it found three faults no local check could have — an impossible first start, a console image permanently unhealthy while working, and a `latest` tag the workflow claimed not to produce. **Still open, and now each with a phase of its own rather than a clause here:** backups are **phase 25**, k6 is **phase 26**, Terraform is **phase 27**, Kubernetes and Helm are **phase 28**. Zero-downtime deploy and redundancy follow 28; the telemetry stack is still not deployed and stays a local profile until the box has room. None of them is circular any more — there is something for the IaC to describe |
+| **13** | **Deployments** — what version is running where | **Built, minus drift.** A `deployment` table, `POST /api/v1/services/{slug}/environments/{name}/deployments` with a required idempotency key, `GET /api/v1/services/{slug}/deployments`, and the Promotion view in the console. `converge.sh` reports OpsAtlas's own deploys, so the platform's own entry carries real data. **Drift is still not built**: it needs an *observed* version and nothing exposes one — see ADR 0017. Instance counts are not possible here at all. Original reasoning below |
+| **14** | **Incidents** | Needs 13. Recording an incident with no deployment history is a worse spreadsheet; the value is the correlation. Detailed below |
+| **15** | **Drift detection** — declared version versus running version | The other half of 13, and the thing `CLAUDE.md` §5 has listed as the observer's job since the beginning. Needs a service to expose a running version, which means a new manifest field and observer support. Detailed below |
+| **16** | **Live on-call** — who is answering right now | A read-only paging-provider integration (PagerDuty, Opsgenie). ADR 0016 built the declared half; this is the half that needs somebody else's API and a credential per organization |
+| **17** | **Runtime topology** — instances, replicas, pod readiness | The prototype's "Instances 9 / 14" and "5 pods failing readiness". Needs an orchestrator, cluster credentials and a workload-to-service mapping that follows from nothing in the manifest today. Detailed below |
+| **18** | **Catalog query** — server-side search and filtering | Slice one asked for a list endpoint filterable by team and tier and searchable by name; what shipped takes `cursor` and `limit`, and the console filters the one page it holds. Invisible at seven services, wrong at a hundred. Detailed below |
+| **19** | **Alerting** — telling somebody without being asked | **The largest gap in the project, and until now it had no phase at all.** A platform that measures health and never tells anyone is a dashboard you have to remember to open. Every input landed in phases 7, 13 and 16. Detailed below |
+| **20** | **Declared operational posture** — backups, retirement dates, tests, scheduled jobs, API spec | One phase because they are one pattern: additive optional manifest fields plus scorecard rules. The catalog cannot verify any of them and must not pretend to. Detailed below |
+| **21** | **Dependency graph and blast radius** | The cheapest thing on this list: the edges are already stored, nothing walks them. Detailed below |
+| **22** | **Delivery metrics** — deploy frequency, lead time, change failure rate, pipeline health | Half of it falls out of the deployment ledger phase 13 already built. The other half needs a CI provider. Detailed below |
+| **23** | **Supply chain and security posture** — SBOM, known vulnerabilities, image provenance | Different in kind from 20: these must be *verified* from an external source, not declared. Detailed below |
+| **24** | **Log aggregation** | Deferred in ADR 0011 with reasons that still hold. Given a number here so it stops being a gap with no home |
+| **25** | **Backups and restore** | **No phase has ever owned this**, and ADR 0014 named it a consequence and left it there. Two volumes are the system of record, not one — PostgreSQL, and the issuer's MongoDB, without which nobody can sign in. Ready now; nothing blocks it. Detailed below |
+| **26** | **Load and soak testing** — k6 | Named in `CLAUDE.md` §14 and in the phase 12 row, written down nowhere. It is the only item on this list that deletes a sentence from the README rather than adding a feature. Ready now. Detailed below |
+| **27** | **Infrastructure as code** — Terraform | ADR 0014 rejected it with a reason that still holds: the box is worth describing in code once its shape has stopped changing, and it has not. Has a stated trigger rather than a date. Detailed below |
+| **28** | **Kubernetes and Helm** | "Deferred, not rejected" in ADR 0014. Coupled to phase 17, which needs a cluster to read; decide them together. Detailed below |
+| **29** | **Security posture and threat model** — `docs/security/` | Asked for by the founding prompt, never created, while the decisions it would document all exist and are tested. No new code; it is the consolidation plus the honest list of what is *not* defended. One finding already in hand. Ready now. Detailed below |
+| **30** | **Inbound rate limiting** | **There is none.** The only rate limit in this codebase is GitHub's, outbound. The founding prompt required org scope in rate limits; an authenticated API on a public address has nothing bounding call rate. Detailed below |
+| **31** | **The public case study surface** | The deployed console is a login wall: six routes, all gated, no public page at all. This project has two jobs and the deployment does one of them. Blocks on nothing; the decision inside it is how much live data a public page shows. Detailed below |
+| **32** | **Shareable per-service pages** | A capability URL somebody without an account can open, showing one service's status. The first unauthenticated read path in the system, so the projection is the phase: environment URLs, versions, owners and dependencies stay private, enforced by a test that fails when a field is added. Detailed below |
+| **33** | **Telemetry summaries in the control plane** | Phase 8 built a telemetry plane and the control plane has never queried it. Error rate, request volume, latency and last-sample-seen all exist one hop away and are read by nothing. It is also where percentiles and a real error budget become possible, and where `spec.observability.serviceName` gets its first reader. Detailed below |
+| **34** | **Onboard a real application** | Not a feature — the first real use. Eight curated examples written by the schema's author are not a test of the schema. Needs no new code, and should be expected to break things. Detailed below |
+| **35** | **Scorecard history** | **The rows already exist and nothing prunes them.** `policy_result` is one row per evaluation and only the latest is ever served. Cheapest item on this list; the care is in not drawing an event log as a time series. Detailed below |
+| **36** | **The audit log page** | The endpoint has existed since phase 3 and §10's navigation names Audit Log. The most complete governance artefact in the system is reachable only by curl. Detailed below |
+| **37** | **Teams** | In the schema, in the domain model, exposed by no controller. The decision is not the page — it is what `metadata.owner` means. Detailed below |
+| **38** | **What this deployment costs** | Not the FinOps page: per-service cost needs phase 17 and phase 33. What can be built now is the platform's own bill, declared and labelled as such. Detailed below |
+| **39** | **Capacity — designed, tested, observed** | Three columns, never one number, and a designed figure only counts if it changed a design decision. Its real output is the list of things that break first. Detailed below |
+| **40** | **Golden paths and reusable workflows** | The largest platform capability absent here; §10's navigation has listed Golden Paths from the start with nothing behind it. Repository *generation* is not available — that is a GitHub write, which ADR 0008 refuses. Detailed below |
+| **41** | **Coverage of this project's own tests** | 413 tests and no coverage measurement in any of the three languages — no JaCoCo, no vitest reporter, no `go test -cover`. Publish the number; do not gate on it yet. Detailed below |
+| **42** | **The design brief** | The honest replacement for a requirements document: problem, audience, non-goals, real constraints, and the onboarding path phase 34 performs without documenting. Detailed below |
+
+### Phase 11 — Outbox, platform events, read models
+
+**No design here, deliberately.** Every decision this phase needs depends on the
+consumer that does not exist: whether events are ordered per service or globally,
+whether a read model is Redis or a materialized view, and whether the outbox is
+polled or tailed are all answerable once something consumes them and guesses
+before that. Writing the design now would mean writing it twice, and the second
+version would have to argue with the first.
+
+**The trigger to watch for**, so this is deferred by judgement rather than by
+inertia — any one of:
+
+- A second consumer of registration. Today the only one is the scorecard, and it
+  runs inside the same transaction, which is the correct design for exactly one
+  consumer and the wrong one for two.
+- A read query slow enough to need caching and not fixable by an index. None
+  exists; the fleet is small enough that every catalog query is a sequential scan
+  nobody notices.
+- Work that has to survive a control-plane restart. The retention job and the
+  source poller are both `@Scheduled` and both re-run harmlessly on the next
+  tick, which is why neither needs durability.
+
+Until one of those is true, this phase is a directory that would exist to look
+serious — which is what §3 rule 3 rules out.
+
+### Phase 13 — Deployments and drift
+
+> **Built on 2026-09-16, except drift.** The table, the endpoints, the console
+> view and OpsAtlas reporting its own deploys are done and tested. What follows
+> was written before that and is kept because the reasoning still holds — the
+> deferred half is the same half. ADR 0017 records what was decided.
+
+
+The first phase since the observer that adds a new fact about the world rather
+than a new view of an existing one.
+
+**What it adds.** A `deployment` table under `environment`, and the
+`DesiredState` that §7 has listed since the beginning and nothing has ever
+written: the version an environment is *supposed* to be running. A deployment
+row is version, commit SHA, who or what deployed it, and when. "In place for 9h"
+falls out of `deployed_at` and needs no column.
+
+Storage is bounded by deploy frequency rather than probe frequency, so ADR 0009's
+rule does not apply and these are rows, not counters. They are platform metadata,
+which is exactly what §6 says PostgreSQL is the system of record for.
+
+**Where the declared version comes from.** An endpoint the deploying pipeline
+calls — `POST /api/v1/services/{slug}/environments/{name}/deployments`, with an
+idempotency key per §9, because a retried deploy notification must not become two
+deployments. The thing that deploys is the only thing that reliably knows it
+happened. OpsAtlas does not watch a registry and does not infer.
+
+**Where the observed version comes from, and the hard part.** The observer has to
+be able to ask a running service what it is. There is no universal convention for
+that, which is the real reason this phase is not free: it needs an additive
+optional `spec.observability.versionEndpoint` in the v1 schema — a declared path
+returning a version string. Additive and optional, so every existing manifest
+still validates and `apiVersion` does not move (§9). A service that declares none
+can be deployed-to and tracked; it simply cannot be drift-checked, and must be
+shown as *not checkable* rather than as *no drift*. That distinction is the same
+one the ribbon already makes between "never probed" and "healthy", and it will be
+got wrong the same way if it is not asserted.
+
+**What it unblocks, which is the argument for doing it next:**
+
+- **Drift detection**, deferred since phase 7 for exactly this reason. Declared
+  version ≠ observed version, per environment. A failed probe stays an outage;
+  drift is a different fact and must keep its own name.
+- **The Promotion view** — prod on 5.0.2 while staging is on 5.1.0-rc1, and how
+  long each has been there. Every field in that block of the prototype except
+  instance counts.
+- **Phase 14**, below.
+
+**Deliberately not in this phase, so the scope does not drift the way the code
+might:**
+
+- **Deploy gates.** Blocking somebody's pipeline on a scorecard is a much larger
+  promise than recording what it did, and it makes OpsAtlas a hard dependency of
+  everyone else's release. Recording first, gating only if asked for.
+- **Triggering a deploy.** OpsAtlas never writes to a monitored repository
+  (ADR 0008) and this does not change that. It records; it does not act.
+- **"Instances 10 / 10" and "3 consecutive failures to evict."** These are
+  orchestrator facts. Probing one URL through a load balancer cannot count
+  replicas, and rendering a number that cannot be measured is the failure §10
+  rules out. They need a Kubernetes integration, not a deployment table.
+
+### Phase 14 — Incidents
+
+Listed in §7's domain model, in §10's eventual navigation, and in the four jobs
+colour is rationed to ("open-incident emphasis"). Until now it had no phase,
+which meant it was in the vocabulary of the project and in nobody's plan.
+
+**The decision that shapes it: OpsAtlas records incidents, it does not declare
+them.** Opening one automatically from probe failure is the obvious feature and
+the wrong one at this fidelity — probe availability from a single vantage point
+is not an outage, and an incident that pages someone because one network position
+had a bad minute is worse than no incident at all. Incidents are opened by a
+person, or by an external alerting system through the API. What OpsAtlas adds is
+the correlation nobody else has in one place: the affected service and
+environments, the deployments that landed just before it (phase 13), the
+declared `spec.journeys` that say who is affected, and the audit trail.
+
+**What it needs:** a lifecycle (open → mitigated → resolved), a severity rendered
+as a count of filled marks rather than a colour (§10), affected environments, and
+a timeline of entries. The nav item appears when the page is real, not before.
+
+**The honest caveat to write down now, before it is convenient to forget:** an
+incident record is only as good as the discipline of the people filling it in,
+and a half-maintained incident log reads as a claim that nothing has broken
+recently. The phase is not finished until the empty state says which it is.
+
+### Phase 15 — Drift detection
+
+Phase 13 records what somebody said they deployed. Drift is the gap between that
+and what is **actually answering**, and it is the whole reason the deployment
+concept was worth building.
+
+**The hard part is getting an observed version at all.** There is no universal
+way to ask a running service what it is. Two routes:
+
+- **A declared version endpoint.** An additive optional
+  `spec.observability.versionEndpoint` — a path the observer GETs during a pass.
+  Additive and optional, so every existing manifest still validates and
+  `apiVersion` does not move (§9). The response convention has to be lenient and
+  written down: a trimmed `text/plain` body, or JSON carrying `version` or
+  `build.version` (which is what Spring's `/actuator/info` already returns).
+  Size-capped and treated as untrusted, like every other byte from a monitored
+  repository — it is parsed, never evaluated.
+- **A header on the existing health probe**, say `X-App-Version`. No new request
+  and no new field, and that is also its defect: nothing in the manifest declares
+  it, so no scorecard rule can ask for it and no page can explain its absence.
+
+**The declared endpoint is the better route** precisely because it is declarable.
+A field the scorecard can score is a field teams can be told they are missing.
+
+**Storage is `environment_state`, not a new table.** An observed version is
+current state like `status` is — one row per environment, updated in place,
+bounded. Two columns: `observed_version` and `observed_version_at`.
+
+**Three states, and the third is the one that gets botched.** `IN_SYNC`,
+`DRIFTED`, and `NOT_CHECKABLE` — no version endpoint declared, or it never
+answered. `NOT_CHECKABLE` must never collapse into `IN_SYNC`; that is the same
+mistake as rendering a never-probed environment as healthy, and it is the mistake
+this project has already made once and written a test against.
+
+**Two timing problems that will make drift cry wolf if ignored:**
+
+1. **A rollout looks exactly like drift.** For the length of a deploy, the
+   reported version and the answering version genuinely differ. Drift must not be
+   asserted until a mismatch has *persisted* past a grace window measured from
+   the last reported deployment — configurable, and generous by default. A drift
+   signal that fires on every successful deploy is a signal everybody turns off.
+2. **During a rolling deploy, replicas disagree.** One probe reaches one replica
+   through a load balancer, so the observed version flaps between old and new for
+   the duration. Phase 17 is what actually fixes this; until then the grace
+   window is the mitigation and the limitation should be stated on the page.
+
+**ADR 0018 made this phase bigger.** Drift here was designed as *reported*
+versus *observed*. Desired state — declared intent, which nothing records today —
+is a third version, and the gap between desired and reported is a failure this
+phase as written cannot see: the deploy that never ran. Phase 15 therefore lands
+the desired-state endpoint too, and a view that distinguishes three gaps rather
+than two. Read ADR 0018 before starting; it argues its own rejected alternative
+well enough to be worth re-reading at that point.
+
+**Deliberately not in this phase:** any remediation. OpsAtlas does not write to
+systems it monitors (ADR 0008) and drift detection must not become the exception.
+It reports a mismatch; a human decides.
+
+### Phase 16 — Live on-call
+
+ADR 0016 built the declared half: `spec.operations.oncall` carries a rotation
+URL, a `coverage` enum and an escalation target, and `oncall-declared` scores it,
+stricter at tier 1 than at tier 2. It stops short of naming a person, and
+`CLAUDE.md` says why — a name this system could not refresh would go stale into
+the one page somebody reads at 03:00.
+
+**What it needs:** a read-only integration with a paging provider (PagerDuty,
+Opsgenie), a credential per organization, and a mapping from a declared rotation
+URL to that provider's schedule id.
+
+**The decision that shapes it is the same one ADR 0016 made.** A name this system
+displays must carry the time it was fetched, and must fall back to the declared
+rotation link when the provider cannot be reached. **"Nobody is on call" and "we
+could not ask" are different answers and must never render the same** — which is
+the never-probed rule from phase 7 applied to a different absence.
+
+**Where it lives:** `integrations`, with the rest of the outbound HTTP.
+`ArchitectureTest` enforces that, and a paging provider is exactly the kind of
+caller that would otherwise be wired straight into a console component.
+
+**The cost worth stating before starting, because it is larger than the feature:**
+this is the first integration needing a per-organization secret at rest, and there
+is nowhere to put one today. GitHub polling is unauthenticated, the observer's key
+is a single shared value, and every other credential is process configuration. Per
+tenant secret storage is its own decision with its own ADR — and it is the same
+problem ADR 0008 deferred for the GitHub App and phase 17 needs for cluster
+credentials. **It should be solved once, for all three**, and whichever phase goes
+first pays for it.
+
+### Phase 17 — Runtime topology
+
+The prototype's `Instances 9 / 14`, `Passing 10 of 10`, and
+`5 pods failing readiness — /actuator/health/readiness returned 503 three times
+running`. None of it is reachable from where OpsAtlas stands today: a probe hits
+one URL through whatever sits in front of it and cannot see how many replicas
+answered, or which ones did not.
+
+**What it needs, in the order the cost lands:**
+
+1. **Cluster credentials.** The largest decision, not the API work. This is a
+   public repository deployed on one box where `docker` group membership is
+   root-equivalent (ADR 0015); a kubeconfig on that machine is a much bigger
+   surface than polling public GitHub unauthenticated. Where those credentials
+   live, and per-organization rather than per-installation, is the same problem
+   ADR 0008 deferred for the GitHub App — and it should be solved once, for both.
+2. **A workload-to-service mapping.** Nothing in a manifest says this service is
+   Deployment `orders-api` in namespace `prod` of cluster `eu-1`. It needs a
+   declared field, per environment, and it is per-environment because the same
+   service is a different workload in staging.
+3. **A client per provider.** Kubernetes, ECS, Nomad. `integrations` currently
+   speaks to exactly one external system, read-only and unauthenticated.
+   `ArchitectureTest` enforces that only `integrations` makes outbound HTTP
+   calls, so this belongs there and not in `operations`.
+
+**What it gives back, beyond the counts:** a far better observed version than
+phase 15 can manage. An orchestrator knows the image tag of every replica, which
+answers "what is running" exactly and fixes the flapping problem a single probe
+cannot. If both phases happen, this one subsumes the version-endpoint route for
+any orchestrated service — which is an argument for doing 15 cheaply, or for
+doing 17 first if a cluster is available.
+
+**Non-negotiable: read-only.** No scaling, no restarting, no rollout triggering,
+no `kubectl` behind a button. The moment OpsAtlas can act on a cluster it is a
+deploy tool with a catalog attached, and the credential it holds stops being
+something a public repository's deployment can justify.
+
+**The caveat to write on the page from day one:** a service that is not
+orchestrated has no instances. A VM, a serverless function and a static site must
+read as *not applicable*, never as `0 / 0` — which looks exactly like everything
+being down.
+
+### Phase 18 — Catalog query
+
+Slice one's definition of done asked for `GET /api/v1/services` "filterable by
+team and tier, searchable by name". What shipped takes `cursor` and `limit`, and
+the console filters the page it already holds. With seven services that is
+invisible. At a hundred it is wrong, and wrong in the way that matters most: a
+search box that silently searches one page of results looks exactly like a search
+box that found nothing.
+
+The console's empty state says so, which is the honest handling of a gap and not
+a substitute for closing it.
+
+**What it needs:** `team`, `tier` and `q` parameters on the list endpoint, pushed
+into the repository query rather than applied after paging.
+
+**The part that is easy to get wrong:** a cursor encodes a position in an ordered
+set, so changing the filter changes the set the cursor refers to. A cursor issued
+under one filter and replayed under another silently skips or repeats rows. The
+filter therefore belongs *inside* the cursor, and a cursor whose filter does not
+match the request is a `400` naming the mismatch — not a best effort.
+
+**Why the console cannot fix this at any page size:** it never sees the rows it
+did not fetch. This is the API's problem by construction.
+
+**Deliberately not in this phase:** ranking, full-text search, or anything needing
+an index this database does not have. `name ILIKE '%q%'` with a trigram index is
+the whole feature. A search engine is a different decision, with a different
+operational cost, and nothing here justifies it yet.
+
+**Isolation applies as it does everywhere:** a new endpoint parameter does not
+escape `OrgIsolationIT`, and a filter that reaches across organizations is the
+exact failure `no_endpoint_escapes_this_test` exists to catch. A search that
+returns another tenant's service names is a data leak whether or not it returns
+their details.
+
+### Phase 19 — Alerting
+
+**The gap that most contradicts the product's own description.** OpsAtlas
+measures probe availability, knows a service's tier, knows its declared SLO
+target, and since ADR 0016 knows where its rotation lives — and it has never
+told anybody anything. It is a dashboard somebody has to remember to open.
+
+Worth saying plainly because the repository nearly hides it: "alerting" appears
+in this codebase twice, both times as *rationale* for another rule ("an error
+budget is what makes an alert threshold something other than a guess"), and
+never as a capability. Every input for it now exists; nothing consumes them.
+
+**What it needs:**
+
+- **A rule: what is worth waking somebody for.** Tier-conditional, like every
+  other judgement here. A tier 1 production environment DOWN for three
+  consecutive probes is not the same event as a tier 3 internal tool failing
+  once.
+- **A route: where it goes.** `spec.operations.oncall.rotation` is a link to a
+  schedule, not an address that accepts a page. Routing needs either the paging
+  provider from phase 16, or a webhook per organization, or email. The honest
+  first version is probably a webhook: it needs no provider integration and
+  makes the delivery someone else's problem.
+- **Deduplication and state.** An alert must fire on a *transition*, not on
+  every evaluation, or a service down for an hour delivers a page per probe. This
+  is the part that looks trivial and is not.
+- **Silences.** Planned maintenance, a known-broken staging environment, a
+  service being retired. Without them the first noisy week trains everyone to
+  ignore the channel, and the feature is then worse than its absence.
+
+**The honest constraint that shapes the whole phase:** what OpsAtlas can alert on
+is **probe availability from one vantage point** (`CLAUDE.md` §2). It is not an
+SLO, and it is not what users experience. An alert that says "orders-api is down"
+when one network position could not reach a health endpoint is going to be wrong
+sometimes, and the message has to say what was actually observed rather than
+what somebody would like it to mean.
+
+**Deliberately not in this phase:** paging as in phone calls and escalation
+policies. That is what PagerDuty is, and reimplementing it badly is the same
+mistake ADR 0016 rejected for rotations. OpsAtlas should deliver an event to
+something that already does escalation.
+
+### Phase 20 — Declared operational posture
+
+Six fields that share one shape: a team declares something, the scorecard scores
+whether they did, and **OpsAtlas cannot verify any of it.** They are one phase
+because they are one afternoon's pattern each — additive optional field, rule,
+render — which is exactly the shape `spec.operations.oncall` took in ADR 0016.
+
+| Field | Why it earns a rule |
+|---|---|
+| `spec.operations.backup` | Whether data is backed up, how often, and where the restore is documented. A tier 1 service with a datastore dependency and no declared backup is a gap the catalog is currently blind to |
+| `spec.lifecycle.retiresOn` | `lifecycle: deprecated` with no date is a state nothing ever leaves. A date makes a deprecation reviewable |
+| `spec.quality.tests` | Where the suite runs and what gate it must pass. Not coverage as a number — a percentage in a manifest is a number nobody updates |
+| `spec.operations.schedules` | Cron jobs the service owns. An unlisted scheduled job is the classic thing nobody knows about until it stops |
+| `spec.observability.apiSpec` | The OpenAPI or schema document. The prototype's "API spec" link, which the Operations footer deliberately omits today because there is no field for it |
+| `spec.data.classification` | Whether this handles personal or regulated data. It changes what every other answer here has to be |
+
+**The rule that governs all of them, and the risk:** each is a *declaration*.
+`backup: daily` in a YAML file is not a backup, and a scorecard that reads 11/11
+because every field is filled in is a scorecard measuring paperwork. Each rule's
+failure message must say what it checked, and the page must not let a filled-in
+field read as a verified one. Phase 22 is where some of these become verifiable;
+until then the honesty burden is entirely on the wording.
+
+**A caution about count.** Every rule added moves every stored score's
+denominator (ADR 0016 consequences). Six at once is a large single movement in
+the fleet number for reasons unrelated to anything getting worse, and
+`PolicyCatalog.VERSION` exists so an old score still means what it meant. Adding
+them in one release is fine; adding them without bumping the version is not.
+
+### Phase 21 — Dependency graph and blast radius
+
+**The cheapest item in this file.** `spec.dependencies` has been stored,
+normalized and scored since phase 3. Nothing has ever walked it backwards.
+
+The console already says outright that its dependency list is *not* a blast
+radius, because nothing computes reverse edges. Computing them is a query and a
+page: for a service, which registered services declare it as a dependency, and
+transitively what a failure reaches. The prototype's "2 registered services call
+this one" and its Blast radius tab are both this.
+
+**What it needs:** either an index over the manifest JSONB, or a `dependency_edge`
+table written during registration. The second is probably right — the same
+transaction that scores and audits already has the parsed manifest in hand, and
+a table is joinable where a JSONB scan is not.
+
+**Two honest limits to render, not hide:**
+
+- **Declared edges only.** A service that calls another and does not say so is
+  invisible, and the graph will be confidently incomplete. Traces would show the
+  real calls; joining them needs `spec.observability.serviceName`, which is
+  already declared and already scored — which makes this a plausible *second*
+  version rather than a fantasy.
+- **A dependency by name is not a registered service.** `payments-api` as a
+  string may match a catalog entry or may be a service nobody registered. Both
+  are useful to show and they are not the same fact.
+
+### Phase 22 — Delivery metrics
+
+**Half of this is already sitting in the database.** The `deployment` table from
+phase 13 records version, commit and time per environment, which is deploy
+frequency and time-between-deploys with no new ingestion at all. Lead time needs
+a commit timestamp, which the commit SHA makes fetchable from the source that is
+already being polled read-only (ADR 0008). Change failure rate needs incidents —
+phase 14 — correlated to the deployment that preceded them, which is the
+correlation phase 14 exists for.
+
+So the useful ordering is: this after 14, and most of it costs a query rather
+than an integration.
+
+**The half that does need a provider:** pipeline health — run duration, failure
+rate, flakiness, whether the linter and the test gate actually ran. That needs
+GitHub Actions or equivalent, read-only, and it is the answer to "do you track
+linters and tests" that is worth anything: not *whether a team declared* a
+linter, but whether the pipeline that enforces it passed.
+
+**The caveat:** these are DORA-shaped numbers, and DORA-shaped numbers get used
+to compare teams. A deploy-frequency figure computed from whoever remembered to
+call the reporting endpoint (ADR 0017) measures reporting discipline as much as
+delivery. If this is built, the page has to say what the denominator really is.
+
+### Phase 23 — Supply chain and security posture
+
+Distinct from phase 20 because these cannot be declarations. "We scan our
+images" in a manifest is worth nothing; the finding is the thing.
+
+**What it would track:** an SBOM per released artifact, known vulnerabilities
+against it with severity, base-image age, and build provenance — whether the
+image running was built by the pipeline it claims.
+
+**What it needs:** a scanner or a registry that already produces this, read-only,
+plus a link from a service to its artifact. That link is the same
+workload-to-service mapping phase 17 needs, which is an argument for doing them
+near each other.
+
+**Why it is late rather than never:** it is the most valuable thing on this list
+for a real fleet and the most dependent on infrastructure this project does not
+have. A vulnerability count that is stale is worse than none, because it reads as
+an all-clear.
+
+**Out of scope permanently:** OpsAtlas scanning anything itself. It reads
+findings somebody else produced. A control plane that pulls and analyses
+arbitrary images from monitored repositories is a much larger attack surface than
+a catalog needs, and it violates the spirit of §3 rule 4.
+
+### Phase 25 — Backups and restore
+
+**The only item on this list that is a risk rather than a feature.** ADR 0014
+listed "backups are not solved by this ADR" under consequences and no phase
+picked it up, so it has been true and unowned since the deployment went live.
+`README.md` and `CLAUDE.md` both say the data does not survive the box, which is
+honest and is not a plan.
+
+**Two volumes are the system of record, not one.** The obvious one is
+PostgreSQL — the catalog, the scorecards, the audit log, the deployment ledger.
+The one that is easy to miss is the issuer's **MongoDB**: it holds the accounts,
+and losing it means nobody can sign in to a control plane whose data survived
+perfectly. The `principal` rows in PostgreSQL are keyed on issuer and subject,
+so restoring one without the other leaves rows pointing at subjects that no
+longer exist.
+
+**What it needs:**
+
+- **A scheduled dump off the host.** `pg_dump` and `mongodump` on a timer, in
+  the same shape as the convergence timer that already exists, written to object
+  storage rather than to the disk that is the thing being protected.
+- **Retention, and a size ceiling.** A dump per day forever is a bill that grows
+  without anybody deciding to spend it.
+- **A restore that has actually been run.** This is the part that is the phase.
+  A backup nobody has restored is a hypothesis, and `CLAUDE.md` §3 rule 1 rules
+  out describing an unexercised one as working. The acceptance criterion is a
+  restore into a scratch stack, with a note of how long it took and what it
+  needed.
+
+**The unconfirmed alternative:** DigitalOcean's droplet-level backups may be
+enabled — `CLAUDE.md` says this has never been checked from inside the box, and
+checking it is ten minutes. It is not a substitute even if it is on. A weekly
+whole-droplet snapshot has a recovery point measured in days, restores the
+secrets along with the data, and gives no way to recover one table.
+
+**The downside to write into the ADR:** a dump in object storage is a copy of
+every principal row and every audit event sitting somewhere else, reachable with
+a credential that lives on the box. It needs encryption at rest and a key scoped
+to write-only where the provider supports it, or the backup is a second copy of
+the thing to protect with half the protection.
+
+### Phase 26 — Load and soak testing
+
+**k6 has been named twice in this repository and written down nowhere** — a
+clause in the phase 12 row and a line in the target layout. Meanwhile
+`README.md` carries "nothing has been load-tested or security-tested" in two
+places. That sentence is currently permanent by omission rather than by
+decision, and this phase is what makes it a decision.
+
+**What it needs:** a k6 script against the authenticated surface — the catalog
+list, a service detail, a scorecard — carrying a real token, because an
+unauthenticated run measures the 401 path and nothing else. Plus a **soak run**,
+which is the more interesting half at this size: the failure mode for a
+single-box Spring Boot application is a connection pool or a heap over hours,
+not a request rate over minutes.
+
+**Two numbers, labelled separately, and never averaged:**
+
+1. **The application number**, from `make up-app` locally. This is the one that
+   says something about the code.
+2. **The deployment number**, from a bounded run against the box. This one
+   measures 2 vCPU and 4 GB shared by the control plane, the console,
+   PostgreSQL, MongoDB, Storm-Gate, the observer and Caddy — with traces sampled
+   at 100% (ADR 0011). It is a fact about that droplet, and the write-up has to
+   say so or it will be read as the application's ceiling.
+
+**A caution that applies to the second:** the only deployment is the production
+one, so a load test is run against the thing people can open. Bound it, run it
+deliberately, and expect the observer's own probe results for that window to be
+affected — OpsAtlas will record its own load test as a degradation, which is
+either a nuisance or the most honest demonstration in the project.
+
+**Deliberately not in this phase: security testing.** The README sentence pairs
+them because they are both unmeasured, not because they are one job. A
+penetration test is a different discipline, and folding it in here would let a
+green k6 run quietly imply half of a claim nobody made.
+
+### Phase 27 — Infrastructure as code
+
+**ADR 0014 rejected Terraform for the box, and the reason it gave still holds:**
+one VM, one firewall and three DNS records is under an hour of clicking and a
+week of learning a provider's resource model, and the box is worth describing in
+code once its shape has stopped changing — which, days after the first
+deployment, it has not.
+
+So this phase gets a **trigger rather than a date**: 30 consecutive days with no
+change to the droplet's shape — no resize, no newly published port, no new DNS
+record, no attached volume. If the shape is still moving, describing it in code
+means editing two things every time instead of one.
+
+**Scope when it fires:** the droplet, the firewall, the DNS records, the GHCR
+read credential and the SSH key. **Import the existing box rather than
+recreate it.** `terraform import` against what is running keeps the IP, and a
+recreate means a new address, a DNS propagation window and a certificate
+reissue in exchange for nothing.
+
+**What the value actually is**, stated because it is not provisioning: a written
+record of what the box is, and a `plan` that reports drift when somebody changes
+it by hand. Provisioning one droplet is the cheap part. The second box, if there
+ever is one, is where the code pays for itself — and that is also phase 28's
+trigger, which is not a coincidence.
+
+**The downsides:**
+
+- **State has to live somewhere.** Not in this repository, which is public. A
+  DigitalOcean Spaces backend needs a credential, so protecting the box's
+  description becomes one more secret to hold — and the state file contains the
+  firewall rules and the DNS layout, which is a map.
+- **It does not cover the inside of the box.** The SSH hardening that
+  `CLAUDE.md` records as never applied is host configuration, not
+  infrastructure; Terraform will not do it and this phase must not be described
+  as though it did. That is a separate, smaller job that should not wait for
+  this trigger.
+- **It needs an ADR** that either supersedes ADR 0014's "Terraform for the box
+  itself" paragraph or restates it as still correct. Leaving that paragraph
+  standing while `terraform/` exists is the contradiction this roadmap keeps
+  trying to avoid.
+
+### Phase 28 — Kubernetes and Helm
+
+ADR 0014 called this **"deferred, not rejected"** and gave the honest argument in
+both directions: it is what the roles this project is evidence for actually run,
+and five containers that must start in order on one host is precisely the case
+where an orchestrator's scheduling, discovery and rollout machinery all cost
+something and return nothing.
+
+**The trigger is any one of:**
+
+- **A second box.** Two hosts is where compose stops being the simpler thing.
+- **A requirement for zero-downtime deploys.** Today `docker compose up -d`
+  stops and starts containers and the console is down for the seconds that
+  takes. That is currently acceptable and is written down as such.
+- **Phase 17 — runtime topology.** It needs an orchestrator to read instance and
+  readiness counts from, and there is nothing to read today. If 17 is wanted,
+  this stops being optional.
+
+**Decide 17 and 28 together.** 17 needs cluster credentials on a box where
+`docker` group membership is already root-equivalent, and 17 stays **read-only**
+by rule — the moment OpsAtlas can act on a cluster it is a deploy tool with a
+catalog attached. Building the cluster and the read-only integration in
+isolation from each other gets the credential question answered twice.
+
+**The downsides:**
+
+- **Local and deployed topologies would drift.** Today `deploy/compose` and
+  `deploy/production` are the same file shape with different values, and
+  `make up-app` exercises the arrangement that actually runs. Charts mean the
+  thing a developer runs and the thing that serves traffic are described by two
+  different systems — which is one of the reasons ADR 0014 rejected Fly.io.
+- **ADR 0015 would be replaced, not extended.** Deploying is a commit to
+  `deploy/production/VERSION` and rolling back is `git revert`. A chart changes
+  the mechanism; if the replacement does not keep "the deploy history is
+  `git log`", it is a regression wearing a better-known name.
+- **It is an operating cost, not a one-off.** A managed cluster for seven
+  containers is several times the droplet's bill, plus a control plane to
+  upgrade — in order to run a control plane.
+
+### Phase 29 — Security posture and threat model
+
+**No new code.** Every decision this phase writes down has already been made and
+tested; none of it is anywhere a reader can find in one piece. The founding
+prompt asked for `docs/security/` and this project's second job names security
+explicitly, so the absence is conspicuous — a publicly deployed control plane
+with authentication, tenancy isolation and machine credentials, and no page
+saying what it defends against.
+
+**Three files, not a directory of stubs** (§3 rule 3 applies to `docs/` too):
+
+**`docs/security/threat-model.md`**
+
+- **Assets**, including the one that is easy to miss: the probe target list is a
+  map of somebody's infrastructure. With it, the audit log — where integrity
+  matters more than confidentiality — the `principal` rows, and the machine
+  credentials.
+- **Trust boundaries**, which are unusually drawable here because ADR 0014 made
+  them small: the internet reaches Caddy on 80 and 443 and nothing else; Caddy
+  reaches the console; the console calls the control plane and the issuer over
+  the compose network, holding the signed-in user's token in an httpOnly cookie;
+  the observer comes in on `X-OpsAtlas-Key`; JWKS and GitHub are outbound only;
+  PostgreSQL, MongoDB and Storm-Gate are published nowhere.
+- **Actors:** anonymous, authenticated-but-unprovisioned (403 rather than 401,
+  and why), a member of another organization, the observer's machine identity,
+  Prometheus, and whoever holds the box.
+- **What is defended, with the evidence beside each claim** rather than as
+  assertion — RS256 verified against the issuer's JWKS with no signing key held
+  here, membership requiring an issuer-and-subject pair, per-query org filtering
+  proven by `OrgIsolationIT` and kept honest by `no_endpoint_escapes_this_test`,
+  parse-never-execute ingestion (ADR 0002), read-only GitHub scope (ADR 0008),
+  no session and therefore no CSRF category, and `${VAR:?}` with no production
+  defaults (ADR 0014).
+- **What is not defended**, which is the section that makes the document worth
+  reading at all: no inbound rate limiting (phase 30); no roles, so every
+  principal can do everything within their organization; no row-level security,
+  so isolation is a test somebody remembered rather than the database refusing;
+  audit immutability enforced only in the application; `docker` group membership
+  on the box being root-equivalent; **the SSH hardening that was never applied**;
+  no backups (phase 25); and never having been penetration-tested.
+
+**One finding is already in hand**, and it is the reason to write this rather
+than assume it would say nothing new: `deploy/production/Caddyfile` sets HSTS and
+`X-Frame-Options: DENY` and **no Content-Security-Policy**. That matters more
+here than on a typical application, because the console holds the user's token in
+a cookie — a console XSS is a token compromise, and `httpOnly` is the only thing
+standing between those two sentences.
+
+**`docs/security/secrets.md`** — the six credentials this system has (the
+issuer's signing key, `ACCESS_TOKEN_SECRET`, the observer key, the Prometheus
+key, `deploy/production/deploy-key`, and the operator password that lives on the
+box and has never been transmitted), where each lives, who can read it, and
+**how to rotate it.** That last column exists nowhere today. §3 rule 5 says a
+leaked credential has to be rotated rather than deleted in a later commit, and
+nothing in this repository says how to rotate any of them — which makes the rule
+an instruction with no procedure behind it.
+
+**`docs/security/README.md`** — an index, and a date on every claim.
+
+**The downside, which belongs in the document itself:** a public threat model is
+a public list of what is not defended. That is the right trade for this asset set
+and it should be stated outright rather than left as something the author hopes
+nobody notices. And it has to be dated and maintained, or it becomes another
+paragraph that was true once — this repository has already had to correct one of
+those.
+
+**Acceptance: the document causes at least one fix.** A threat model that
+inventories a system and recommends nothing was written to be filed rather than
+read. The CSP and the unapplied SSH hardening are the two expected to fall out.
+
+### Phase 30 — Inbound rate limiting
+
+**There is none, anywhere.** The only rate limit in this codebase is GitHub's,
+and it is outbound and somebody else's. There is an authenticated API on a public
+address with nothing bounding how fast anyone may call it.
+
+**The design question is which layer, and the answer is not the obvious one.**
+Caddy sits in front of everything and is the conventional place. It cannot work
+as the primary control here: **every console-originated request reaches the
+control plane from one container over the compose network**, because the console
+calls the API server-side. An IP-keyed limit at the edge would therefore put
+every signed-in user in a single bucket or limit nobody, depending on the number
+chosen. Caddy cannot see who is calling; only the control plane can.
+
+So:
+
+- **Primary — an application filter keyed on the principal and the organization**,
+  which is also what the founding prompt asked for when it listed rate limits
+  among the things that must carry tenant scope.
+- **Edge IP limiting is a separate, coarser, later layer** for the unauthenticated
+  surface. Worth noting its real cost before anybody assumes it is a config line:
+  Caddy's `rate_limit` is a community plugin, so it means building a custom Caddy
+  image in CI and a change to `publish.yml`.
+
+**What it needs:**
+
+- **A filter ordered after authentication**, so there is a principal to key on,
+  and **without disturbing `CorrelationIdFilter` at `HIGHEST_PRECEDENCE + 5`** —
+  `CLAUDE.md` records that ordering as load-bearing and silently-failing, and a
+  new filter in the chain is exactly the kind of change that has broken it.
+- **An in-memory token bucket**, with the limitation stated where somebody will
+  read it: this is **per instance**, so a second control plane doubles the real
+  limit. That is also the first honest trigger for Redis under §6 — the
+  demonstrated need it has been waiting for, and not before.
+- **Two buckets, not one.** A generous default, and a tighter one for the
+  expensive paths: registration parses YAML, validates it, scores eleven rules
+  and writes an audit event inside a single transaction, and source sync spends a
+  GitHub allowance that is already only 60 requests an hour.
+- **A separate allowance for the observer**, which is the trap in this phase. It
+  is a machine identity making a legitimately high request rate, and if it shares
+  the human default then the first pass over a large fleet trips the limit and
+  health data stops arriving — silently, because a limiter returns a clean HTTP
+  response rather than an error anybody notices.
+- **429 as an RFC 9457 problem with `Retry-After`**, in the same shape as every
+  other error here. `ProblemSecurityResponses` is the precedent to follow.
+- **The organization as a metric dimension**, so the first question after a limit
+  fires — who was it — has an answer.
+
+**Deliberately out of scope: limiting `/actuator/health` and `/v3/api-docs`.**
+They are cheap, they disclose nothing, and a limiter on a health endpoint is a
+denial-of-service lever pointed at your own load balancer.
+
+**The downside:** there is no production traffic data, so the first numbers are
+guesses, and a limit set too low is a self-inflicted outage that looks exactly
+like a bug. Start generous, ship the metric first, tighten from what it shows —
+and say in the code that the numbers are guesses, so the next person changes them
+rather than treating them as measured.
+
+### Phase 31 — The public case study surface
+
+**The deployment currently serves an audience of one.** `apps/web/middleware.ts`
+matches every path except `/login`, `/api` and static assets, and `/` redirects
+to `/catalog`, which redirects to `/login`. So `https://opsatlas.hoseacodes.com`
+is a sign-in form and nothing else. Every artefact that would interest a reader —
+nineteen ADRs, the roadmap, the mocked-versus-real table, the reasoning about
+what this system refuses to claim — lives in the GitHub repository, which means
+the deployment adds nothing for that reader over the README.
+
+That is the gap. This project has two jobs (`CLAUDE.md` §1) and the deployed
+system does exactly one of them.
+
+**What it needs:**
+
+- **A public route group**, excluded from the middleware matcher. The matcher is
+  the security boundary for the whole console, so the change is a deliberate
+  allow-list of new public paths rather than a loosened regex — `/`, plus a page
+  each for the architecture, the decisions and the security model.
+- **`/` stops redirecting.** It becomes the public overview and renders the same
+  for everybody; a signed-in visitor gets a link into the console rather than a
+  redirect, because a redirect would make the case study unreachable to the one
+  person who is always signed in.
+- **The console stays exactly as gated as it is today.** `/catalog`,
+  `/catalog/{slug}`, `/register` and `/sources` keep their current behaviour.
+
+**Content, and where it comes from:**
+
+The pages are the overview, the architecture (the Mermaid diagram in
+`docs/architecture/slice-one.md` already exists and renders), the engineering
+decisions, and the security model once phase 29 has written one.
+
+**Generate them from the repository, do not transcribe them.** The ADR index
+should be read off `docs/adr/*.md` and the capability table off `README.md`, the
+same discipline `manifestPrompt.test.ts` already applies by walking the real
+schema rather than a copy of it. A hand-written architecture page is the next
+paragraph to go stale, and this project has had to correct two in a single
+session — a README that said Spring Security was not a dependency, and a
+controller comment that still described itself as unauthenticated.
+
+**The decision inside this phase, which is not a UI decision:** what the public
+pages show of the live system.
+
+1. **Prose and diagrams only.** The console stays private; the public pages
+   describe and link to the repository. Cheapest, adds no attack surface, and
+   shows no live data.
+2. **A read-only public organization** with the example manifests registered and
+   genuinely probed, served through the existing org scoping. By far the most
+   convincing — a reader sees a real catalog with real probe history rather than
+   a description of one. The cost is not UI work: it means an anonymous path
+   through `ProvisionedPrincipals`, which is the single place authorization is
+   decided, and an exemption in `no_endpoint_escapes_this_test` with a written
+   reason. It also publishes a probe target list, which phase 29's threat model
+   names as an asset.
+3. **Screenshots.** Middle ground, and they go stale silently, which is the
+   failure mode this phase is otherwise designed against.
+
+**Recommendation: (1) now, and (2) as its own ADR later if it is still wanted.**
+Reopening the authorization model that ADR 0013 closed, in order to improve a
+marketing page, is not a trade to make in passing.
+
+**House rules that constrain this more than they look like they do:**
+
+- **No fake buttons (§10).** A "try the demo" call to action that leads to a
+  login wall is exactly the prohibited thing. Under option (1) the honest call to
+  action is the repository, and a plain statement that the console needs an
+  account.
+- **§3 rule 1 applies to every claim on the page.** A performance number needs
+  phase 26 to have run first. A capacity figure needs phase 39's designed,
+  tested and observed columns, and must say which column it is quoting. The public page is the most tempting place in
+  the project to write something unmeasured, and it is the worst place to do it.
+- **It must not leak into the console's navigation.** A marketing surface inside
+  an operations tool is noise for the operator; the link goes one way.
+
+**Tests:**
+
+- A Playwright spec asserting the public routes render **signed out**. That is
+  the entire point of the phase and is the first thing to regress silently.
+- A spec asserting every console route still redirects to `/login` when signed
+  out. This one matters more than the first: it is a security regression test on
+  a matcher that this phase edits, and the failure it guards against is a private
+  catalog quietly becoming public.
+
+**The downside:** it is the first thing in this repository whose audience is not
+an operator, and that makes it the first thing that will be tempting to
+exaggerate. Its accuracy is only as good as its generation — which is the
+argument for reading the ADR list and the capability table off disk rather than
+copying them, restated as a consequence.
+
+### Phase 32 — Shareable per-service pages
+
+A link somebody without an account can open that shows one service's current
+status and its recent probe history. The thing a status page is, scoped to one
+service rather than to a fleet.
+
+**This is not phase 31 at a smaller size.** Phase 31 publishes prose about the
+platform. This publishes **live data about a running system**, which is a
+different decision with a different cost, and it would be the first
+unauthenticated read path in a control plane whose whole authorization story is
+that a verified token is not a membership (ADR 0013).
+
+**How the link works.** A per-service, opt-in **capability URL**: a `share_token`
+column, a path like `/s/{token}`, generated on request and revocable. Rejected
+alternatives, both worse:
+
+- **A `public` boolean plus the existing slug** (`/public/{org}/{slug}`). The URL
+  is guessable from the service name, so publishing one service exposes the
+  existence of every other one to anybody who tries.
+- **Reusing phase 31's public organization.** That publishes a catalog. This
+  publishes one service, and the smaller grant is the correct default.
+
+Say plainly what a capability URL is: **a bearer credential in a link.** Anyone
+who receives it has it until it is revoked, forwarding it costs nothing, and a
+link in a Slack channel outlives everybody's memory of who is in that channel.
+That is acceptable for probe availability and would not be for anything else.
+
+**What the page shows — and this is the substance of the phase.** The detail page
+minus the navigation is the wrong answer, because the detail page carries things
+that must not be published:
+
+| Field | Public? | Why |
+|---|---|---|
+| Display name, tier | Yes | The point of the page |
+| Current status, last probed at | Yes | Absent still renders as never-probed, never as healthy |
+| 30-day probe availability ribbon | Yes | With the caveat below, not in a footnote |
+| **Environment URLs** | **No** | This is the probe target list, which phase 29's threat model names as an asset. A status page that publishes internal hostnames publishes infrastructure |
+| **Deployed version and commit** | **No** | Phase 13 records both. "Running 2.3.8" tells somebody exactly which published CVEs to try |
+| Owner, team, contact | **No** | A person's chat handle is not the service's status |
+| Dependencies | **No** | A partial architecture map, and the dependency list already says it is not a blast radius |
+| Runbook, dashboard, rotation links | **No** | Internal URLs, and a rotation link is a paging surface |
+
+**Excluded outright rather than put behind a toggle.** A per-field switch that can
+publish an internal hostname is a footgun that will eventually be pulled by
+somebody in a hurry, and the page's value does not depend on any of it.
+
+**The enforcement, which matters more than the list.** A test that pins the exact
+field set of the public projection and **fails the build when a field is added**,
+the same way `no_endpoint_escapes_this_test` fails the build on an uncovered
+endpoint and `no_example_manifest_escapes_the_fleet_table` fails it on an
+undocumented manifest. Without it, the first person to widen a shared DTO
+publishes a hostname and nothing notices. This project's habit is to make the
+rule refuse rather than to remember it; this is the place that habit pays most.
+
+**The honesty problem is sharper here than anywhere else in the system.**
+`probeAvailability` is not an SLO — it is the share of probes that succeeded from
+one vantage point against a health endpoint, and a service can serve errors to
+every real user while its readiness endpoint answers happily. On an internal
+console that caveat is a sentence beside a number. On a page somebody links to as
+evidence of reliability, a reader will see "99.2%" and read uptime commitment.
+The caveat has to be prominent and unavoidable, and the page must never use the
+words SLO, uptime or availability guarantee.
+
+**Tenancy, and the trap.** The token resolves to exactly one service in one
+organization, and the lookup must **set** the org context rather than bypass it.
+The isolation test is specific: a token minted for org A must never return org
+B's service, and it must not become a way to read a service whose share was
+revoked. Put the route under its own prefix — not `/api/v1` — so it is
+unmistakably outside the authenticated surface, and register it in
+`OrgIsolationIT` rather than exempting it.
+
+**Abuse and load.** A public URL has no principal, so phase 30's per-principal
+limiting cannot key on it. Two mitigations, and one of them is a genuine special
+case: these are **direct browser requests to a public path**, not the console's
+server-side API calls, so Caddy *can* see the caller's address for `/s/*` — the
+one place in this system where edge IP limiting works as advertised. Plus a short
+cache, so a widely shared link is not a load test aimed at the control plane.
+
+**Auditing.** Generating and revoking a share link are changes to the service and
+write `service.share_granted` and `service.share_revoked` audit events, with the
+principal who did it. A capability that can be created without a record is a
+capability nobody can investigate.
+
+**Search engines.** `noindex` by default. A link meant for one team turning up in
+search results is a surprise nobody chose, and making indexing opt-in is one
+header.
+
+**Sequencing note:** this solves the harder half of phase 31's option 2. Both
+need an anonymous read path with a bounded projection; this one does it with a
+smaller grant and a revocation story. If both are wanted, do this first and let
+31 reuse the mechanism.
+
+**Deliberately not in this phase:** incidents on the page, which is what most
+status pages are actually for. That needs phase 14, and an incident is a
+statement about impact — a much stronger claim than a probe result, and one that
+should not be published by a system that infers it from a failed health check.
+
+### Phase 33 — Telemetry summaries in the control plane
+
+**Phase 8 built a telemetry plane and the control plane has never asked it a
+question.** The collector, Prometheus, Tempo and Grafana all run; the catalog
+shows probe availability from the observer and nothing else. Every number a
+reader would actually want — error rate, request volume, latency, whether
+telemetry is arriving at all — exists a network hop away and is not read.
+
+**This is the sixth field that was validated, stored and dropped.**
+`spec.observability.serviceName` is declared in the schema, scored by
+`observability-service-name`, and read by nothing. It is the join key between a
+catalog entry and that service's metrics, and this phase is what finally uses it
+— the same pattern as the runbook, SLO, dependencies, journeys and contact
+fields, which each moved a scorecard check and nothing else until somebody
+rendered them.
+
+**What it reads, and what it must not.** Prometheus, at request time, for the
+four summaries that mean something: request rate, error rate, a latency
+quantile, and the timestamp of the last sample received. **Nothing is stored** —
+§6 forbids raw telemetry in PostgreSQL and this phase does not get an exception.
+A short in-process cache is enough at one instance; when a second instance makes
+that wrong, it is a real §6 trigger for Redis rather than a guess.
+
+**This is where percentiles become possible, and the caveat is the phase.**
+ADR 0009 says there are no percentiles and cannot be — true of the *rollups*,
+where a sum, a min and a max are not a distribution. Prometheus has them, if the
+service exports a histogram. **A service that exports no histogram must render as
+not instrumented, never as zero and never as blank** — the same rule as an
+environment that has never been probed, and the same failure if it is got wrong.
+ADR 0009 needs a line pointing here, so it stops reading as "percentiles are
+impossible" rather than "impossible from what we store".
+
+**This is also where an error budget becomes possible, and it belongs here
+rather than to the probe data.** `spec.operations.slo.availability` and `window`
+are declared and measured against nothing. The temptation is to compute a budget
+from probe availability, and that would be the worst honesty violation available
+to this project: probe availability is one vantage point against a health
+endpoint, and a service can serve errors to every user while that endpoint
+answers happily. An error budget must come from the service's own success rate.
+§10 reserves one of four permitted colour jobs for error-budget fill; this is the
+phase that earns it.
+
+**Two structural constraints, both already enforced:**
+
+- **The Prometheus client belongs in `integrations`.** `ArchitectureTest` fails
+  the build if any other module makes an outbound HTTP call, and that rule is
+  right — this is an external system like GitHub, not an internal read.
+- **Partial failure is the normal case, not the exception** (§10). This is the
+  first real upstream on a page load. Prometheus being down must leave the
+  catalog rendering with the telemetry panel unavailable, never a 500. The detail
+  page already settles two requests independently; this is the third.
+
+**The ordering problem, stated so it is not discovered later:** the telemetry
+stack is a local compose profile and is **not deployed** (ADR 0014 — four more
+containers and most of a small box's memory). So this can be built and verified
+locally while reading "not configured" in production until the box has room or
+the stack moves off it. That is an honest state and the page must render it as
+one.
+
+**Grafana links** become possible in the same phase, and for the same reason:
+`spec.observability.dashboard` already renders, but the README's Operations
+footer omits a Grafana link because nothing knows where Grafana lives. A
+configured base URL fixes that, and the link renders only when it is configured —
+a dead link is a UI element implying a capability the backend does not have.
+
+**The downsides:**
+
+- **Two numbers that disagree.** Probe availability is an outside view from one
+  vantage point; Prometheus error rate is the service's own view. They will
+  differ, and the page has to say they measure different things rather than let a
+  reader decide which one is lying.
+- **A slow or absent upstream on every page load**, which is the cost of not
+  storing anything.
+- **Retention has to be checked, not assumed.** A 30-day error budget needs 30
+  days of Prometheus retention, and the compose profile's setting has never been
+  examined for this purpose. Verify before promising the window.
+
+### Phase 34 — Onboard a real application
+
+**Not a feature. The first real use.** OpsAtlas catalogs eight neutral example
+manifests and reports its own deploys through `converge.sh`. It has never been
+pointed at another application that actually exists, which means every capability
+in this repository is verified by tests and by nothing that would push back.
+
+**It needs no new code.** A watched source polls a repository read-only and
+registers what it declares (ADR 0008). This is a `service.yaml` in a real
+repository, a source added through the console, and an honest look at what comes
+back.
+
+**The selection criteria**, because not every repository is a candidate:
+
+- A **public HTTPS health endpoint**, since the observer probes from the box and
+  through no tunnel.
+- A repository the poller can read.
+- A real deployment. A project that is not running produces an environment that
+  reads "never probed", correctly and uselessly.
+
+**Expect it to break things, and treat that as the return on the phase.** Eight
+curated manifests written by the person who wrote the schema are not a test of
+the schema. Real applications will surface at least these, and each is a decision
+rather than a bug:
+
+- **A health endpoint behind authentication.** The observer sends no credentials
+  to probe targets, deliberately — it also sends no trace context, because
+  injecting our identifiers into somebody else's logs is not our decision. A
+  service whose health endpoint requires auth will read as permanently down, and
+  there is no answer for that today.
+- **Runtimes with no `/actuator/health`.** The examples lean Spring-shaped. A
+  Next.js app or a static site has no conventional health path, and a static site
+  arguably has no meaningful readiness at all — which is a modelling question the
+  schema has never had to answer.
+- **More than five sources.** The unauthenticated GitHub limit is 60 requests an
+  hour per IP, so a sixth source needs `OPSATLAS_GITHUB_TOKEN` set. Known, and
+  this is where it stops being theoretical.
+
+**The trap, which is specific and easy to fall into:** the README's fleet table is
+generated from `examples/services` and enforced by
+`no_example_manifest_escapes_the_fleet_table`. A real application's manifest
+committed into `examples/` would be dragged into that table and into `PolicySetIT`.
+**Real services are data, registered through a source; they are not example
+fixtures.** The neutral names in `examples/` stay exactly as they are (§10).
+
+**Expect the scores to be bad, and do not fix them by weakening rules.** Eleven
+declaration checks against manifests nobody wrote for a scorecard will fail
+several. That is the scorecard working. Record the first scores as a baseline;
+the interesting artefact is the delta after the declarations are actually filled
+in, which is the only evidence this project can offer that governance changed
+somebody's behaviour — including its author's.
+
+**One consequence to carry into other phases:** once real applications are
+registered, the deployment holds real infrastructure URLs. That is the asset
+phase 29's threat model names, and the reason phase 32's shareable pages exclude
+environment URLs outright rather than behind a toggle. Today those rules protect
+example data; after this phase they protect something.
+
+### Phase 35 — Scorecard history
+
+**The rows already exist.** `policy_result` is one row per evaluation,
+`policy_result_check` one row per check per evaluation, the index is
+`(org_id, service_id, evaluated_at DESC)` — a schema built for many rows — and
+**nothing prunes either table**. History has been accumulating since phase 3 and
+only the latest row is ever served. This is the same shape as phase 21: the data
+is there, nothing walks it.
+
+**What it needs:** `GET /api/v1/services/{slug}/scorecard/history`, cursor-paged
+like every other collection (§9), and a view on the detail page's scorecard tab.
+
+**Three things that must be right, or the view is worse than nothing:**
+
+- **Every entry carries its `policy_set_version`.** This is the entire reason
+  `PolicyCatalog.VERSION` exists and is pinned by `PolicySetIT`. Adding
+  `oncall-declared` moved every denominator from ten to eleven, so "7/9 last
+  month, 7/11 now" is two different scales and rendering them on one axis is an
+  invented trend.
+- **The delta is checks gained and lost, never a score difference.** "Gained
+  `runbook-linked`, lost `oncall-declared`" survives a policy-set change; "+2"
+  does not. `policy_result_check` makes this per-check view possible, and it is
+  the more useful one anyway: *when did this service start failing
+  `slo-defined`* is a better question than *what is the number*.
+- **It is not a time series and must not be drawn as one.** A row appears when a
+  manifest actually changes — re-registration is idempotent by digest (ADR 0007)
+  — or when the policy set moves. The axis is events, not days. A line chart
+  over dates would interpolate through gaps that represent *nothing changed*,
+  which is the inverse of the never-probed rule and just as wrong.
+
+**What it cannot answer, so the page must not imply it:** "days outside policy"
+needs a daily evaluation this system does not perform. Nothing rescores on a
+schedule.
+
+**A finding this view will expose, which is worth knowing before it does:**
+**stored scores are from the last registration, and bumping the policy set does
+not rescore the fleet.** `PolicySetIT` compares the README table against what the
+scorer produces *live*, so the test stays green while stored rows quietly
+describe an older rule set. A history view makes that visible — several services
+sitting at a version nobody has re-evaluated. Deciding whether a version bump
+triggers re-evaluation is part of this phase, and it is not obviously yes: a
+rescore writes a row for every service on a day nothing about those services
+changed.
+
+**Retention: deliberately none.** These rows are sparse — one per manifest change
+— and small. Do not give them the observation retention model; that job exists
+because probe counters grow with frequency, and these do not grow with anything
+except real events.
+
+### Phase 36 — The audit log page
+
+The endpoint has existed since phase 3. `GET /api/v1/audit-events` is
+cursor-paged, org-scoped and covered by `OrgIsolationIT`. §10's navigation names
+**Audit Log**. There is no page, so the most complete governance artefact in the
+system is reachable only by curl.
+
+**What it needs:** a dense table (§10), and filters by service, actor and event
+type.
+
+**The filtering decision is the same one phase 18 has.** The endpoint takes a
+cursor and a limit and nothing else, so filters would apply to the page already
+on screen — exactly the catalog-search limitation, which the empty state
+currently admits to rather than hides. Either accept it and say so in the same
+words, or extend the endpoint — and extending it is phase 18's job, so do it once
+for both rather than growing a second query surface.
+
+**Three details specific to this data:**
+
+- **Machine actors must read as machines.** The audit log records
+  `service:observer`, because naming a person who does not exist would be worse
+  than naming nothing. The page has to render that distinction rather than
+  flattening every actor into a name column.
+- **`service.deleted` outlives the row it describes.** `audit_event` declares no
+  foreign key to `service`, deliberately — a foreign key would make every
+  deletion erase its own record. So the page must render events for services that
+  no longer exist, without linking to a detail page that will 404 and without
+  implying the service is still there.
+- **Say what backs the trail.** Immutability is enforced in the application
+  layer only; `REVOKE UPDATE, DELETE` on `audit_event` is still a deferred
+  decision. A page that presents itself as an audit trail should be accurate
+  about what would stop somebody editing it.
+
+**Empty state matters more here than anywhere else.** Audit events are
+low-frequency, and a blank table reads as broken. §10 requires real empty states
+and this is the page that will spend the most time in one.
+
+### Phase 37 — Teams
+
+`team` is in the schema, in `CLAUDE.md` §7's domain model, and **no controller
+exposes it**. Services carry `metadata.owner`, a string from somebody else's
+repository, and nothing resolves it into anything.
+
+**The decision in this phase is not the page — it is what an owner string means.**
+
+- **Derive a team from every distinct `metadata.owner`.** No administration, and
+  a typo silently creates a team.
+- **Curate teams in OpsAtlas and require the owner to match one.** Stronger, and
+  it makes registration fail on a name OpsAtlas has never heard of — which is
+  OpsAtlas imposing a workflow on a repository it does not own, the thing ADR
+  0008 keeps refusing to do.
+- **Derive, but mark unclaimed** until somebody in the organization claims the
+  team. Registration never fails; a new scorecard rule can score whether an owner
+  resolves to a *claimed* team.
+
+**The third is the one that fits this project.** It keeps registration
+permissive, makes the gap visible rather than fatal, and expresses the
+requirement as a declaration check like every other rule.
+
+**What a team page can honestly show today:** services owned, their current
+scorecards, their probe health, and their declared rotations (ADR 0016 —
+declared, and explicitly not who is on call now). Open incidents needs phase 14;
+deployment frequency needs phase 22. Render those as absent, not as zero.
+
+**The downside, and it is the same one phase 22 carries:** a team view invites
+comparison between teams, and what it measures is declaration compliance, not
+engineering quality. A team with thorough manifests and a fragile service will
+outscore the reverse. The page has to say what the number is before somebody uses
+it in a performance conversation.
+
+**Tenancy is not optional here and will be enforced for you**: `team` is
+org-scoped, so `no_endpoint_escapes_this_test` will fail the build until the new
+endpoints appear in `OrgIsolationIT`. That is the mechanism working as designed.
+
+### Phase 38 — What this deployment costs
+
+**Not the FinOps page, and not the one usually asked for.** Per-service cost needs
+per-service resource attribution: CPU and memory per workload, which needs an
+orchestrator (**phase 17**), and cost per thousand requests, which needs request
+volume (**phase 33**). Neither exists. One droplet running seven containers
+behind one Caddy has a bill, not a cost breakdown, and dividing it by service
+count would be arithmetic presented as measurement.
+
+**What can honestly be built now:** what the control plane itself costs to run —
+droplet, snapshots if enabled, registry storage, domain — **entered as
+configuration and labelled declared.** OpsAtlas has a consistent pattern for
+facts it cannot verify: on-call is declared, not observed (ADR 0016); a
+deployment is reported, not discovered (ADR 0017). A cost figure nobody's billing
+API confirmed is the third member of that family and must be labelled the same
+way. Integrating a provider billing API is a credential and a phase of its own.
+
+**Do not add the Costs nav item yet.** §10 says a nav item appears only when its
+page is real, and a Costs tab showing one infrastructure figure implies
+per-service costing that does not exist — a UI element implying a capability the
+backend lacks, which is the prohibition. The number belongs on a page about the
+deployment until phase 17 makes the breakdown possible.
+
+**Why build it at all before then:** because an architecture decision that ignores
+cost is half a decision, and this project has several worth pricing — the
+telemetry stack is undeployed for exactly this reason (ADR 0014), a managed
+database was rejected on cost, and phase 28 notes that a cluster for seven
+containers is several times the droplet's bill. Those are cost arguments made
+without a number attached to any of them.
+
+### Phase 39 — Capacity: designed, tested, observed
+
+**Three columns, never one number.** A capacity claim collapses into fiction the
+moment it stops saying which kind it is:
+
+- **Designed** — what the architecture is meant to support. Free to be ambitious,
+  under one condition below.
+- **Tested** — what phase 26's k6 run actually achieved, on named hardware, with
+  the date.
+- **Observed** — what the real deployment actually does. Today that is a handful
+  of services and a few probes a minute. Small, and publishing it small is the
+  entire credibility of the other two columns.
+
+**The condition, and it is the whole discipline of this document: a designed
+number is only honest if it changed a design decision.** Otherwise it is a wish
+wearing a table. So every target names the decision it drove, or admits it drove
+none. This project already has real entries for that column:
+
+- **Observations are counters, not rows per probe** (ADR 0009). Storage is
+  environments × retained days and is independent of probe frequency. That is a
+  capacity decision, made before any number was written down.
+- **Cursor pagination everywhere** (§9), with offset refused permanently.
+- **The retention job**, which is what makes the counter design bounded rather
+  than merely slower-growing.
+
+**And it will expose what does not scale, which is the point of the exercise.**
+Writing "100,000 services" forces two gaps into the open immediately: there is no
+**observer sharding** — one observer probes with bounded concurrency and no
+partitioning, and two observers double-count into the same counters, which is
+already a deferred decision with no owner; and folding tens of thousands of
+observations a second into PostgreSQL counters needs batching and partitioning
+that does not exist. Neither is a reason to avoid writing the number. Producing
+that list *is* the deliverable — a capacity document whose output is "here is the
+first thing that breaks, and at roughly what point" is worth more than one
+asserting a figure nobody tested.
+
+**The rule that binds it, from §3 rule 1:** no number appears without either a
+test behind it or a named design decision in front of it.
+
+**It also closes a loose end.** Phase 31's public page needs somewhere to point
+for capacity claims, and until this exists the honest answer there is that no
+phase defines the framing.
+
+### Phase 40 — Golden paths and reusable workflows
+
+**The largest platform-engineering capability this project does not have.** §10's
+navigation has listed **Golden Paths** since the beginning and nothing has ever
+stood behind it. A catalog that scores services against a standard, and offers no
+way to start from that standard, describes the gap rather than closing it.
+
+**Three parts:**
+
+1. **Reusable GitHub Actions workflows** — test, scan, build, publish. The
+   decision to make is where they live: `uses: owner/repo/.github/workflows/x.yml@ref`
+   works across repositories, so a separate repository is not *required*. Keeping
+   them here means a workflow change is versioned with the control plane, which is
+   either useful coupling or an unrelated release, and that should be decided on
+   purpose rather than by where the file landed.
+2. **Service templates** — one runtime first, not three. A template that emits a
+   valid `service.yaml` alongside the application.
+3. **The measurable claim** the whole phase exists for: time from nothing to a
+   registered, scored, probed service. That is the one number in this project
+   that would be a genuine platform-engineering result, and it is testable rather
+   than asserted.
+
+**The neat coupling, and the enforcement that comes with it:** this platform
+already defines "production-ready" — eleven declaration rules. A template is a
+golden path *by OpsAtlas's own definition* exactly when its emitted manifest
+scores full marks. So the test writes itself: **render the template, score it,
+fail the build below 11/11.** That is the same mechanism as
+`no_example_manifest_escapes_the_fleet_table`, pointed at templates.
+
+**A constraint the usual framing of this misses entirely: repository generation
+is not available here.** "Create the repository from a template" is a *write* to
+GitHub, and ADR 0008 is explicit — OpsAtlas polls, registers no webhooks, and
+asks for no scope beyond reading contents. A platform action that creates repos
+needs a write scope and a new ADR overturning that, which is a much larger
+decision than a template. **Golden paths here are templates a human instantiates**,
+and the platform observes the result like any other service.
+
+**The honesty requirement:** a golden path this project does not itself follow is
+a recommendation, not a path. OpsAtlas has CI that predates this phase, and the
+first consumer of the reusable workflows must be OpsAtlas — otherwise the claim
+is that other people should do something the author did not.
+
+**The downside:** templates rot silently. A template nobody regenerates from
+becomes wrong without failing anything, which is why the scoring test matters
+more than it looks, and why one runtime maintained is better than three
+abandoned.
+
+### Phase 41 — Coverage of this project's own tests
+
+**413 tests and no idea what they cover.** There is no JaCoCo on the JVM build,
+no coverage reporter configured for vitest, and no `-cover` on the Go job. The
+suite is the main evidence this project offers for its own correctness claims and
+nothing measures its reach.
+
+**What it needs:** JaCoCo, vitest's coverage reporter, `go test -cover`, and the
+reports published as CI artefacts.
+
+**Do not add a gate in this phase.** A threshold picked from whatever today's
+number turns out to be is arbitrary, and a coverage gate is the classic way to
+teach a codebase to write tests that execute lines without asserting anything.
+Publish the number first. If a floor is set later, set it *below* the current
+figure so it catches regression rather than demanding growth.
+
+**Expect the number to flatter, and say so when publishing it.** This suite is
+integration-heavy — Testcontainers against real PostgreSQL, Playwright against a
+real stack — and end-to-end tests execute enormous amounts of code incidentally.
+High line coverage from a handful of broad tests is not the same assurance as the
+mutation check that was actually run on `OrgIsolationIT`, where removing an org
+filter was verified to fail exactly three tests. That check is better evidence
+than any percentage this phase will produce, and the phase should say so rather
+than let a number displace it.
+
+**Keep two things apart.** This is **OpsAtlas's own** coverage. A monitored
+service's coverage is a different problem needing a CI provider — phase 22 — and
+phase 22 already records the right form of it: not whether a team *declared* a
+coverage gate, but whether the pipeline enforcing it actually ran.
+
+### Phase 42 — The design brief
+
+**The honest replacement for a requirements document.** Solutions-architecture
+advice reliably asks for "requirements and stakeholder needs", and for a project
+with one stakeholder who is also the author, a stakeholder-requirements document
+would be invented interviews with imaginary people. This project's entire
+discipline is against producing fiction that is shaped like evidence.
+
+**What to write instead**, all of which is true and none of which is currently in
+one place:
+
+- **The problem**, stated as something somebody actually has: services get
+  deployed, ownership decays, and nobody can say what is running where or whether
+  it was ever production-ready.
+- **Who it is for, and who it is not for.**
+- **Non-goals, explicitly** — not a Backstage competitor, not an APM, not a log
+  store, not a deploy tool. Each of those is refused somewhere in the ADRs and
+  the refusals are scattered.
+- **The constraints that genuinely shaped the architecture**: one person, no
+  budget for a cluster (ADR 0014), a **public repository**, so no credential can
+  ever be committed (§3 rule 5, ADR 0012), and real applications worth watching.
+- **The migration path** — how an existing service gets onboarded, step by step.
+  This is the item the advice keeps asking for and it genuinely does not exist:
+  phase 34 *performs* an onboarding without documenting a repeatable path.
+
+**Where the material already is:** `README.md`'s opening and its "Things this
+project does not do" section, `CLAUDE.md` §1, and the Context section of all
+nineteen ADRs. Like phase 29, this is consolidation rather than invention.
+
+**The downside, which now applies to a set rather than a document.** This is the
+third consolidation artefact — security (29), capacity (39), brief (42) — and
+consolidations drift from the code they describe. Each needs a date and a stated
+rule for what regenerates it, or in a year there will be three documents that
+were true once. This session has already corrected two paragraphs of exactly that
+kind, so the risk is measured rather than theoretical.
 
 ### Deferred decisions, recorded so they are not lost
 
-- **Policy exceptions** — dated, auto-expiring waivers with a named approver. The
-  best governance idea in the prototype, deferred because an approver requires
-  identity, and identity is stubbed (ADR 0003, ADR 0004).
-- **PostgreSQL row-level security** — the strongest form of org scoping, and the
-  right answer once real authentication lands (ADR 0003).
+- **Policy exceptions** — dated, auto-expiring waivers with a named approver.
+  The best governance idea in the prototype. The reason it waited has changed:
+  identity is no longer a stub (ADR 0013), so a principal *can* be named. What is
+  missing now is **roles** — every principal can do everything within their own
+  organization, so "approved by" would record who clicked rather than who was
+  entitled to, and a waiver anyone can grant themselves is not a control
+  (ADR 0004).
+- **PostgreSQL row-level security** — the strongest form of org scoping.
+  **Its trigger has fired.** ADR 0003 deferred it until real authentication
+  landed, and ADR 0013 landed it. Today isolation is enforced by every query
+  filtering on `org_id`, proven by `OrgIsolationIT` and kept honest by
+  `no_endpoint_escapes_this_test` — which is a test that a developer remembered,
+  where RLS would be the database refusing regardless. Worth revisiting as its
+  own decision rather than left on a list of things waiting for something that
+  already happened.
 - **Database-level audit immutability** — `REVOKE UPDATE, DELETE` on `audit_event`
   for the application role. Enforced only in the application layer in slice one,
   and described that way.

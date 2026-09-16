@@ -42,3 +42,5 @@ apps/web/test-results/
 apps/observer/observer
 apps/web/e2e/.auth/
 deploy/compose/telemetry/opsatlas.key
+
+upgrades

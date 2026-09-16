@@ -38,12 +38,33 @@ public record ServiceFacts(
         Optional<String> runbook,
         Optional<Slo> slo,
         Optional<List<String>> journeys,
-        Optional<List<String>> dependencies) {
+        Optional<List<String>> dependencies,
+        Optional<Oncall> oncall) {
 
     /** @param url absent when the manifest declares no URL for this environment */
     public record EnvironmentFacts(String name, Optional<String> url) {}
 
     public record Slo(double availability, String window) {}
+
+    /**
+     * The declared escalation path.
+     *
+     * <p>Governance states this in its own terms like everything else here, and
+     * deliberately has no field for who is on call: that is live state from a
+     * paging provider, and no rule can be written against a fact this system
+     * cannot refresh (ADR 0016).
+     *
+     * @param coverage the wire value - {@code 24x7}, {@code business-hours} or
+     *     {@code best-effort} - kept as a string so governance does not import a
+     *     catalog enum
+     */
+    public record Oncall(Optional<String> rotation, Optional<String> coverage, Optional<String> escalation) {
+
+        /** Whether the rotation claims to answer outside working hours. */
+        public boolean isRoundTheClock() {
+            return coverage.filter("24x7"::equals).isPresent();
+        }
+    }
 
     /**
      * Tier 1 and 2 carry obligations tier 3 does not. Rules ask this rather than

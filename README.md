@@ -70,7 +70,7 @@ jobs — selection, focus ring, error-budget fill, open-incident emphasis. See
 | Semantic validation — duplicate environment names | **Real** | same |
 | Architecture decisions, phases 0–10 | **Real** (written down) | [`docs/adr/`](docs/adr/), [`docs/roadmap.md`](docs/roadmap.md) |
 | Design system extracted from the prototype | **Real** (written down) | [`docs/design/tokens.md`](docs/design/tokens.md) |
-| Control plane (Java 21 / Spring Boot) | **Real** | `make test` — 288 JVM tests |
+| Control plane (Java 21 / Spring Boot) | **Real** | `make test` — 305 JVM tests |
 | PostgreSQL schema and Flyway migrations | **Real** | `SeedConsistencyIT`, and Hibernate `ddl-auto: validate` refuses to start on drift |
 | `POST /api/v1/services` — register from a `service.yaml` | **Real** | `RegistrationApiIT`, plus 13 curl assertions against a running server |
 | Safe YAML ingestion — size cap, no alias expansion, no type construction | **Real** | `ManifestValidationTest` — billion-laughs, `!!java` tags, duplicate keys and a 70 KiB body are all refused |
@@ -78,14 +78,20 @@ jobs — selection, focus ring, error-budget fill, open-incident emphasis. See
 | Idempotent re-registration by manifest digest | **Real** | `RegistrationApiIT` — a replay returns 200 and does not move `version` |
 | `PUT` with `If-Match` optimistic locking (428 / 412) | **Real** | `RegistrationApiIT` |
 | `GET /api/v1/services` and `/{slug}` with cursor pagination | **Real** | `CatalogApiIT`, `RegistrationApiIT` |
-| Cross-organization isolation, on **every** org-scoped endpoint | **Real, and verified** | `OrgIsolationIT` — 27 tests covering services, sources, scorecard, audit log, both health endpoints, observation ingestion and deletion; two prove the database itself refuses a cross-org reference |
+| Cross-organization isolation, on **every** org-scoped endpoint | **Real, and verified** | `OrgIsolationIT` — 30 tests covering services, sources, scorecard, audit log, both health endpoints, observation ingestion, deployments and deletion; two prove the database itself refuses a cross-org reference |
 | That an endpoint cannot be added without covering its isolation | **Real, enforced** | `no_endpoint_escapes_this_test` enumerates every `/api/v1` mapping and fails the build on any that is neither covered nor exempt with a written reason |
 | That those isolation tests would catch a real leak | **Real, and verified** | removing the org filter from the audit log, the fleet health rollup and the environment lookup fails exactly three of them and nothing else |
 | OpenAPI document generated from the code, drift-checked | **Real** | `make check-openapi` fails the build on any difference |
 | Swagger UI over that document, at `/swagger-ui.html` | **Real** | served by springdoc; on by default locally, off when `OPSATLAS_SWAGGER_UI=false` |
 | Typed TypeScript client, no hand-written API types | **Real** | `make typecheck` |
-| Web console — catalog, detail, scorecard, register by paste, edit and delete | **Real** | 50 component tests, 36 Playwright tests against the real stack |
+| Web console — catalog, detail, scorecard, register by paste, edit and delete | **Real** | 73 component and unit tests, 61 Playwright tests against the real stack |
 | A declared dashboard, rendered as a followable link | **Real** | `manifestLinks.test.ts` refuses `javascript:`, `data:`, `http:` and protocol-relative URLs; `observability.spec.ts` drives the real link in a browser |
+| Declared runbook, contact, SLO target, dependencies and journeys, rendered | **Real** | all five were validated, stored and shown nowhere until now. `manifestLinks.test.ts` (26 tests) and `declarations.spec.ts` (9 Playwright tests); a repository-relative runbook stays a path rather than being guessed into a github.com link |
+| **On-call rotation, declared and scored** | **Real** | `spec.operations.oncall` — a rotation URL, what it covers, and who it escalates to. `oncall-declared` is REQUIRED at tier 1 and 2, and is **stricter at tier 1**: a business-hours rotation passes at tier 2 and fails at tier 1. `PolicyCheckTest` (55), ADR 0016 |
+| Who is on call *right now* | **Not built** | needs a read-only paging-provider integration. A name this system could not refresh would go stale into the one page somebody reads at 03:00, so nothing claims it |
+| Health check paths, shown | **Real** | `spec.health.readiness` and `.liveness` were in the API response and rendered nowhere until now; `declarations.spec.ts` drives them in a browser |
+| Probe interval, timeout, eviction, replica counts | **Not built** | the interval and timeout are the observer's own configuration, not the service's. A probe reaches one URL through whatever sits in front of it and cannot count replicas |
+| Declared SLO target, shown as a declaration | **Real, and labelled** | the page says outright that nothing measures against it — the ribbon beside it is probe availability from one vantage point, which is a different measurement |
 | Editing a manifest from the console, with `If-Match` | **Real** | `manage.spec.ts` — an invalid edit is refused with the control plane's own JSON Pointer |
 | Retiring a service, keeping its entry and history | **Real** | `manage.spec.ts` — `spec.lifecycle: retired` through the edit form, and it stays in the catalog |
 | Deleting a service, with the audit trail surviving it | **Real** | cross-org and positive-control coverage in the isolation suite, plus `manage.spec.ts` — `service.deleted` is still readable after the row is gone |
@@ -112,10 +118,10 @@ jobs — selection, focus ring, error-budget fill, open-incident emphasis. See
 | Probes deliberately carry **no** trace context | **Real, enforced** | `tracing_test.go` — a probe that sent `traceparent` fails the test; verified by mutation |
 | OTLP export is best-effort — a collector that is down costs a request nothing | **Real** | `TraceCorrelationIT` points the exporter at a closed port and asserts requests still succeed |
 | Traces, metrics and dashboards locally (Tempo, Prometheus, Grafana) | **Real** | `make up-telemetry`; Prometheus scraping the control plane and the observer |
-| Logs shipped to a log store (Loki) | **Not built** | deferred with a reason — see below |
+| Logs shipped to a log store (Loki) | **Not built — phase 24** | deferred with a reason (ADR 0011) that still holds; numbered so it stops being a gap with no home |
 | No credentials in source control | **Real, enforced** | `make check-secrets` — eight credential formats plus tracked `.env`/key files, run first in CI and by `make test`; verified by planting a token and a tracked `.env` and watching it fail. It raises the floor, it is not a proof — [ADR 0012](docs/adr/0012-secret-scanning-is-a-grep.md) says what it misses |
 | CI pipeline — six jobs on a clean runner | **Real, and green** | [run #1](https://github.com/HoseaCodes/OpsAtlas/actions/runs/34782671255) — contract fixtures, console, observer, control plane, OpenAPI drift and the browser smoke test all passed on first execution. The smoke job boots PostgreSQL, the control plane and the console and drives Playwright against them |
-| Scorecard — ten declaration rules, tier-conditional | **Real** | `PolicyCheckTest` (49), `ScorecardApiIT` (12) |
+| Scorecard — eleven declaration rules, tier-conditional | **Real** | `PolicyCheckTest` (55), `ScorecardApiIT` (12) |
 | **The fleet table below is asserted, not maintained by hand** | **Real, enforced** | `PolicySetIT` registers all six manifests and compares the real scores to the table printed in this README; it also pins the rule-id set beside `PolicyCatalog.VERSION`, so a rule cannot change a verdict without the build noticing |
 | `NOT_APPLICABLE` as a real outcome, with a moving denominator | **Real** | a tier 3 service is scored out of 7, not 10 |
 | Scorecard + audit written in the registration transaction | **Real, and verified** | `ScorecardApiIT` — a forced mid-registration failure leaves no service, no scorecard and no audit row |
@@ -138,13 +144,24 @@ jobs — selection, focus ring, error-budget fill, open-incident emphasis. See
 | Rotating a key revokes the old one immediately | **Real** | `ServiceCredentialIT` — both keys working during a changeover would leave a leaked key live |
 | Console sign-in, session and sign-out | **Real, and verified live** | `signin.spec.ts` drives a real browser against a real Storm-Gate: redirect to sign-in, sign in, catalog renders, reload keeps the session, sign out ends it |
 | The console holds no credential of its own | **Real** | it forwards the reader's token, so the audit log names the person rather than "the console" |
-| The browser suite, signed in | **Real** | 36 Playwright tests against the whole stack — identity provider, control plane, PostgreSQL and the console — with a shared session from a real sign-in |
+| The browser suite, signed in | **Real** | 61 Playwright tests against the whole stack — identity provider, control plane, PostgreSQL and the console — with a shared session from a real sign-in |
 | OpenAPI document declaring the bearer scheme | **Not done** | the generated contract says nothing about auth, so the typed client does not know a token exists |
-| Dependency graph and blast radius | **Not built** | needs trace data |
+| Declared dependency list, with kinds | **Real** | rendered on the service detail page; an absent `spec.dependencies` reads as unanswered and an empty list as "this calls nothing", which is the distinction the schema exists to keep |
+| Dependency *graph* and blast radius | **Not built — phase 21** | forward edges only. Nothing computes which registered services call a given one, so the page says it is not a blast radius. The edges are already stored, which makes this the cheapest item on the roadmap |
 | Real-user SLO measurement | **Not built** | probe availability is not an SLO — see below |
 | Latency percentiles over stored history | **Not built** | span durations are in Tempo; nothing aggregates them, and the rollups deliberately store mean and max only (ADR 0009) |
-| Cost attribution | **Not planned for slice one** | — |
-| Incidents | **Not planned for slice one** | — |
+| Cost attribution | **Not planned** | needs a cloud billing integration and a resource-to-service mapping that follows from nothing in the manifest |
+| **Alerting — telling anyone, without being asked** | **Not built — phase 19** | the largest gap in the project. Health is measured and nobody is told; "alerting" appears in this repository only as rationale for other rules. Every input for it now exists |
+| Backups, retirement dates, test gates, scheduled jobs, API spec | **Not built — phase 20** | none are in the manifest schema, so nothing can be declared or scored. One phase because they are one pattern |
+| Deploy frequency, lead time, change failure rate, pipeline health | **Not built — phase 22** | half falls out of the deployment ledger already built; the rest needs a CI provider, and the numbers would measure reporting discipline as much as delivery |
+| SBOM, known vulnerabilities, image provenance | **Not built — phase 23** | these must be verified from an external source, never declared. OpsAtlas would read findings somebody else produced and will not scan anything itself |
+| Linters, code style, coverage percentages | **Not planned as declarations** | that a team *says* it uses a linter is worth nothing. Whether the pipeline enforcing it passed is phase 22 |
+| Anything about a service's own UX or UI | **Not planned** | outside what a service catalog can know or usefully judge |
+| **Deployments — what version is running where** | **Real** | `DeploymentLedgerIT` (6), `OrgIsolationIT`. Reported by whoever deploys, never discovered: a row is a claim, not an observation. A required idempotency key means a retried report is not a second deployment and a rollback that never happened. ADR 0017 |
+| OpsAtlas reporting its own deploys | **Real** | `converge.sh` POSTs after a successful convergence, keyed on version and commit. Best-effort by design — a failed report never fails a deploy that already worked |
+| **Drift** — declared version versus running version | **Not built — phase 15** | this supplies the declared half only. The other half needs services to expose a running version, and a service declaring no version endpoint must then read as *not checkable*, never as *no drift*. Designed in [the roadmap](docs/roadmap.md) |
+| Instance counts, pod readiness | **Not built — phase 17** | orchestrator facts. A probe reaches one URL through whatever sits in front of it and cannot see how many replicas answered. Read-only when it lands, and a service that is not orchestrated reads *not applicable* rather than `0 / 0`. Designed in [the roadmap](docs/roadmap.md) |
+| Incidents | **Not built — phase 14** | needs phase 13: an incident log with no deployment history is a worse spreadsheet. OpsAtlas will record incidents, not declare them from probe failure |
 
 There is **no mocked data anywhere in this repository.** The example manifests in
 `examples/services/` are real test inputs that a real validator really validates.
@@ -153,21 +170,47 @@ measurement will be labelled in the interface, not only in a comment.
 
 ### Things this project does not do, and will not claim to
 
-- **It is not multi-tenant.** The data model is single-tenant, shaped so that
-  multi-tenancy is possible later. Every scoped table carries `org_id`, and there
-  is exactly one seeded organization behind a stub resolver. See
-  [ADR 0003](docs/adr/0003-org-scoping-stub.md).
+- **It is not multi-tenant, though it is no longer stubbed.** Every scoped table
+  carries `org_id`, and the organization now comes from the authenticated caller:
+  a verified token is looked up in the `principal` table by issuer *and* subject,
+  and a caller with no row gets 403 rather than somebody else's catalog
+  ([ADR 0013](docs/adr/0013-authentication-via-storm-gate.md)). Isolation is
+  verified by `OrgIsolationIT`, and `no_endpoint_escapes_this_test` fails the
+  build if an endpoint is added without covering it. What is still missing before
+  the word multi-tenant would be honest: there is no way to create an
+  organization, one is seeded; there are no roles, so every principal can do
+  everything within their own; and there is nowhere to keep a per-organization
+  secret, which is what the first external integration will need.
+  [ADR 0003](docs/adr/0003-org-scoping-stub.md) records the stub this replaced,
+  and that swapping one implementation was the whole migration — no query, no
+  table and no caller changed.
+- **Nothing bounds how fast anyone may call it.** There is no inbound rate
+  limiting at any layer — not at Caddy, not in the control plane. The only rate
+  limit anywhere in this codebase is GitHub's, and it is outbound and somebody
+  else's. Every `/api/v1` endpoint requires a verified token and a `principal`
+  row, so this is not an open door; it is an authenticated one with no bound on
+  how often it may be used. Closing it is phase 30 in
+  [`docs/roadmap.md`](docs/roadmap.md), and the threat model that says what else
+  is undefended is phase 29.
 - **The scorecard scores manifests, not running systems.** The slice-one checks
   read what a team declared. Whether traces actually arrive, whether the image was
   actually scanned, whether coverage is actually above the gate — none of that is
   checked yet, because the integrations that would check it do not exist. See
   [ADR 0004](docs/adr/0004-scorecard-rule-model.md).
+- **Catalog search is not fleet-wide.** The list endpoint takes a cursor and a
+  limit and nothing else, so the console's search box and tier filter apply to
+  the page already on screen. At this fleet size the difference is invisible; it
+  would not be at a hundred services. The empty state says so rather than
+  implying a search that reached everything, and closing it is phase 18 in
+  [`docs/roadmap.md`](docs/roadmap.md).
 - **Nothing has been load-tested or security-tested.** No performance, scale,
   availability or security claim appears anywhere in this repository, because
   none has been measured. It *is* deployed — [`deploy/production/`](deploy/production/),
   [ADR 0014](docs/adr/0014-deployment-is-one-box.md) — on one box, with no
   backups and no redundancy. Reachable is not the same as production-grade, and
-  this document will not call it the latter.
+  this document will not call it the latter. Backups are phase 25 and load
+  testing is phase 26 in [`docs/roadmap.md`](docs/roadmap.md), neither waiting
+  on anything else; **security testing has no phase**, and none is implied.
 
 ---
 
@@ -181,7 +224,7 @@ Six planes. Five of them now have something real in them:
 | **Control** | catalog, ownership, policy, scorecards | **built** — phases 1–3, 6 |
 | Execution | Go observer, probes | **built** — phase 7; reconciliation is not, and needs a deployment concept |
 | Telemetry | traces and metrics | **built** — phase 8; logs are on stdout and shipped nowhere |
-| Event | durable normalized platform events | not built — phase 9, and §6 says it waits for a demonstrated need |
+| Event | durable normalized platform events | not built — phase 11, and §6 says it waits for a demonstrated need, not for time |
 | Data | the monitored applications themselves | — |
 
 The control plane is a **modular monolith**, not microservices:
@@ -350,17 +393,18 @@ processes; `OPSATLAS_OTLP_ENDPOINT` points them somewhere else.
 
 ### The scorecard, and what it does not check
 
-Registering a service evaluates ten rules and stores the result in the same
-transaction as the service row. Registering the six example manifests produces:
+Registering a service evaluates eleven rules and stores the result in the same
+transaction as the service row. Registering the seven example manifests produces:
 
 ```text
 service                  tier  score    failing
-orders-api               1     10/10    -
-pricing-engine           1     8/10     journeys-declared, runbook-linked
-billing-worker           2     7/10     environment-urls-declared, liveness-probe-declared, readiness-probe-declared
-customer-portal          2     9/10     observability-service-name
-identity-bff             1     9/10     dependencies-declared
-legacy-report-runner     3     0/7      (7 failing; 3 not applicable at tier 3)
+orders-api               1     11/11    -
+pricing-engine           1     8/11     journeys-declared, oncall-declared, runbook-linked
+billing-worker           2     7/11     environment-urls-declared, liveness-probe-declared, oncall-declared, readiness-probe-declared
+customer-portal          2     9/11     observability-service-name, oncall-declared
+identity-bff             1     9/11     dependencies-declared, oncall-declared
+legacy-report-runner     3     0/7      (7 failing; 4 not applicable at tier 3)
+docs-portal              2     11/11    -
 ```
 
 Two things in that table are the whole design:
@@ -388,10 +432,12 @@ marked; the rest is listed so the direction is clear, not to imply it is present
 **Control plane** — Java 21 ✓, Spring Boot 3 ✓, Gradle ✓, Spring Web ✓, Spring
 Validation ✓, Spring Data JPA ✓, PostgreSQL ✓, Flyway ✓, Actuator ✓, Springdoc
 OpenAPI ✓, Micrometer ✓ (Prometheus registry and the Micrometer Tracing bridge),
-OpenTelemetry ✓ (OTLP over HTTP), Testcontainers ✓, ArchUnit ✓. Not added: Spring
-Security — deliberately, because the starter would put every endpoint behind a
-generated password, which is a security posture the project does not actually
-have.
+OpenTelemetry ✓ (OTLP over HTTP), Testcontainers ✓, ArchUnit ✓, and Spring
+Security ✓ — as `spring-boot-starter-oauth2-resource-server` rather than the
+plain starter, because OpsAtlas verifies RS256 tokens against the issuer's JWKS
+and holds no signing key of its own ([ADR 0013](docs/adr/0013-authentication-via-storm-gate.md)).
+This paragraph read "not added, deliberately" until 2026-09-16: authentication
+landed in phase 9 and the stack list was not updated with it.
 
 **Console** — Next.js App Router ✓, React ✓, TypeScript in strict mode ✓,
 Tailwind ✓, TanStack Query ✓, and a TypeScript client generated from the
@@ -503,7 +549,7 @@ curl -s -X POST localhost:8080/api/v1/services \
 }
 ```
 
-`make check-examples` validates the six example manifests, then asserts that each
+`make check-examples` validates the seven example manifests, then asserts that each
 of the eight invalid fixtures fails at exactly the JSON Pointer recorded in
 `examples/services/invalid/expected.json`. It fails if a good manifest breaks
 *and* if a bad manifest stops being bad — a checker that cannot fail is worthless,
@@ -541,7 +587,8 @@ certificate over `tls-alpn-01`, HTTP redirecting to HTTPS, and the API answering
 Still true, and worth saying in the same breath: **there are no backups**, it is
 one box with no redundancy and no zero-downtime deploy, and nothing has been
 load-tested or security-tested. Deploying something does not make it production-
-grade; it makes it reachable.
+grade; it makes it reachable. The first two now have phases — 25 and 26 — rather
+than standing as permanent disclaimers.
 
 ---
 
@@ -556,7 +603,7 @@ OpsAtlas/
 │   └── Dockerfile          multi-stage: JDK builds the jar, JRE runs it
 │   └── src/main/java/com/ambitiousconcepts/opsatlas/
 │       ├── shared/         errors, pagination, correlation — depends on nothing
-│       ├── identity/       the org-scoping stub
+│       ├── identity/       organizations, principals, token resolution
 │       ├── catalog/        services, environments, service.yaml ingestion
 │       ├── governance/     policy rules, scorecards, audit
 │       ├── integrations/   polling watched repositories (read-only)
@@ -580,7 +627,9 @@ OpsAtlas/
 
 ## Roadmap
 
-Slice one is the catalog vertical slice, and nothing else.
+Slice one is the catalog vertical slice — phases 0 through 8, all complete.
+Everything from 9 on is after it, and the numbering below is the one in
+[`docs/roadmap.md`](docs/roadmap.md); the two used to disagree.
 
 | Phase | What | State |
 |---|---|---|
@@ -593,8 +642,41 @@ Slice one is the catalog vertical slice, and nothing else.
 | 6 | GitHub sync — poll watched repositories | **complete** |
 | 7 | The Go observer, and everything health-shaped | **complete** |
 | 8 | OpenTelemetry — traces across both processes, Tempo, Prometheus, Grafana | **complete** |
-| 9 | Transactional outbox, platform events, Redis read models | not started |
-| 10 | Terraform, Kubernetes, Helm, k6 | not started |
+| 9 | Authentication and authorization | **complete** — [ADR 0013](docs/adr/0013-authentication-via-storm-gate.md) |
+| 10 | Packaging — container images for both apps | **complete** |
+| 11 | Transactional outbox, platform events, Redis read models | not started, and waiting on a demonstrated need rather than on time |
+| 12 | Deployment — one box, compose behind Caddy | **deployed**; its unfinished half is now phases 25–28 rather than a clause |
+| 13 | Deployments — what version is running where | **built, minus drift** — [ADR 0017](docs/adr/0017-deployments-are-reported-not-discovered.md) |
+| 14 | Incidents | not started |
+| 15 | Drift detection — declared version versus running version | not started; the deferred half of 13 |
+| 16 | Live on-call — who is answering right now | not started |
+| 17 | Runtime topology — instances, replicas, pod readiness | not started |
+| 18 | Catalog query — server-side search and filtering | not started; asked for in slice one and not delivered |
+| 19 | Alerting — telling somebody without being asked | not started; the largest gap, and every input for it exists |
+| 20 | Declared operational posture — backups, retirement, tests, scheduled jobs, API spec | not started |
+| 21 | Dependency graph and blast radius | not started; the edges are stored, nothing walks them |
+| 22 | Delivery metrics — deploy frequency, lead time, change failure rate | not started; half of it is already in the deployment ledger |
+| 23 | Supply chain and security posture — SBOM, vulnerabilities, provenance | not started |
+| 24 | Log aggregation | deferred in [ADR 0011](docs/adr/0011-correlation-id-is-the-trace-id.md), with reasons that still hold |
+| 25 | Backups and restore | not started, and nothing blocks it — two volumes are the system of record, not one |
+| 26 | Load and soak testing — k6 | not started, and nothing blocks it; the phase that would let this README stop saying "never load-tested" |
+| 27 | Infrastructure as code — Terraform | not started; has a stated trigger, because [ADR 0014](docs/adr/0014-deployment-is-one-box.md)'s reason for rejecting it still holds |
+| 28 | Kubernetes and Helm | not started; coupled to 17, which needs a cluster to read |
+| 29 | Security posture and threat model — `docs/security/` | not started, and nothing blocks it; no new code, and one finding already in hand |
+| 30 | Inbound rate limiting | not started; there is none today, at any layer |
+| 31 | The public case study surface | not started; the deployed console is a login wall, so the deployment serves one of this project's two audiences |
+| 32 | Shareable per-service pages | not started; would be the first unauthenticated read path, so what the page omits is the design |
+| 33 | Telemetry summaries in the control plane | not started; the telemetry plane exists and the API queries none of it |
+| 34 | Onboard a real application | not started; needs no new code, and is the first thing that would push back |
+| 35 | Scorecard history | not started; the rows already exist and nothing reads them |
+| 36 | The audit log page | not started; the endpoint has existed since phase 3 |
+| 37 | Teams | not started; in the schema and the domain model, exposed by nothing |
+| 38 | What this deployment costs | not started; per-service cost needs phases 17 and 33 first |
+| 39 | Capacity — designed, tested, observed | not started; three columns, and a designed number only counts if it changed a decision |
+| 40 | Golden paths and reusable workflows | not started; the largest platform capability absent here |
+| 41 | Coverage of this project's own tests | not started; nothing measures coverage in any of the three languages |
+| 42 | The design brief | not started; problem, non-goals, constraints and the onboarding path |
 
-Details, what each remaining phase is waiting on, and the decisions deferred
-rather than forgotten are in [`docs/roadmap.md`](docs/roadmap.md).
+Details, what each remaining phase is waiting on, the decisions deferred rather
+than forgotten, and the four commands slice one's definition of done named but
+never delivered are in [`docs/roadmap.md`](docs/roadmap.md).

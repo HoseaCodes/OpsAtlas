@@ -106,7 +106,7 @@ class SourceSyncIT extends PostgresTestBase {
         sync(watch());
 
         assertThat(jdbc.queryForObject("select checks_passed from policy_result", Integer.class))
-                .isEqualTo(10);
+                .isEqualTo(11);
         assertThat(jdbc.queryForObject("select action from audit_event", String.class))
                 .isEqualTo("service.registered");
     }

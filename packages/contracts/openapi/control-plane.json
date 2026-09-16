@@ -363,6 +363,49 @@
         }
       }
     },
+    "/api/v1/services/{slug}/environments/{environment}/deployments" : {
+      "post" : {
+        "tags" : [ "deployment-controller" ],
+        "operationId" : "report",
+        "parameters" : [ {
+          "name" : "slug",
+          "in" : "path",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "name" : "environment",
+          "in" : "path",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/DeployedVersion"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/Deployment"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/observations" : {
       "post" : {
         "tags" : [ "observation-controller" ],
@@ -481,6 +524,32 @@
               "*/*" : {
                 "schema" : {
                   "$ref" : "#/components/schemas/ServiceHealth"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/services/{slug}/deployments" : {
+      "get" : {
+        "tags" : [ "deployment-controller" ],
+        "operationId" : "forService_2",
+        "parameters" : [ {
+          "name" : "slug",
+          "in" : "path",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ServiceDeployments"
                 }
               }
             }
@@ -738,6 +807,60 @@
           }
         },
         "required" : [ "consecutiveFailures", "createdAt", "enabled", "id", "lastAttemptAt", "lastDetail", "lastOutcome", "lastSuccessAt", "path", "provider", "ref", "repository", "serviceId", "version" ]
+      },
+      "DeployedVersion" : {
+        "type" : "object",
+        "properties" : {
+          "version" : {
+            "type" : "string",
+            "minLength" : 1
+          },
+          "commitSha" : {
+            "type" : "string"
+          },
+          "deployedBy" : {
+            "type" : "string"
+          },
+          "deployedAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "idempotencyKey" : {
+            "type" : "string",
+            "minLength" : 1
+          }
+        },
+        "required" : [ "commitSha", "deployedAt", "deployedBy", "idempotencyKey", "version" ]
+      },
+      "Deployment" : {
+        "type" : "object",
+        "properties" : {
+          "id" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "environmentId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "environmentName" : {
+            "type" : "string"
+          },
+          "version" : {
+            "type" : "string"
+          },
+          "commitSha" : {
+            "type" : "string"
+          },
+          "deployedBy" : {
+            "type" : "string"
+          },
+          "deployedAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          }
+        },
+        "required" : [ "commitSha", "deployedAt", "deployedBy", "environmentId", "environmentName", "id", "version" ]
       },
       "Observation" : {
         "type" : "object",
@@ -1014,6 +1137,34 @@
           }
         },
         "required" : [ "environments", "neverObserved", "notice", "serviceId" ]
+      },
+      "ServiceDeployments" : {
+        "type" : "object",
+        "properties" : {
+          "serviceId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "current" : {
+            "type" : "object",
+            "additionalProperties" : {
+              "$ref" : "#/components/schemas/Deployment"
+            }
+          },
+          "history" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/Deployment"
+            }
+          },
+          "nothingReported" : {
+            "type" : "boolean"
+          },
+          "notice" : {
+            "type" : "string"
+          }
+        },
+        "required" : [ "current", "history", "nothingReported", "notice", "serviceId" ]
       },
       "PolicyRuleView" : {
         "type" : "object",

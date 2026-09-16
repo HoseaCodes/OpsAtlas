@@ -1,8 +1,8 @@
 # Architecture — what exists today
 
-Slice one plus phases 6, 7 and 8. Deliberately a description of what is built,
-not of what is planned; the target layout and the remaining phases are in
-[`../roadmap.md`](../roadmap.md).
+Slice one plus phases 6 through 10, 12 and 13. Deliberately a description of
+what is built, not of what is planned; the target layout and the remaining
+phases are in [`../roadmap.md`](../roadmap.md).
 
 ---
 
@@ -60,7 +60,7 @@ flowchart TD
         integrations["<b>integrations</b><br/>watched sources · polling<br/><i>read-only, outbound</i>"]
         catalog["<b>catalog</b><br/>services · environments<br/>service.yaml ingestion"]
         governance["<b>governance</b><br/>policy rules · scorecards<br/>audit"]
-        identity["<b>identity</b><br/>organizations · principals<br/><i>auth is stubbed</i>"]
+        identity["<b>identity</b><br/>organizations · principals<br/><i>verified tokens, provisioned principals</i>"]
         shared["<b>shared</b><br/>errors · pagination · correlation<br/><i>depends on nothing</i>"]
     end
 
@@ -343,10 +343,12 @@ is.
 | Real-user SLO measurement | probe availability is not an SLO; this needs real traffic, not a prober | later |
 | Latency percentiles | span durations are in Tempo, but nothing aggregates them, and the rollups store mean and max by design (ADR 0009) | later |
 | Log shipping (Loki) | stdout JSON already carries the correlation ID; an agent, a retention policy and a second query language is a lot to beat `docker logs \| grep` (ADR 0011) | later |
-| Desired-versus-observed drift | needs a deployment concept to compare against | later |
+| Desired-versus-observed drift | a deployment is recorded now (ADR 0017), but nothing exposes an *observed* version to compare it against; a service declaring no version endpoint must read as **not checkable**, never as no drift | 15 |
 | Dependency graph, blast radius | the traces exist now, but deriving a graph from them is its own feature | later |
-| Authentication and authorization | stubbed by design — [ADR 0003](../adr/0003-org-scoping-stub.md) | later |
+| Live on-call — who is answering *now* | `spec.operations.oncall` declares a rotation and `oncall-declared` scores it (ADR 0016); naming a person needs a paging provider, and a per-organization secret to reach one | 16 |
+| Instance and replica counts | a probe reaches one URL through whatever fronts it and cannot see how many replicas answered; this needs an orchestrator, not a deployment table | 17 |
+| Fleet-wide catalog search | the list endpoint takes a cursor and a limit; the console filters the page it holds | 18 |
 | Policy exceptions | need an approver, which needs identity | later |
 | A GitHub App (higher rate limits, no personal credential) | needs a registered application, a private key and an installation flow | later |
-| Redis, Kafka, outbox | only once there is a demonstrated need (§6) | 9 |
-| Terraform, Kubernetes, Helm | nothing to deploy until there is something to run | 10 |
+| Redis, Kafka, outbox | only once there is a demonstrated need (§6); nothing has a second consumer, and no read model is slow | 11 |
+| Terraform, Kubernetes, Helm, k6 | it is deployed by hand-applied compose on one box (ADR 0014); there is now something for the IaC to describe, which there was not before | 12 |

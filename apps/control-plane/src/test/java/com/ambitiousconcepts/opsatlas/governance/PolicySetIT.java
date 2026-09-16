@@ -60,7 +60,7 @@ class PolicySetIT extends PostgresTestBase {
      * <p>Changing this list without changing the version is the mistake being
      * guarded against, so they are written down together, here, on purpose.
      */
-    private static final String VERSION = "2026-09-12.1";
+    private static final String VERSION = "2026-09-15.1";
 
     private static final List<String> RULES = List.of(
             "dependencies-declared",
@@ -68,6 +68,7 @@ class PolicySetIT extends PostgresTestBase {
             "journeys-declared",
             "liveness-probe-declared",
             "observability-service-name",
+            "oncall-declared",
             "owner-declared",
             "production-environment-declared",
             "readiness-probe-declared",
@@ -81,7 +82,8 @@ class PolicySetIT extends PostgresTestBase {
             "billing-worker",
             "customer-portal",
             "identity-bff",
-            "legacy-report-runner");
+            "legacy-report-runner",
+            "docs-portal");
 
     @Autowired
     private MockMvc mockMvc;
@@ -115,6 +117,44 @@ class PolicySetIT extends PostgresTestBase {
 
                         Bump PolicyCatalog.VERSION, then update VERSION and RULES here.""")
                 .isEqualTo(RULES);
+    }
+
+    /**
+     * The gap that let {@code docs-portal} in unnoticed.
+     *
+     * <p>{@code FLEET} is a written list, and the fleet-table test only checks the
+     * manifests on it. So an example manifest added to the directory was scored
+     * by nothing, documented nowhere, and broke no build - the README simply
+     * stopped describing the examples, quietly, which is the failure mode this
+     * whole class exists to prevent one level up.
+     *
+     * <p>Now the directory is the source of truth for *which* manifests must
+     * appear, and {@code FLEET} only decides the order they are printed in.
+     */
+    @Test
+    @DisplayName("no example manifest escapes the fleet table")
+    void no_example_manifest_escapes_the_fleet_table() throws Exception {
+        List<String> onDisk;
+        try (var files = Files.list(EXAMPLES)) {
+            onDisk = files.filter(path -> path.getFileName().toString().endsWith(".yaml"))
+                    .map(path -> path.getFileName().toString().replaceFirst("\\.yaml$", ""))
+                    .sorted()
+                    .toList();
+        }
+
+        assertThat(FLEET.stream().sorted().toList())
+                .as(
+                        """
+                        An example manifest is not in FLEET, or FLEET names one that is gone.
+
+                        A manifest missing from FLEET is scored by nothing and described by no \
+                        row in the README, and nothing fails - the documentation just stops being \
+                        true. Add it to FLEET, then run this class again: the fleet-table test \
+                        prints the row to paste.
+
+                        Only files directly in examples/services are examples; invalid/ holds \
+                        fixtures that are meant not to register.""")
+                .isEqualTo(onDisk);
     }
 
     @Test

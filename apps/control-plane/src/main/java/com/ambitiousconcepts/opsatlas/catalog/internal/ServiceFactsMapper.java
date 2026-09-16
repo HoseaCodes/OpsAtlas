@@ -43,7 +43,15 @@ final class ServiceFactsMapper {
                 // Absence is preserved deliberately: "I have not said" and "I have
                 // none" are different answers, and dependencies-declared is the
                 // rule that distinguishes them.
-                manifest.spec().dependencies().map(ServiceFactsMapper::names));
+                manifest.spec().dependencies().map(ServiceFactsMapper::names),
+                manifest.spec().operations().flatMap(ManifestV1.Operations::oncall).map(ServiceFactsMapper::oncall));
+    }
+
+    private static ServiceFacts.Oncall oncall(ManifestV1.Oncall declared) {
+        return new ServiceFacts.Oncall(
+                declared.rotation(),
+                declared.coverage().map(ManifestV1.Coverage::wireValue),
+                declared.escalation());
     }
 
     private static List<String> names(List<ManifestV1.Dependency> dependencies) {

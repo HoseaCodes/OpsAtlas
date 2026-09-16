@@ -177,7 +177,34 @@
           ]
         },
         "contact": {
-          "description": "Chat channel or alias that reaches the owning team.",
+          "description": "Chat channel or alias that reaches the owning team during working hours. Not an escalation path: see oncall.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "oncall": { "$ref": "#/$defs/oncall" }
+      }
+    },
+
+    "oncall": {
+      "description": "How this service is escalated to out of hours. Deliberately a declaration about where the rotation lives and what it covers, never a claim about who is on call right now - OpsAtlas has no paging provider to ask, and a name it could not refresh would be worse than no name. Additive and optional, so every v1 manifest written before this still validates.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "rotation": {
+          "description": "Absolute https URL of the schedule, in whatever system owns it - a PagerDuty or Opsgenie schedule, or a wiki page. What matters is that somebody woken at 03:00 can find who is next.",
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https://",
+          "maxLength": 500
+        },
+        "coverage": {
+          "description": "What the rotation actually covers. The load-bearing field: a tier 1 service whose rotation is business-hours only is a stated gap, and stating it is better than a scorecard that cannot see it.",
+          "type": "string",
+          "enum": ["24x7", "business-hours", "best-effort"]
+        },
+        "escalation": {
+          "description": "Where a page goes if the first responder does not answer. Free text, because this is a team name as often as a URL.",
           "type": "string",
           "minLength": 1,
           "maxLength": 120

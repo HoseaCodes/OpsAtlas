@@ -27,6 +27,10 @@ spec:
       window: 30d
     runbook: docs/runbook.md
     contact: "#orders-eng"
+    oncall:
+      rotation: https://pagerduty.example.com/schedules/PORDERS
+      coverage: 24x7
+      escalation: platform-leads
   journeys:
     - Place an order
     - Track an order

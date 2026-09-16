@@ -66,27 +66,27 @@ class ScorecardApiIT extends PostgresTestBase {
     // -- Scoring on registration --------------------------------------------
 
     @Test
-    @DisplayName("a fully declared tier 1 service scores 10 of 10")
+    @DisplayName("a fully declared tier 1 service scores 11 of 11")
     void complete_manifest_scores_full_marks() throws Exception {
         register("orders-api.yaml");
 
         mockMvc.perform(get("/api/v1/services/orders-api/scorecard"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.checksPassed").value(10))
-                .andExpect(jsonPath("$.checksApplicable").value(10))
+                .andExpect(jsonPath("$.checksPassed").value(11))
+                .andExpect(jsonPath("$.checksApplicable").value(11))
                 .andExpect(jsonPath("$.policySetVersion").isNotEmpty())
-                .andExpect(jsonPath("$.checks.length()").value(10));
+                .andExpect(jsonPath("$.checks.length()").value(11));
     }
 
     @Test
-    @DisplayName("a tier 1 service missing a runbook and journeys scores 8 of 10 and says which two")
+    @DisplayName("a tier 1 service missing a runbook, journeys and a rotation scores 8 of 11 and names all three")
     void partial_manifest_names_what_is_missing() throws Exception {
         register("pricing-engine.yaml");
 
         String body = mockMvc.perform(get("/api/v1/services/pricing-engine/scorecard"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.checksPassed").value(8))
-                .andExpect(jsonPath("$.checksApplicable").value(10))
+                .andExpect(jsonPath("$.checksApplicable").value(11))
                 .andReturn()
                 .getResponse()
                 .getContentAsString();
@@ -97,16 +97,16 @@ class ScorecardApiIT extends PostgresTestBase {
             if ("FAIL".equals(check.get("status").asText())) {
                 failed.add(check.get("checkId").asText());
                 // Every failure must carry a reason. A scorecard that says
-                // "8 of 10" without saying which two is a number, not a tool.
+                // "8 of 11" without saying which three is a number, not a tool.
                 assertThat(check.get("detail").asText()).isNotBlank().hasSizeGreaterThan(40);
             }
         });
 
-        assertThat(failed).containsExactlyInAnyOrder("runbook-linked", "journeys-declared");
+        assertThat(failed).containsExactlyInAnyOrder("runbook-linked", "journeys-declared", "oncall-declared");
     }
 
     @Test
-    @DisplayName("a tier 3 unowned service is excused three rules rather than failed on them")
+    @DisplayName("a tier 3 unowned service is excused four rules rather than failed on them")
     void tier_three_denominator_shrinks() throws Exception {
         register("legacy-report-runner.yaml");
 
@@ -130,9 +130,10 @@ class ScorecardApiIT extends PostgresTestBase {
         });
 
         assertThat(notApplicable)
-                .containsExactlyInAnyOrder("slo-defined", "journeys-declared", "production-environment-declared");
+                .containsExactlyInAnyOrder(
+                        "slo-defined", "journeys-declared", "production-environment-declared", "oncall-declared");
         // All ten rules are still reported, so the matrix has no gaps.
-        assertThat(checks).hasSize(10);
+        assertThat(checks).hasSize(11);
     }
 
     @Test
@@ -261,7 +262,7 @@ class ScorecardApiIT extends PostgresTestBase {
                 .andExpect(jsonPath("$.items[0].actor")
                         .value(com.ambitiousconcepts.opsatlas.support.AuthenticatedByDefault.SUBJECT))
                 .andExpect(jsonPath("$.items[0].payload.slug").value("orders-api"))
-                .andExpect(jsonPath("$.items[0].payload.checksPassed").value(10))
+                .andExpect(jsonPath("$.items[0].payload.checksPassed").value(11))
                 .andExpect(jsonPath("$.items[0].payload.manifestDigest").isNotEmpty());
     }
 
@@ -324,7 +325,7 @@ class ScorecardApiIT extends PostgresTestBase {
     void rules_endpoint_is_honest_about_what_it_checks() throws Exception {
         mockMvc.perform(get("/api/v1/policy/rules"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.rules.length()").value(10))
+                .andExpect(jsonPath("$.rules.length()").value(11))
                 .andExpect(jsonPath("$.policySetVersion").isNotEmpty())
                 .andExpect(jsonPath("$.rules[0].rationale").isNotEmpty())
                 // Every rule declares itself declaration-only, and the notice

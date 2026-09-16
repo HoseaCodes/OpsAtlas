@@ -33,14 +33,18 @@ worse than no `terraform/` directory.
   found, and one identifier follows a request through the logs, the traces and
   the audit log. Phase 11 — the transactional outbox and platform events — waits
   for a demonstrated need (§6). Phase 12 was split: the **deployment is live**
-  (ADR 0014), and **Terraform, Kubernetes, Helm and k6 still wait** — no longer
-  circularly, since there is now something for them to describe. The phase list
-  is in `docs/roadmap.md`.
+  (ADR 0014), and its unfinished half is now **phases 25 (backups), 26 (k6),
+  27 (Terraform) and 28 (Kubernetes and Helm)** rather than a clause in the
+  phase 12 row — no longer circular, since there is now something for them to
+  describe. 25 and 26 are ready now; 27 and 28 have written triggers. **Phases 13
+  (deployments and drift) and 14 (incidents) are now written down**, which they
+  never were — incidents were in the domain model, the navigation plan and the
+  colour rules, and in no phase. The phase list is in `docs/roadmap.md`.
 - **What exists:** the `service.yaml` v1 JSON Schema and fixtures; a running
   control plane that registers services from a real manifest and serves them —
   `POST`, `GET /{slug}`, `GET` (cursor-paged), `PUT` with `If-Match` — with the
   ADR 0002 ingestion pipeline, RFC 9457 problem responses, correlation IDs and
-  real authentication (ADR 0013); a `governance` module scoring ten declaration rules and
+  real authentication (ADR 0013); a `governance` module scoring eleven declaration rules and
   auditing every change, both inside the registration transaction; Flyway schema
   for `organization`, `team`, `service`, `environment`, `policy_result`,
   `policy_result_check`, `audit_event`; a generated-and-drift-checked OpenAPI
@@ -52,7 +56,7 @@ worse than no `terraform/` directory.
   counters; a Go observer in `apps/observer`; W3C trace context across both
   processes with OTLP export, and a collector, Tempo, Prometheus and Grafana
   behind the compose `telemetry` profile; a production deployment configuration
-  in `deploy/production` with a runbook beside it; ADRs 0001–0014;
+  in `deploy/production` with a runbook beside it; ADRs 0001–0018;
   `docs/design/tokens.md`; `docs/architecture/slice-one.md`.
 - **Build:** pnpm workspace plus Gradle, `make` as the single entry point.
   `make up-app` builds and runs the control plane and console as containers,
@@ -70,11 +74,23 @@ worse than no `terraform/` directory.
   **No JDK needs to be installed** — the build declares a Java 21 toolchain and
   Gradle provisions Temurin 21 itself. Go 1.27+ **is** required for
   `apps/observer`; it is installed here via Homebrew.
-- **Tests:** `make test` — 14 schema fixtures, 50 console component tests,
-  35 Go tests (race-clean) and 288 JVM tests, all passing. `make test-all` adds
-  36 Playwright tests against the real stack. Integration tests use
+- **Tests:** `make test` — 15 schema fixtures, 73 console component and unit
+  tests, 35 Go tests (race-clean) and 305 JVM tests, all passing. `make test-all`
+  adds 61 Playwright tests against the real stack. Integration tests use
   Testcontainers and need a running Docker daemon; the Playwright tests need the
   stack running.
+- **There is no `make lint`, `make build` or `make seed`**, and slice one's
+  definition of done named all three. Nothing lints or formats either language:
+  `apps/web/package.json` declares a `lint` script wrapping `next lint`, but
+  eslint is not a dependency, so it cannot run. `make build` is missing even
+  though both build paths exist inside the phase 10 Dockerfiles, so nothing
+  checks that the jar and the console still build without building images.
+  Seeding was superseded rather than dropped — a seeder needs a credential now
+  (ADR 0013), and committing one is what §3 rule 5 forbids. None of this is a
+  correctness gap: `make test` and CI verify the same six things a developer
+  does. It is style enforcement that is absent, and it is written down in
+  `docs/roadmap.md` under **Unfinished business from slice one** rather than
+  rediscovered each session.
 - **CI is green on `master`.** Run #3 on 2026-09-15, commit `4e23098`: all six
   jobs — contract fixtures (20s), observer (21s), console (54s), OpenAPI drift
   (130s), browser smoke (152s), control plane (201s). The browser smoke job is
@@ -110,7 +126,8 @@ worse than no `terraform/` directory.
   Seven containers, one public hostname. The box is reached as `opsatlas@` with
   `~/.ssh/id_ed25519_ocean`; root login still works and **the SSH hardening was
   never applied** (see below).
-- **There are still no backups**, no zero-downtime deploy and no redundancy —
+- **There are still no backups** (phase 25), no zero-downtime deploy and no
+  redundancy —
   `docker compose up -d` stops and starts containers. Do not describe the data as
   surviving the box until something copies it off, and never call this highly
   available. DigitalOcean's droplet-level backups may be enabled; that has not
@@ -126,12 +143,19 @@ worse than no `terraform/` directory.
   `publish.yml` produced a `latest` tag that it, and ADR 0014, both claimed it
   never did. All three are fixed. **The `latest` tags published for `0.1.0` still
   exist** and should be deleted from GHCR.
-- **The box carries one temporary, uncommitted patch.** The `0.1.0` console image
-  still has the broken healthcheck, so `deploy/production/docker-compose.yml`
-  *on the droplet* has a `healthcheck:` block added to the `console` service,
-  marked TEMPORARY. It is wiped by the next `git pull` there — which is also when
-  the fixed image arrives. Running a tag later than `0.1.0` without removing it
-  is harmless but pointless.
+- **Deployment is pulled, not pushed (ADR 0015).** `deploy/production/VERSION`
+  holds the image tag the box should run, committed; a systemd timer runs
+  `converge.sh` every minute as `opsatlas`, which fetches `master`, hard-resets
+  to it, and applies the declared version. **Deploying is a commit**, rolling
+  back is `git revert`, and `git log -- deploy/production/VERSION` is the deploy
+  history. There is deliberately **no SSH key in GitHub Actions**: this
+  repository is public, and `docker` group membership on that box is
+  root-equivalent. Do not add a push-based deploy job while production is the
+  only target.
+- **The box hard-resets to `master` every minute.** Anything edited there is
+  lost without warning — that is the point, but it means the temporary-patch
+  trick used during the first deployment no longer survives. Change the
+  repository, not the machine.
 - **The operator's password is on the box, not in this repository**, at
   `~/operator-credentials.txt` (mode 600, owned by `opsatlas`). It was generated
   on the droplet and has never been transmitted or printed. The account is
@@ -202,14 +226,14 @@ worse than no `terraform/` directory.
     UI can send either and the contract states what every endpoint requires.
     **`make check-openapi` stays red until the regenerated contract is
     committed** — that is the check doing its job, not a failure.
-- **`OrgIsolationIT` proves scoping *and* authorization.** Its 27 tests plant a
+- **`OrgIsolationIT` proves scoping *and* authorization.** Its 30 tests plant a
   second organization's rows, and now a principal who belongs to it, so three of
   them authenticate as that caller and assert they reach their own catalog and
   not ours. Worth remembering why: until those existed, a resolver that ignored
   the principal's organization and always returned the seeded one would have
   passed the entire suite. Checked by mutation — doing exactly that now fails
   two tests.
-- **Cross-organization isolation is verified** by `OrgIsolationIT` (27 tests),
+- **Cross-organization isolation is verified** by `OrgIsolationIT` (30 tests),
   and it now covers **every org-scoped endpoint in the contract** — services,
   sources, the scorecard, the audit log, both health endpoints and observation
   ingestion. `GET /api/v1/policy/rules` is the only operation it does not cover,
@@ -262,6 +286,19 @@ worse than no `terraform/` directory.
   from `globals.css` fails two of its four tests. It has to be a browser test —
   `:focus-visible` does not match a scripted `.focus()`, so a component test
   asserting the ring would be asserting its own simulation.
+- **The browser suite has no such reset, and that has already cost a red CI.**
+  `make e2e` runs against whatever is in the compose database, which on a
+  developer's machine is weeks of accumulated rows. Adding `oncall-declared`
+  moved tier 3 from three excused rules to four, and `catalog.spec.ts` kept
+  passing locally because `legacy-report-runner` was still scored under the
+  **previous** `policy_set_version` and never re-scored — CI, starting empty, got
+  four and failed. Two lessons: a scorecard assertion verified against a stale
+  row is not verified, and the neighbouring `0 of 7` assertion did not catch it
+  because the denominator coincidentally stayed 7 (11 rules − 4 excused, as
+  against 10 − 3). **Before believing a green browser run that touches scores,
+  truncate every table but `organization` and restart the control plane** so the
+  bootstrap principal is re-provisioned — that is what CI does, and it is the
+  only way the run means what it looks like it means.
 - **Tests start from the seeded state; `PostgresTestBase` guarantees it.** One
   Testcontainers instance is shared by every integration test, and a `@BeforeEach`
   in the base class truncates every table except `organization` and preserves
@@ -295,7 +332,7 @@ worse than no `terraform/` directory.
   An exporter retrying against a collector that is not there once turned a
   20-second suite into four minutes. `TraceCorrelationIT` turns tracing back on
   for itself, deliberately pointed at a closed port.
-- **The scorecard scores manifests, not running systems.** All ten rules are
+- **The scorecard scores manifests, not running systems.** All eleven rules are
   declaration checks. `GET /api/v1/policy/rules` says so in its payload; do not
   describe them as production-readiness checks.
 - **Bump `PolicyCatalog.VERSION`** whenever a rule is added, removed, or changed
@@ -306,7 +343,20 @@ worse than no `terraform/` directory.
   a rule that quietly changes its mind about a manifest fails the build.
 - **The README's fleet table is a test fixture, not prose.** `PolicySetIT` parses
   it and compares it to real scores. When it fails it prints the correct table in
-  the README's own column widths, ready to paste.
+  the README's own column widths, ready to paste. **Adding an example manifest
+  means adding it to `FLEET` and to that table** — and that is now enforced:
+  `no_example_manifest_escapes_the_fleet_table` reads `examples/services` off
+  disk, so a manifest nobody documented fails the build instead of quietly making
+  the README describe a fleet that is missing one. It was added because exactly
+  that happened when `docs-portal` was written.
+- **`docs-portal` is the empty-dependency fixture.** It is the only manifest that
+  states `spec.dependencies: []` — "this service calls nothing", which is an
+  answer, as against an absent key, which is a question nobody answered. Both the
+  scorecard and the detail page distinguish them, and before `docs-portal`
+  existed the second branch was covered by a unit test and by nothing a browser
+  ever rendered. It is also the only manifest declaring every field the overview
+  can show, which is what `declarations.spec.ts` uses to assert that a fully
+  declared service shows no "none declared" anywhere.
 - **A file a test reads at runtime must be declared as a Gradle input.** README.md,
   `examples/services` and `packages/contracts/schemas` are. An undeclared one
   leaves the test task up-to-date and the test unrun — green for having been
@@ -333,6 +383,84 @@ worse than no `terraform/` directory.
   the hardcoded string `local` and so announced the production deployment as a
   laptop. It is now `OPSATLAS_ENVIRONMENT`, read at request time so one image
   still runs anywhere; a `NEXT_PUBLIC_` variable would bake it in at build.
+- **Deployments are reported, never discovered (ADR 0017).** A pipeline POSTs to
+  `/api/v1/services/{slug}/environments/{name}/deployments`; OpsAtlas records it
+  and **does not verify it**. A row says somebody claimed a version went out, not
+  that it is running. Three things there are load-bearing: `version` is free text
+  because a version is a semver, a date stamp or a branch name depending on whose
+  pipeline is talking; `deployed_at` comes from the reporter, not the server's
+  clock, or "in place for" silently measures how long ago OpsAtlas was told; and
+  the **idempotency key is required and never generated**, because a key this
+  endpoint invented would differ on every retry — which is the exact failure it
+  exists to prevent.
+- **A constraint violation aborts the whole PostgreSQL transaction.** The
+  idempotent write is "insert, and on conflict read back the row that beat us",
+  and doing both in one transaction cannot work: every statement after the
+  violation fails with *current transaction is aborted*. `DeploymentWriter`
+  exists solely to hold the insert in `REQUIRES_NEW` so the failure is confined.
+  Found by a test, not by review — do not collapse it back into one method.
+- **`converge.sh` reports OpsAtlas's own deploys**, keyed on version and commit,
+  so the platform's own catalog entry carries real promotion data. It is
+  **best-effort on purpose**: a failed report must never fail a convergence that
+  already succeeded, or a reporting hiccup teaches everyone to ignore the exit
+  code. It needs `deploy/production/deploy-key`; without it the script says so
+  and moves on.
+- **Drift is still not built, and must not be implied.** This supplies the
+  declared version only. Drift is declared-versus-*observed*, and nothing exposes
+  a running version to compare against — a service declaring no version endpoint
+  would have to read as *not checkable*, never as *no drift*. Two environments on
+  different versions is a **promotion**, which the console says outright. Written
+  up as **phase 15** in `docs/roadmap.md`, including the two timing traps that
+  will make it cry wolf: a rollout looks exactly like drift for its duration, and
+  replicas disagree with each other while one is in progress.
+- **Instance counts are not coming from here.** "Instances 9 / 14" and "5 pods
+  failing readiness" are orchestrator facts. A probe reaches one URL through
+  whatever sits in front of it and cannot see how many replicas answered. The
+  Health checks section says so rather than leaving a blank that reads as a bug.
+  **Phase 17** in `docs/roadmap.md`: the cost is cluster credentials on a box
+  where `docker` membership is already root-equivalent, not the API work, and it
+  stays **read-only** — the moment OpsAtlas can act on a cluster it is a deploy
+  tool with a catalog attached. A service that is not orchestrated must read
+  *not applicable*, never `0 / 0`, which looks like everything being down.
+- **On-call is declared, never observed (ADR 0016).** `spec.operations.oncall`
+  carries a rotation URL, a `coverage` enum and an escalation target, and
+  `oncall-declared` scores it — REQUIRED at tier 1 and 2, NOT APPLICABLE at
+  tier 3. It is **stricter at tier 1**: a rotation declaring `business-hours`
+  passes at tier 2 and fails at tier 1, because a tier 1 service is paged around
+  the clock by definition. **Nothing here says who is on call now** — that is
+  live state in a paging provider, and a name this system could not refresh
+  would go stale into the one page somebody reads at 03:00. Do not add a
+  who-is-on-call field without the integration behind it.
+- **The policy set is eleven rules at `2026-09-15.1`.** Adding `oncall-declared`
+  moved every stored score's denominator; the README fleet table was regenerated
+  from what the scorer actually produces, which is what `PolicySetIT` prints on
+  failure.
+- **`spec.health.readiness` and `.liveness` are rendered now, and were not.**
+  They were in `ServiceDetail.EnvironmentView` and shown nowhere — the same
+  "validated, stored, dropped" failure as the manifest fields below, found by
+  reading the page against the prototype. The Health checks section states
+  plainly that the probe interval and timeout are the *observer's* configuration
+  and that nothing can count replicas behind a URL, so neither is invented.
+- **The Operations links footer lists only links that resolve to somewhere.**
+  Runbook (when it is an https URL rather than a repository path), dashboard and
+  rotation. The prototype's Traces, Logs and API spec are deliberately absent:
+  there is no log store (Loki is deferred, ADR 0011), nothing knows where
+  Grafana lives, and there is no `apiSpec` field. A dead link is a UI element
+  implying a capability the backend does not have.
+- **Five more manifest fields are rendered now, and were not before.**
+  `spec.operations.runbook`, `spec.operations.slo`, `spec.dependencies` and
+  `spec.journeys` each moved a scorecard check and nothing else;
+  **`spec.operations.contact` moved nothing at all** — a team could declare a
+  chat channel and no part of this system would mention it again. The readers
+  are in `apps/web/lib/manifestLinks.ts` and each has a test, because this is
+  the second time a validated field reached no reader. Three things there are
+  deliberate: a repository-relative runbook stays a **path**, since
+  `metadata.repository` is `owner/name` with no host and linking it would mean
+  guessing github.com; the **SLO target sits away from the ribbon** and says
+  outright that nothing measures against it; and an absent `spec.dependencies`
+  renders differently from an empty one, which is the distinction the schema
+  exists to keep. The dependency list states that it is **not a blast radius**,
+  because nothing computes the reverse edges.
 - **`spec.observability.dashboard` is rendered now, and was not before.** It was
   validated, parsed and dropped — no column, no rule, nothing shown — so
   declaring one did nothing. `ServiceDetail` already carried the whole manifest,
@@ -437,7 +565,8 @@ com.ambitiousconcepts.opsatlas
 ├── catalog        # services, environments, registration, service.yaml ingestion
 ├── integrations   # external systems (GitHub, CI, cloud) — later phases
 ├── governance     # policies, scorecards, exceptions, audit events
-├── operations     # desired state, observations, deployments, incidents
+├── operations     # observations, deployments; desired state and incidents
+│                  # are not built — ADR 0018, phase 14
 ├── identity       # organizations, teams, principals
 └── shared         # cross-cutting: errors, pagination, correlation, time
 ```
@@ -447,9 +576,11 @@ another module's internals or repositories. `shared` depends on nothing.
 
 **Observer** (later phase) — Go. Pulls registered services from the control-plane
 API, probes health endpoints with bounded concurrency, timeouts and jittered
-retries, records availability and response time, detects desired-versus-observed
-drift, publishes normalized observations back, exposes Prometheus metrics, shuts
-down gracefully.
+retries, records availability and response time, publishes normalized
+observations back, exposes Prometheus metrics, shuts down gracefully. Drift —
+between the version desired, the version reported and the version answering — is
+**not built**; it is phase 15, and ADR 0018 says which of the three gaps means
+what.
 
 Adding any dependency not listed above requires a one-line justification in the
 PR or summary.
@@ -457,7 +588,8 @@ PR or summary.
 ## 6. Architectural planes
 
 - **Presentation** — Next.js console.
-- **Control** — catalog, ownership, policy, scorecards, desired state, incidents.
+- **Control** — catalog, ownership, policy, scorecards, deployments. Desired
+  state and incidents belong here and are not built (ADR 0018, phase 14).
 - **Execution** — Go observers, probes, reconciliation.
 - **Event** — durable normalized platform events.
 - **Telemetry** — metrics, logs, traces.
@@ -480,12 +612,16 @@ Organization
 └── Team
     └── Service
         └── Environment
-            ├── DesiredState
-            ├── Observation
-            ├── Deployment
-            ├── PolicyResult
-            └── Incident
+            ├── DesiredState    # not built — ADR 0018, ships with phase 15
+            ├── Observation     # built
+            ├── Deployment      # built — ADR 0017
+            ├── PolicyResult    # built
+            └── Incident        # not built — phase 14
 ```
+
+**The comments are the point.** This model went four phases describing two
+entities that do not exist, which is how `CLAUDE.md` §3 rule 1 fails when it is
+applied to behaviour and not to design documents. Keep them current.
 
 **Tenancy decision, so this does not get re-litigated each session:** every tenant-scoped
 table has `org_id UUID NOT NULL` with a foreign key to `organization`, and every
@@ -563,7 +699,9 @@ conventions below apply to every endpoint ever added.
 - Structured errors, one shape everywhere: `type`, `title`, `status`, `detail`,
   `correlationId`, and a `violations[]` array for validation failures.
 - Optimistic locking (`version` column, `If-Match` or a body field) wherever
-  concurrent updates are plausible — desired state above all.
+  concurrent updates are plausible. Today that is `PUT /api/v1/services/{slug}`.
+  It used to say "desired state above all", which was the better example and
+  described nothing that exists (ADR 0018).
 - Idempotency keys for observation and webhook ingestion, so a retried POST does
   not double-write.
 - Correlation ID accepted from `X-Correlation-Id` or generated, put in the MDC,

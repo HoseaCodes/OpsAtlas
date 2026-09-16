@@ -92,7 +92,7 @@ test("the scorecard tab is a real navigation, not client-only state", async ({ p
 test("a service detail page shows its scorecard and what the checks do not cover", async ({ page }) => {
   await page.goto("/catalog/orders-api?tab=scorecard");
 
-  await expect(page.getByRole("heading", { name: /10 of 10 applicable checks passing/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /11 of 11 applicable checks passing/ })).toBeVisible();
 
   // The claim the whole project turns on: these are declaration checks, and the
   // interface says so rather than implying runtime verification.
@@ -103,7 +103,11 @@ test("an unowned service is flagged, and its tier 3 rules are excused rather tha
   await page.goto("/catalog/legacy-report-runner?tab=scorecard");
 
   await expect(page.getByRole("heading", { name: /0 of 7 applicable checks passing/ })).toBeVisible();
-  await expect(page.getByText(/3 rules do not apply at this tier/)).toBeVisible();
+  // Four since oncall-declared landed: slo-defined, journeys-declared,
+  // production-environment-declared and oncall-declared are all NOT_APPLICABLE
+  // at tier 3. The denominator above stays 7 because the rule count rose too,
+  // which is why that assertion did not catch this and this one did.
+  await expect(page.getByText(/4 rules do not apply at this tier/)).toBeVisible();
   await expect(page.getByText("not applicable at this tier").first()).toBeVisible();
 });
 

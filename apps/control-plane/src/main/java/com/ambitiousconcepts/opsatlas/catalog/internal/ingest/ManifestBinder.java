@@ -1,11 +1,13 @@
 package com.ambitiousconcepts.opsatlas.catalog.internal.ingest;
 
+import com.ambitiousconcepts.opsatlas.catalog.internal.ingest.ManifestV1.Coverage;
 import com.ambitiousconcepts.opsatlas.catalog.internal.ingest.ManifestV1.Dependency;
 import com.ambitiousconcepts.opsatlas.catalog.internal.ingest.ManifestV1.DependencyKind;
 import com.ambitiousconcepts.opsatlas.catalog.internal.ingest.ManifestV1.Environment;
 import com.ambitiousconcepts.opsatlas.catalog.internal.ingest.ManifestV1.Health;
 import com.ambitiousconcepts.opsatlas.catalog.internal.ingest.ManifestV1.Metadata;
 import com.ambitiousconcepts.opsatlas.catalog.internal.ingest.ManifestV1.Observability;
+import com.ambitiousconcepts.opsatlas.catalog.internal.ingest.ManifestV1.Oncall;
 import com.ambitiousconcepts.opsatlas.catalog.internal.ingest.ManifestV1.Operations;
 import com.ambitiousconcepts.opsatlas.catalog.internal.ingest.ManifestV1.Slo;
 import com.ambitiousconcepts.opsatlas.catalog.internal.ingest.ManifestV1.Spec;
@@ -81,7 +83,17 @@ public class ManifestBinder {
 
     private static Operations bindOperations(JsonNode node) {
         return new Operations(
-                object(node, "slo").map(ManifestBinder::bindSlo), text(node, "runbook"), text(node, "contact"));
+                object(node, "slo").map(ManifestBinder::bindSlo),
+                text(node, "runbook"),
+                text(node, "contact"),
+                object(node, "oncall").map(ManifestBinder::bindOncall));
+    }
+
+    private static Oncall bindOncall(JsonNode node) {
+        return new Oncall(
+                text(node, "rotation"),
+                text(node, "coverage").map(Coverage::parse),
+                text(node, "escalation"));
     }
 
     private static Slo bindSlo(JsonNode node) {
