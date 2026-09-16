@@ -528,6 +528,7 @@ expanding scope.
 | **28** | **Kubernetes and Helm** | "Deferred, not rejected" in ADR 0014. Coupled to phase 17, which needs a cluster to read; decide them together. Detailed below |
 | **29** | **Security posture and threat model** — `docs/security/` | Asked for by the founding prompt, never created, while the decisions it would document all exist and are tested. No new code; it is the consolidation plus the honest list of what is *not* defended. One finding already in hand. Ready now. Detailed below |
 | **30** | **Inbound rate limiting** | **There is none.** The only rate limit in this codebase is GitHub's, outbound. The founding prompt required org scope in rate limits; an authenticated API on a public address has nothing bounding call rate. Detailed below |
+| **31** | **The public case study surface** | The deployed console is a login wall: six routes, all gated, no public page at all. This project has two jobs and the deployment does one of them. Blocks on nothing; the decision inside it is how much live data a public page shows. Detailed below |
 
 ### Phase 11 — Outbox, platform events, read models
 
@@ -1236,6 +1237,95 @@ guesses, and a limit set too low is a self-inflicted outage that looks exactly
 like a bug. Start generous, ship the metric first, tighten from what it shows —
 and say in the code that the numbers are guesses, so the next person changes them
 rather than treating them as measured.
+
+### Phase 31 — The public case study surface
+
+**The deployment currently serves an audience of one.** `apps/web/middleware.ts`
+matches every path except `/login`, `/api` and static assets, and `/` redirects
+to `/catalog`, which redirects to `/login`. So `https://opsatlas.hoseacodes.com`
+is a sign-in form and nothing else. Every artefact that would interest a reader —
+nineteen ADRs, the roadmap, the mocked-versus-real table, the reasoning about
+what this system refuses to claim — lives in the GitHub repository, which means
+the deployment adds nothing for that reader over the README.
+
+That is the gap. This project has two jobs (`CLAUDE.md` §1) and the deployed
+system does exactly one of them.
+
+**What it needs:**
+
+- **A public route group**, excluded from the middleware matcher. The matcher is
+  the security boundary for the whole console, so the change is a deliberate
+  allow-list of new public paths rather than a loosened regex — `/`, plus a page
+  each for the architecture, the decisions and the security model.
+- **`/` stops redirecting.** It becomes the public overview and renders the same
+  for everybody; a signed-in visitor gets a link into the console rather than a
+  redirect, because a redirect would make the case study unreachable to the one
+  person who is always signed in.
+- **The console stays exactly as gated as it is today.** `/catalog`,
+  `/catalog/{slug}`, `/register` and `/sources` keep their current behaviour.
+
+**Content, and where it comes from:**
+
+The pages are the overview, the architecture (the Mermaid diagram in
+`docs/architecture/slice-one.md` already exists and renders), the engineering
+decisions, and the security model once phase 29 has written one.
+
+**Generate them from the repository, do not transcribe them.** The ADR index
+should be read off `docs/adr/*.md` and the capability table off `README.md`, the
+same discipline `manifestPrompt.test.ts` already applies by walking the real
+schema rather than a copy of it. A hand-written architecture page is the next
+paragraph to go stale, and this project has had to correct two in a single
+session — a README that said Spring Security was not a dependency, and a
+controller comment that still described itself as unauthenticated.
+
+**The decision inside this phase, which is not a UI decision:** what the public
+pages show of the live system.
+
+1. **Prose and diagrams only.** The console stays private; the public pages
+   describe and link to the repository. Cheapest, adds no attack surface, and
+   shows no live data.
+2. **A read-only public organization** with the example manifests registered and
+   genuinely probed, served through the existing org scoping. By far the most
+   convincing — a reader sees a real catalog with real probe history rather than
+   a description of one. The cost is not UI work: it means an anonymous path
+   through `ProvisionedPrincipals`, which is the single place authorization is
+   decided, and an exemption in `no_endpoint_escapes_this_test` with a written
+   reason. It also publishes a probe target list, which phase 29's threat model
+   names as an asset.
+3. **Screenshots.** Middle ground, and they go stale silently, which is the
+   failure mode this phase is otherwise designed against.
+
+**Recommendation: (1) now, and (2) as its own ADR later if it is still wanted.**
+Reopening the authorization model that ADR 0013 closed, in order to improve a
+marketing page, is not a trade to make in passing.
+
+**House rules that constrain this more than they look like they do:**
+
+- **No fake buttons (§10).** A "try the demo" call to action that leads to a
+  login wall is exactly the prohibited thing. Under option (1) the honest call to
+  action is the repository, and a plain statement that the console needs an
+  account.
+- **§3 rule 1 applies to every claim on the page.** A performance number needs
+  phase 26 to have run first. A capacity figure needs phase 32's designed-versus-
+  tested framing and its labels. The public page is the most tempting place in
+  the project to write something unmeasured, and it is the worst place to do it.
+- **It must not leak into the console's navigation.** A marketing surface inside
+  an operations tool is noise for the operator; the link goes one way.
+
+**Tests:**
+
+- A Playwright spec asserting the public routes render **signed out**. That is
+  the entire point of the phase and is the first thing to regress silently.
+- A spec asserting every console route still redirects to `/login` when signed
+  out. This one matters more than the first: it is a security regression test on
+  a matcher that this phase edits, and the failure it guards against is a private
+  catalog quietly becoming public.
+
+**The downside:** it is the first thing in this repository whose audience is not
+an operator, and that makes it the first thing that will be tempting to
+exaggerate. Its accuracy is only as good as its generation — which is the
+argument for reading the ADR list and the capability table off disk rather than
+copying them, restated as a consequence.
 
 ### Deferred decisions, recorded so they are not lost
 
