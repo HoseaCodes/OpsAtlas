@@ -103,7 +103,11 @@ test("an unowned service is flagged, and its tier 3 rules are excused rather tha
   await page.goto("/catalog/legacy-report-runner?tab=scorecard");
 
   await expect(page.getByRole("heading", { name: /0 of 7 applicable checks passing/ })).toBeVisible();
-  await expect(page.getByText(/3 rules do not apply at this tier/)).toBeVisible();
+  // Four since oncall-declared landed: slo-defined, journeys-declared,
+  // production-environment-declared and oncall-declared are all NOT_APPLICABLE
+  // at tier 3. The denominator above stays 7 because the rule count rose too,
+  // which is why that assertion did not catch this and this one did.
+  await expect(page.getByText(/4 rules do not apply at this tier/)).toBeVisible();
   await expect(page.getByText("not applicable at this tier").first()).toBeVisible();
 });
 
