@@ -529,6 +529,7 @@ expanding scope.
 | **29** | **Security posture and threat model** — `docs/security/` | Asked for by the founding prompt, never created, while the decisions it would document all exist and are tested. No new code; it is the consolidation plus the honest list of what is *not* defended. One finding already in hand. Ready now. Detailed below |
 | **30** | **Inbound rate limiting** | **There is none.** The only rate limit in this codebase is GitHub's, outbound. The founding prompt required org scope in rate limits; an authenticated API on a public address has nothing bounding call rate. Detailed below |
 | **31** | **The public case study surface** | The deployed console is a login wall: six routes, all gated, no public page at all. This project has two jobs and the deployment does one of them. Blocks on nothing; the decision inside it is how much live data a public page shows. Detailed below |
+| **32** | **Shareable per-service pages** | A capability URL somebody without an account can open, showing one service's status. The first unauthenticated read path in the system, so the projection is the phase: environment URLs, versions, owners and dependencies stay private, enforced by a test that fails when a field is added. Detailed below |
 
 ### Phase 11 — Outbox, platform events, read models
 
@@ -1326,6 +1327,103 @@ an operator, and that makes it the first thing that will be tempting to
 exaggerate. Its accuracy is only as good as its generation — which is the
 argument for reading the ADR list and the capability table off disk rather than
 copying them, restated as a consequence.
+
+### Phase 32 — Shareable per-service pages
+
+A link somebody without an account can open that shows one service's current
+status and its recent probe history. The thing a status page is, scoped to one
+service rather than to a fleet.
+
+**This is not phase 31 at a smaller size.** Phase 31 publishes prose about the
+platform. This publishes **live data about a running system**, which is a
+different decision with a different cost, and it would be the first
+unauthenticated read path in a control plane whose whole authorization story is
+that a verified token is not a membership (ADR 0013).
+
+**How the link works.** A per-service, opt-in **capability URL**: a `share_token`
+column, a path like `/s/{token}`, generated on request and revocable. Rejected
+alternatives, both worse:
+
+- **A `public` boolean plus the existing slug** (`/public/{org}/{slug}`). The URL
+  is guessable from the service name, so publishing one service exposes the
+  existence of every other one to anybody who tries.
+- **Reusing phase 31's public organization.** That publishes a catalog. This
+  publishes one service, and the smaller grant is the correct default.
+
+Say plainly what a capability URL is: **a bearer credential in a link.** Anyone
+who receives it has it until it is revoked, forwarding it costs nothing, and a
+link in a Slack channel outlives everybody's memory of who is in that channel.
+That is acceptable for probe availability and would not be for anything else.
+
+**What the page shows — and this is the substance of the phase.** The detail page
+minus the navigation is the wrong answer, because the detail page carries things
+that must not be published:
+
+| Field | Public? | Why |
+|---|---|---|
+| Display name, tier | Yes | The point of the page |
+| Current status, last probed at | Yes | Absent still renders as never-probed, never as healthy |
+| 30-day probe availability ribbon | Yes | With the caveat below, not in a footnote |
+| **Environment URLs** | **No** | This is the probe target list, which phase 29's threat model names as an asset. A status page that publishes internal hostnames publishes infrastructure |
+| **Deployed version and commit** | **No** | Phase 13 records both. "Running 2.3.8" tells somebody exactly which published CVEs to try |
+| Owner, team, contact | **No** | A person's chat handle is not the service's status |
+| Dependencies | **No** | A partial architecture map, and the dependency list already says it is not a blast radius |
+| Runbook, dashboard, rotation links | **No** | Internal URLs, and a rotation link is a paging surface |
+
+**Excluded outright rather than put behind a toggle.** A per-field switch that can
+publish an internal hostname is a footgun that will eventually be pulled by
+somebody in a hurry, and the page's value does not depend on any of it.
+
+**The enforcement, which matters more than the list.** A test that pins the exact
+field set of the public projection and **fails the build when a field is added**,
+the same way `no_endpoint_escapes_this_test` fails the build on an uncovered
+endpoint and `no_example_manifest_escapes_the_fleet_table` fails it on an
+undocumented manifest. Without it, the first person to widen a shared DTO
+publishes a hostname and nothing notices. This project's habit is to make the
+rule refuse rather than to remember it; this is the place that habit pays most.
+
+**The honesty problem is sharper here than anywhere else in the system.**
+`probeAvailability` is not an SLO — it is the share of probes that succeeded from
+one vantage point against a health endpoint, and a service can serve errors to
+every real user while its readiness endpoint answers happily. On an internal
+console that caveat is a sentence beside a number. On a page somebody links to as
+evidence of reliability, a reader will see "99.2%" and read uptime commitment.
+The caveat has to be prominent and unavoidable, and the page must never use the
+words SLO, uptime or availability guarantee.
+
+**Tenancy, and the trap.** The token resolves to exactly one service in one
+organization, and the lookup must **set** the org context rather than bypass it.
+The isolation test is specific: a token minted for org A must never return org
+B's service, and it must not become a way to read a service whose share was
+revoked. Put the route under its own prefix — not `/api/v1` — so it is
+unmistakably outside the authenticated surface, and register it in
+`OrgIsolationIT` rather than exempting it.
+
+**Abuse and load.** A public URL has no principal, so phase 30's per-principal
+limiting cannot key on it. Two mitigations, and one of them is a genuine special
+case: these are **direct browser requests to a public path**, not the console's
+server-side API calls, so Caddy *can* see the caller's address for `/s/*` — the
+one place in this system where edge IP limiting works as advertised. Plus a short
+cache, so a widely shared link is not a load test aimed at the control plane.
+
+**Auditing.** Generating and revoking a share link are changes to the service and
+write `service.share_granted` and `service.share_revoked` audit events, with the
+principal who did it. A capability that can be created without a record is a
+capability nobody can investigate.
+
+**Search engines.** `noindex` by default. A link meant for one team turning up in
+search results is a surprise nobody chose, and making indexing opt-in is one
+header.
+
+**Sequencing note:** this solves the harder half of phase 31's option 2. Both
+need an anonymous read path with a bounded projection; this one does it with a
+smaller grant and a revocation story. If both are wanted, do this first and let
+31 reuse the mechanism.
+
+**Deliberately not in this phase:** incidents on the page, which is what most
+status pages are actually for. That needs phase 14, and an incident is a
+statement about impact — a much stronger claim than a probe result, and one that
+should not be published by a system that infers it from a failed health check.
 
 ### Deferred decisions, recorded so they are not lost
 

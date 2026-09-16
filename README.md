@@ -665,6 +665,7 @@ Everything from 9 on is after it, and the numbering below is the one in
 | 29 | Security posture and threat model — `docs/security/` | not started, and nothing blocks it; no new code, and one finding already in hand |
 | 30 | Inbound rate limiting | not started; there is none today, at any layer |
 | 31 | The public case study surface | not started; the deployed console is a login wall, so the deployment serves one of this project's two audiences |
+| 32 | Shareable per-service pages | not started; would be the first unauthenticated read path, so what the page omits is the design |
 
 Details, what each remaining phase is waiting on, the decisions deferred rather
 than forgotten, and the four commands slice one's definition of done named but
