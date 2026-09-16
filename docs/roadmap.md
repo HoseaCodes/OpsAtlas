@@ -536,6 +536,10 @@ expanding scope.
 | **36** | **The audit log page** | The endpoint has existed since phase 3 and §10's navigation names Audit Log. The most complete governance artefact in the system is reachable only by curl. Detailed below |
 | **37** | **Teams** | In the schema, in the domain model, exposed by no controller. The decision is not the page — it is what `metadata.owner` means. Detailed below |
 | **38** | **What this deployment costs** | Not the FinOps page: per-service cost needs phase 17 and phase 33. What can be built now is the platform's own bill, declared and labelled as such. Detailed below |
+| **39** | **Capacity — designed, tested, observed** | Three columns, never one number, and a designed figure only counts if it changed a design decision. Its real output is the list of things that break first. Detailed below |
+| **40** | **Golden paths and reusable workflows** | The largest platform capability absent here; §10's navigation has listed Golden Paths from the start with nothing behind it. Repository *generation* is not available — that is a GitHub write, which ADR 0008 refuses. Detailed below |
+| **41** | **Coverage of this project's own tests** | 413 tests and no coverage measurement in any of the three languages — no JaCoCo, no vitest reporter, no `go test -cover`. Publish the number; do not gate on it yet. Detailed below |
+| **42** | **The design brief** | The honest replacement for a requirements document: problem, audience, non-goals, real constraints, and the onboarding path phase 34 performs without documenting. Detailed below |
 
 ### Phase 11 — Outbox, platform events, read models
 
@@ -1313,8 +1317,8 @@ marketing page, is not a trade to make in passing.
   action is the repository, and a plain statement that the console needs an
   account.
 - **§3 rule 1 applies to every claim on the page.** A performance number needs
-  phase 26 to have run first. A capacity figure needs phase 32's designed-versus-
-  tested framing and its labels. The public page is the most tempting place in
+  phase 26 to have run first. A capacity figure needs phase 39's designed,
+  tested and observed columns, and must say which column it is quoting. The public page is the most tempting place in
   the project to write something unmeasured, and it is the worst place to do it.
 - **It must not leak into the console's navigation.** A marketing surface inside
   an operations tool is noise for the operator; the link goes one way.
@@ -1718,6 +1722,162 @@ telemetry stack is undeployed for exactly this reason (ADR 0014), a managed
 database was rejected on cost, and phase 28 notes that a cluster for seven
 containers is several times the droplet's bill. Those are cost arguments made
 without a number attached to any of them.
+
+### Phase 39 — Capacity: designed, tested, observed
+
+**Three columns, never one number.** A capacity claim collapses into fiction the
+moment it stops saying which kind it is:
+
+- **Designed** — what the architecture is meant to support. Free to be ambitious,
+  under one condition below.
+- **Tested** — what phase 26's k6 run actually achieved, on named hardware, with
+  the date.
+- **Observed** — what the real deployment actually does. Today that is a handful
+  of services and a few probes a minute. Small, and publishing it small is the
+  entire credibility of the other two columns.
+
+**The condition, and it is the whole discipline of this document: a designed
+number is only honest if it changed a design decision.** Otherwise it is a wish
+wearing a table. So every target names the decision it drove, or admits it drove
+none. This project already has real entries for that column:
+
+- **Observations are counters, not rows per probe** (ADR 0009). Storage is
+  environments × retained days and is independent of probe frequency. That is a
+  capacity decision, made before any number was written down.
+- **Cursor pagination everywhere** (§9), with offset refused permanently.
+- **The retention job**, which is what makes the counter design bounded rather
+  than merely slower-growing.
+
+**And it will expose what does not scale, which is the point of the exercise.**
+Writing "100,000 services" forces two gaps into the open immediately: there is no
+**observer sharding** — one observer probes with bounded concurrency and no
+partitioning, and two observers double-count into the same counters, which is
+already a deferred decision with no owner; and folding tens of thousands of
+observations a second into PostgreSQL counters needs batching and partitioning
+that does not exist. Neither is a reason to avoid writing the number. Producing
+that list *is* the deliverable — a capacity document whose output is "here is the
+first thing that breaks, and at roughly what point" is worth more than one
+asserting a figure nobody tested.
+
+**The rule that binds it, from §3 rule 1:** no number appears without either a
+test behind it or a named design decision in front of it.
+
+**It also closes a loose end.** Phase 31's public page needs somewhere to point
+for capacity claims, and until this exists the honest answer there is that no
+phase defines the framing.
+
+### Phase 40 — Golden paths and reusable workflows
+
+**The largest platform-engineering capability this project does not have.** §10's
+navigation has listed **Golden Paths** since the beginning and nothing has ever
+stood behind it. A catalog that scores services against a standard, and offers no
+way to start from that standard, describes the gap rather than closing it.
+
+**Three parts:**
+
+1. **Reusable GitHub Actions workflows** — test, scan, build, publish. The
+   decision to make is where they live: `uses: owner/repo/.github/workflows/x.yml@ref`
+   works across repositories, so a separate repository is not *required*. Keeping
+   them here means a workflow change is versioned with the control plane, which is
+   either useful coupling or an unrelated release, and that should be decided on
+   purpose rather than by where the file landed.
+2. **Service templates** — one runtime first, not three. A template that emits a
+   valid `service.yaml` alongside the application.
+3. **The measurable claim** the whole phase exists for: time from nothing to a
+   registered, scored, probed service. That is the one number in this project
+   that would be a genuine platform-engineering result, and it is testable rather
+   than asserted.
+
+**The neat coupling, and the enforcement that comes with it:** this platform
+already defines "production-ready" — eleven declaration rules. A template is a
+golden path *by OpsAtlas's own definition* exactly when its emitted manifest
+scores full marks. So the test writes itself: **render the template, score it,
+fail the build below 11/11.** That is the same mechanism as
+`no_example_manifest_escapes_the_fleet_table`, pointed at templates.
+
+**A constraint the usual framing of this misses entirely: repository generation
+is not available here.** "Create the repository from a template" is a *write* to
+GitHub, and ADR 0008 is explicit — OpsAtlas polls, registers no webhooks, and
+asks for no scope beyond reading contents. A platform action that creates repos
+needs a write scope and a new ADR overturning that, which is a much larger
+decision than a template. **Golden paths here are templates a human instantiates**,
+and the platform observes the result like any other service.
+
+**The honesty requirement:** a golden path this project does not itself follow is
+a recommendation, not a path. OpsAtlas has CI that predates this phase, and the
+first consumer of the reusable workflows must be OpsAtlas — otherwise the claim
+is that other people should do something the author did not.
+
+**The downside:** templates rot silently. A template nobody regenerates from
+becomes wrong without failing anything, which is why the scoring test matters
+more than it looks, and why one runtime maintained is better than three
+abandoned.
+
+### Phase 41 — Coverage of this project's own tests
+
+**413 tests and no idea what they cover.** There is no JaCoCo on the JVM build,
+no coverage reporter configured for vitest, and no `-cover` on the Go job. The
+suite is the main evidence this project offers for its own correctness claims and
+nothing measures its reach.
+
+**What it needs:** JaCoCo, vitest's coverage reporter, `go test -cover`, and the
+reports published as CI artefacts.
+
+**Do not add a gate in this phase.** A threshold picked from whatever today's
+number turns out to be is arbitrary, and a coverage gate is the classic way to
+teach a codebase to write tests that execute lines without asserting anything.
+Publish the number first. If a floor is set later, set it *below* the current
+figure so it catches regression rather than demanding growth.
+
+**Expect the number to flatter, and say so when publishing it.** This suite is
+integration-heavy — Testcontainers against real PostgreSQL, Playwright against a
+real stack — and end-to-end tests execute enormous amounts of code incidentally.
+High line coverage from a handful of broad tests is not the same assurance as the
+mutation check that was actually run on `OrgIsolationIT`, where removing an org
+filter was verified to fail exactly three tests. That check is better evidence
+than any percentage this phase will produce, and the phase should say so rather
+than let a number displace it.
+
+**Keep two things apart.** This is **OpsAtlas's own** coverage. A monitored
+service's coverage is a different problem needing a CI provider — phase 22 — and
+phase 22 already records the right form of it: not whether a team *declared* a
+coverage gate, but whether the pipeline enforcing it actually ran.
+
+### Phase 42 — The design brief
+
+**The honest replacement for a requirements document.** Solutions-architecture
+advice reliably asks for "requirements and stakeholder needs", and for a project
+with one stakeholder who is also the author, a stakeholder-requirements document
+would be invented interviews with imaginary people. This project's entire
+discipline is against producing fiction that is shaped like evidence.
+
+**What to write instead**, all of which is true and none of which is currently in
+one place:
+
+- **The problem**, stated as something somebody actually has: services get
+  deployed, ownership decays, and nobody can say what is running where or whether
+  it was ever production-ready.
+- **Who it is for, and who it is not for.**
+- **Non-goals, explicitly** — not a Backstage competitor, not an APM, not a log
+  store, not a deploy tool. Each of those is refused somewhere in the ADRs and
+  the refusals are scattered.
+- **The constraints that genuinely shaped the architecture**: one person, no
+  budget for a cluster (ADR 0014), a **public repository**, so no credential can
+  ever be committed (§3 rule 5, ADR 0012), and real applications worth watching.
+- **The migration path** — how an existing service gets onboarded, step by step.
+  This is the item the advice keeps asking for and it genuinely does not exist:
+  phase 34 *performs* an onboarding without documenting a repeatable path.
+
+**Where the material already is:** `README.md`'s opening and its "Things this
+project does not do" section, `CLAUDE.md` §1, and the Context section of all
+nineteen ADRs. Like phase 29, this is consolidation rather than invention.
+
+**The downside, which now applies to a set rather than a document.** This is the
+third consolidation artefact — security (29), capacity (39), brief (42) — and
+consolidations drift from the code they describe. Each needs a date and a stated
+rule for what regenerates it, or in a year there will be three documents that
+were true once. This session has already corrected two paragraphs of exactly that
+kind, so the risk is measured rather than theoretical.
 
 ### Deferred decisions, recorded so they are not lost
 

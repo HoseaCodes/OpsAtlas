@@ -672,6 +672,10 @@ Everything from 9 on is after it, and the numbering below is the one in
 | 36 | The audit log page | not started; the endpoint has existed since phase 3 |
 | 37 | Teams | not started; in the schema and the domain model, exposed by nothing |
 | 38 | What this deployment costs | not started; per-service cost needs phases 17 and 33 first |
+| 39 | Capacity — designed, tested, observed | not started; three columns, and a designed number only counts if it changed a decision |
+| 40 | Golden paths and reusable workflows | not started; the largest platform capability absent here |
+| 41 | Coverage of this project's own tests | not started; nothing measures coverage in any of the three languages |
+| 42 | The design brief | not started; problem, non-goals, constraints and the onboarding path |
 
 Details, what each remaining phase is waiting on, the decisions deferred rather
 than forgotten, and the four commands slice one's definition of done named but
