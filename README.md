@@ -424,10 +424,12 @@ marked; the rest is listed so the direction is clear, not to imply it is present
 **Control plane** — Java 21 ✓, Spring Boot 3 ✓, Gradle ✓, Spring Web ✓, Spring
 Validation ✓, Spring Data JPA ✓, PostgreSQL ✓, Flyway ✓, Actuator ✓, Springdoc
 OpenAPI ✓, Micrometer ✓ (Prometheus registry and the Micrometer Tracing bridge),
-OpenTelemetry ✓ (OTLP over HTTP), Testcontainers ✓, ArchUnit ✓. Not added: Spring
-Security — deliberately, because the starter would put every endpoint behind a
-generated password, which is a security posture the project does not actually
-have.
+OpenTelemetry ✓ (OTLP over HTTP), Testcontainers ✓, ArchUnit ✓, and Spring
+Security ✓ — as `spring-boot-starter-oauth2-resource-server` rather than the
+plain starter, because OpsAtlas verifies RS256 tokens against the issuer's JWKS
+and holds no signing key of its own ([ADR 0013](docs/adr/0013-authentication-via-storm-gate.md)).
+This paragraph read "not added, deliberately" until 2026-09-16: authentication
+landed in phase 9 and the stack list was not updated with it.
 
 **Console** — Next.js App Router ✓, React ✓, TypeScript in strict mode ✓,
 Tailwind ✓, TanStack Query ✓, and a TypeScript client generated from the
