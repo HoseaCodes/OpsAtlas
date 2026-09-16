@@ -36,8 +36,8 @@ OpsAtlas/
 │   ├── compose/                   ✓ local PostgreSQL
 │   │   └── telemetry/             ✓ collector, Tempo, Prometheus, Grafana
 │   ├── production/                ✓ one box, compose behind Caddy — ADR 0014
-│   ├── k8s/                         phase 12
-│   └── helm/                        phase 12
+│   ├── k8s/                         phase 28
+│   └── helm/                        phase 28
 ├── examples/
 │   └── services/                  ✓ example and fixture manifests
 ├── scripts/                       ✓ check-secrets.sh — a layout deviation, ADR 0012
@@ -46,7 +46,7 @@ OpsAtlas/
 │   ├── architecture/              ✓ slice-one.md
 │   ├── design/                    ✓ tokens.md
 │   └── roadmap.md                 ✓ this file
-├── terraform/                       phase 12
+├── terraform/                       phase 27
 └── .github/workflows/             ✓ ci.yml, publish.yml
 ```
 
@@ -509,7 +509,7 @@ expanding scope.
 | ~~9~~ | ~~**Authentication and authorization**~~ (ADR 0013) — **done**. Every `/api/v1` endpoint needs a verified RS256 token, and a verified token is not a membership: a `principal` row keyed on issuer **and** subject is required, or the answer is 403. The stub resolver is deleted. The four items this row listed as open are all closed — the observer carries its own key on `X-OpsAtlas-Key`, `OrgIsolationIT` covers authorization across organizations and `no_endpoint_escapes_this_test` keeps it covering every endpoint, Prometheus scrapes with a credential, and Swagger UI is off unless asked for | |
 | ~~10~~ | ~~Packaging~~ — **done**. Multi-stage Dockerfiles for the control plane (JDK builds, JRE runs) and the console (Next standalone output), both non-root with their code read-only to the process. `make up-app` runs the stack containerised; verified by signing in through a real browser against it. Images are built from this repository rather than pulled — there is no published OpsAtlas image, and naming one that does not exist would be a promise the compose file cannot keep. | |
 | 11 | Transactional outbox, platform events, Redis read models | Only once there is a demonstrated need (§6). Nothing today has a second consumer of registration events, no observer needs coordinating, and no read model is slow |
-| **12** | **Deployment** — one box, compose behind Caddy (ADR 0014) | **Deployed.** Running on a DigitalOcean droplet since 2026-09-15 at `https://opsatlas.hoseacodes.com`: seven containers, images pulled from GHCR by tag, TLS from Let's Encrypt, one public hostname. Doing it found three faults no local check could have — an impossible first start, a console image permanently unhealthy while working, and a `latest` tag the workflow claimed not to produce. **Still open:** no backups, no zero-downtime deploy, no redundancy, and the telemetry stack is not deployed. Terraform, Kubernetes, Helm and k6 still wait, but no longer circularly — there is now something for the IaC to describe |
+| **12** | **Deployment** — one box, compose behind Caddy (ADR 0014) | **Deployed.** Running on a DigitalOcean droplet since 2026-09-15 at `https://opsatlas.hoseacodes.com`: seven containers, images pulled from GHCR by tag, TLS from Let's Encrypt, one public hostname. Doing it found three faults no local check could have — an impossible first start, a console image permanently unhealthy while working, and a `latest` tag the workflow claimed not to produce. **Still open, and now each with a phase of its own rather than a clause here:** backups are **phase 25**, k6 is **phase 26**, Terraform is **phase 27**, Kubernetes and Helm are **phase 28**. Zero-downtime deploy and redundancy follow 28; the telemetry stack is still not deployed and stays a local profile until the box has room. None of them is circular any more — there is something for the IaC to describe |
 | **13** | **Deployments** — what version is running where | **Built, minus drift.** A `deployment` table, `POST /api/v1/services/{slug}/environments/{name}/deployments` with a required idempotency key, `GET /api/v1/services/{slug}/deployments`, and the Promotion view in the console. `converge.sh` reports OpsAtlas's own deploys, so the platform's own entry carries real data. **Drift is still not built**: it needs an *observed* version and nothing exposes one — see ADR 0017. Instance counts are not possible here at all. Original reasoning below |
 | **14** | **Incidents** | Needs 13. Recording an incident with no deployment history is a worse spreadsheet; the value is the correlation. Detailed below |
 | **15** | **Drift detection** — declared version versus running version | The other half of 13, and the thing `CLAUDE.md` §5 has listed as the observer's job since the beginning. Needs a service to expose a running version, which means a new manifest field and observer support. Detailed below |
@@ -522,6 +522,10 @@ expanding scope.
 | **22** | **Delivery metrics** — deploy frequency, lead time, change failure rate, pipeline health | Half of it falls out of the deployment ledger phase 13 already built. The other half needs a CI provider. Detailed below |
 | **23** | **Supply chain and security posture** — SBOM, known vulnerabilities, image provenance | Different in kind from 20: these must be *verified* from an external source, not declared. Detailed below |
 | **24** | **Log aggregation** | Deferred in ADR 0011 with reasons that still hold. Given a number here so it stops being a gap with no home |
+| **25** | **Backups and restore** | **No phase has ever owned this**, and ADR 0014 named it a consequence and left it there. Two volumes are the system of record, not one — PostgreSQL, and the issuer's MongoDB, without which nobody can sign in. Ready now; nothing blocks it. Detailed below |
+| **26** | **Load and soak testing** — k6 | Named in `CLAUDE.md` §14 and in the phase 12 row, written down nowhere. It is the only item on this list that deletes a sentence from the README rather than adding a feature. Ready now. Detailed below |
+| **27** | **Infrastructure as code** — Terraform | ADR 0014 rejected it with a reason that still holds: the box is worth describing in code once its shape has stopped changing, and it has not. Has a stated trigger rather than a date. Detailed below |
+| **28** | **Kubernetes and Helm** | "Deferred, not rejected" in ADR 0014. Coupled to phase 17, which needs a cluster to read; decide them together. Detailed below |
 
 ### Phase 11 — Outbox, platform events, read models
 
@@ -937,6 +941,163 @@ an all-clear.
 findings somebody else produced. A control plane that pulls and analyses
 arbitrary images from monitored repositories is a much larger attack surface than
 a catalog needs, and it violates the spirit of §3 rule 4.
+
+### Phase 25 — Backups and restore
+
+**The only item on this list that is a risk rather than a feature.** ADR 0014
+listed "backups are not solved by this ADR" under consequences and no phase
+picked it up, so it has been true and unowned since the deployment went live.
+`README.md` and `CLAUDE.md` both say the data does not survive the box, which is
+honest and is not a plan.
+
+**Two volumes are the system of record, not one.** The obvious one is
+PostgreSQL — the catalog, the scorecards, the audit log, the deployment ledger.
+The one that is easy to miss is the issuer's **MongoDB**: it holds the accounts,
+and losing it means nobody can sign in to a control plane whose data survived
+perfectly. The `principal` rows in PostgreSQL are keyed on issuer and subject,
+so restoring one without the other leaves rows pointing at subjects that no
+longer exist.
+
+**What it needs:**
+
+- **A scheduled dump off the host.** `pg_dump` and `mongodump` on a timer, in
+  the same shape as the convergence timer that already exists, written to object
+  storage rather than to the disk that is the thing being protected.
+- **Retention, and a size ceiling.** A dump per day forever is a bill that grows
+  without anybody deciding to spend it.
+- **A restore that has actually been run.** This is the part that is the phase.
+  A backup nobody has restored is a hypothesis, and `CLAUDE.md` §3 rule 1 rules
+  out describing an unexercised one as working. The acceptance criterion is a
+  restore into a scratch stack, with a note of how long it took and what it
+  needed.
+
+**The unconfirmed alternative:** DigitalOcean's droplet-level backups may be
+enabled — `CLAUDE.md` says this has never been checked from inside the box, and
+checking it is ten minutes. It is not a substitute even if it is on. A weekly
+whole-droplet snapshot has a recovery point measured in days, restores the
+secrets along with the data, and gives no way to recover one table.
+
+**The downside to write into the ADR:** a dump in object storage is a copy of
+every principal row and every audit event sitting somewhere else, reachable with
+a credential that lives on the box. It needs encryption at rest and a key scoped
+to write-only where the provider supports it, or the backup is a second copy of
+the thing to protect with half the protection.
+
+### Phase 26 — Load and soak testing
+
+**k6 has been named twice in this repository and written down nowhere** — a
+clause in the phase 12 row and a line in the target layout. Meanwhile
+`README.md` carries "nothing has been load-tested or security-tested" in two
+places. That sentence is currently permanent by omission rather than by
+decision, and this phase is what makes it a decision.
+
+**What it needs:** a k6 script against the authenticated surface — the catalog
+list, a service detail, a scorecard — carrying a real token, because an
+unauthenticated run measures the 401 path and nothing else. Plus a **soak run**,
+which is the more interesting half at this size: the failure mode for a
+single-box Spring Boot application is a connection pool or a heap over hours,
+not a request rate over minutes.
+
+**Two numbers, labelled separately, and never averaged:**
+
+1. **The application number**, from `make up-app` locally. This is the one that
+   says something about the code.
+2. **The deployment number**, from a bounded run against the box. This one
+   measures 2 vCPU and 4 GB shared by the control plane, the console,
+   PostgreSQL, MongoDB, Storm-Gate, the observer and Caddy — with traces sampled
+   at 100% (ADR 0011). It is a fact about that droplet, and the write-up has to
+   say so or it will be read as the application's ceiling.
+
+**A caution that applies to the second:** the only deployment is the production
+one, so a load test is run against the thing people can open. Bound it, run it
+deliberately, and expect the observer's own probe results for that window to be
+affected — OpsAtlas will record its own load test as a degradation, which is
+either a nuisance or the most honest demonstration in the project.
+
+**Deliberately not in this phase: security testing.** The README sentence pairs
+them because they are both unmeasured, not because they are one job. A
+penetration test is a different discipline, and folding it in here would let a
+green k6 run quietly imply half of a claim nobody made.
+
+### Phase 27 — Infrastructure as code
+
+**ADR 0014 rejected Terraform for the box, and the reason it gave still holds:**
+one VM, one firewall and three DNS records is under an hour of clicking and a
+week of learning a provider's resource model, and the box is worth describing in
+code once its shape has stopped changing — which, days after the first
+deployment, it has not.
+
+So this phase gets a **trigger rather than a date**: 30 consecutive days with no
+change to the droplet's shape — no resize, no newly published port, no new DNS
+record, no attached volume. If the shape is still moving, describing it in code
+means editing two things every time instead of one.
+
+**Scope when it fires:** the droplet, the firewall, the DNS records, the GHCR
+read credential and the SSH key. **Import the existing box rather than
+recreate it.** `terraform import` against what is running keeps the IP, and a
+recreate means a new address, a DNS propagation window and a certificate
+reissue in exchange for nothing.
+
+**What the value actually is**, stated because it is not provisioning: a written
+record of what the box is, and a `plan` that reports drift when somebody changes
+it by hand. Provisioning one droplet is the cheap part. The second box, if there
+ever is one, is where the code pays for itself — and that is also phase 28's
+trigger, which is not a coincidence.
+
+**The downsides:**
+
+- **State has to live somewhere.** Not in this repository, which is public. A
+  DigitalOcean Spaces backend needs a credential, so protecting the box's
+  description becomes one more secret to hold — and the state file contains the
+  firewall rules and the DNS layout, which is a map.
+- **It does not cover the inside of the box.** The SSH hardening that
+  `CLAUDE.md` records as never applied is host configuration, not
+  infrastructure; Terraform will not do it and this phase must not be described
+  as though it did. That is a separate, smaller job that should not wait for
+  this trigger.
+- **It needs an ADR** that either supersedes ADR 0014's "Terraform for the box
+  itself" paragraph or restates it as still correct. Leaving that paragraph
+  standing while `terraform/` exists is the contradiction this roadmap keeps
+  trying to avoid.
+
+### Phase 28 — Kubernetes and Helm
+
+ADR 0014 called this **"deferred, not rejected"** and gave the honest argument in
+both directions: it is what the roles this project is evidence for actually run,
+and five containers that must start in order on one host is precisely the case
+where an orchestrator's scheduling, discovery and rollout machinery all cost
+something and return nothing.
+
+**The trigger is any one of:**
+
+- **A second box.** Two hosts is where compose stops being the simpler thing.
+- **A requirement for zero-downtime deploys.** Today `docker compose up -d`
+  stops and starts containers and the console is down for the seconds that
+  takes. That is currently acceptable and is written down as such.
+- **Phase 17 — runtime topology.** It needs an orchestrator to read instance and
+  readiness counts from, and there is nothing to read today. If 17 is wanted,
+  this stops being optional.
+
+**Decide 17 and 28 together.** 17 needs cluster credentials on a box where
+`docker` group membership is already root-equivalent, and 17 stays **read-only**
+by rule — the moment OpsAtlas can act on a cluster it is a deploy tool with a
+catalog attached. Building the cluster and the read-only integration in
+isolation from each other gets the credential question answered twice.
+
+**The downsides:**
+
+- **Local and deployed topologies would drift.** Today `deploy/compose` and
+  `deploy/production` are the same file shape with different values, and
+  `make up-app` exercises the arrangement that actually runs. Charts mean the
+  thing a developer runs and the thing that serves traffic are described by two
+  different systems — which is one of the reasons ADR 0014 rejected Fly.io.
+- **ADR 0015 would be replaced, not extended.** Deploying is a commit to
+  `deploy/production/VERSION` and rolling back is `git revert`. A chart changes
+  the mechanism; if the replacement does not keep "the deploy history is
+  `git log`", it is a regression wearing a better-known name.
+- **It is an operating cost, not a one-off.** A managed cluster for seven
+  containers is several times the droplet's bill, plus a control plane to
+  upgrade — in order to run a control plane.
 
 ### Deferred decisions, recorded so they are not lost
 

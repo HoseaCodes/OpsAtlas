@@ -200,7 +200,9 @@ measurement will be labelled in the interface, not only in a comment.
   none has been measured. It *is* deployed — [`deploy/production/`](deploy/production/),
   [ADR 0014](docs/adr/0014-deployment-is-one-box.md) — on one box, with no
   backups and no redundancy. Reachable is not the same as production-grade, and
-  this document will not call it the latter.
+  this document will not call it the latter. Backups are phase 25 and load
+  testing is phase 26 in [`docs/roadmap.md`](docs/roadmap.md), neither waiting
+  on anything else; **security testing has no phase**, and none is implied.
 
 ---
 
@@ -575,7 +577,8 @@ certificate over `tls-alpn-01`, HTTP redirecting to HTTPS, and the API answering
 Still true, and worth saying in the same breath: **there are no backups**, it is
 one box with no redundancy and no zero-downtime deploy, and nothing has been
 load-tested or security-tested. Deploying something does not make it production-
-grade; it makes it reachable.
+grade; it makes it reachable. The first two now have phases — 25 and 26 — rather
+than standing as permanent disclaimers.
 
 ---
 
@@ -632,13 +635,23 @@ Everything from 9 on is after it, and the numbering below is the one in
 | 9 | Authentication and authorization | **complete** — [ADR 0013](docs/adr/0013-authentication-via-storm-gate.md) |
 | 10 | Packaging — container images for both apps | **complete** |
 | 11 | Transactional outbox, platform events, Redis read models | not started, and waiting on a demonstrated need rather than on time |
-| 12 | Deployment — one box, compose behind Caddy | **deployed**; Terraform, Kubernetes, Helm and k6 still wait |
+| 12 | Deployment — one box, compose behind Caddy | **deployed**; its unfinished half is now phases 25–28 rather than a clause |
 | 13 | Deployments — what version is running where | **built, minus drift** — [ADR 0017](docs/adr/0017-deployments-are-reported-not-discovered.md) |
 | 14 | Incidents | not started |
 | 15 | Drift detection — declared version versus running version | not started; the deferred half of 13 |
 | 16 | Live on-call — who is answering right now | not started |
 | 17 | Runtime topology — instances, replicas, pod readiness | not started |
 | 18 | Catalog query — server-side search and filtering | not started; asked for in slice one and not delivered |
+| 19 | Alerting — telling somebody without being asked | not started; the largest gap, and every input for it exists |
+| 20 | Declared operational posture — backups, retirement, tests, scheduled jobs, API spec | not started |
+| 21 | Dependency graph and blast radius | not started; the edges are stored, nothing walks them |
+| 22 | Delivery metrics — deploy frequency, lead time, change failure rate | not started; half of it is already in the deployment ledger |
+| 23 | Supply chain and security posture — SBOM, vulnerabilities, provenance | not started |
+| 24 | Log aggregation | deferred in [ADR 0011](docs/adr/0011-correlation-id-is-the-trace-id.md), with reasons that still hold |
+| 25 | Backups and restore | not started, and nothing blocks it — two volumes are the system of record, not one |
+| 26 | Load and soak testing — k6 | not started, and nothing blocks it; the phase that would let this README stop saying "never load-tested" |
+| 27 | Infrastructure as code — Terraform | not started; has a stated trigger, because [ADR 0014](docs/adr/0014-deployment-is-one-box.md)'s reason for rejecting it still holds |
+| 28 | Kubernetes and Helm | not started; coupled to 17, which needs a cluster to read |
 
 Details, what each remaining phase is waiting on, the decisions deferred rather
 than forgotten, and the four commands slice one's definition of done named but

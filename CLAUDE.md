@@ -33,8 +33,10 @@ worse than no `terraform/` directory.
   found, and one identifier follows a request through the logs, the traces and
   the audit log. Phase 11 — the transactional outbox and platform events — waits
   for a demonstrated need (§6). Phase 12 was split: the **deployment is live**
-  (ADR 0014), and **Terraform, Kubernetes, Helm and k6 still wait** — no longer
-  circularly, since there is now something for them to describe. **Phases 13
+  (ADR 0014), and its unfinished half is now **phases 25 (backups), 26 (k6),
+  27 (Terraform) and 28 (Kubernetes and Helm)** rather than a clause in the
+  phase 12 row — no longer circular, since there is now something for them to
+  describe. 25 and 26 are ready now; 27 and 28 have written triggers. **Phases 13
   (deployments and drift) and 14 (incidents) are now written down**, which they
   never were — incidents were in the domain model, the navigation plan and the
   colour rules, and in no phase. The phase list is in `docs/roadmap.md`.
@@ -124,7 +126,8 @@ worse than no `terraform/` directory.
   Seven containers, one public hostname. The box is reached as `opsatlas@` with
   `~/.ssh/id_ed25519_ocean`; root login still works and **the SSH hardening was
   never applied** (see below).
-- **There are still no backups**, no zero-downtime deploy and no redundancy —
+- **There are still no backups** (phase 25), no zero-downtime deploy and no
+  redundancy —
   `docker compose up -d` stops and starts containers. Do not describe the data as
   surviving the box until something copies it off, and never call this highly
   available. DigitalOcean's droplet-level backups may be enabled; that has not
@@ -283,6 +286,19 @@ worse than no `terraform/` directory.
   from `globals.css` fails two of its four tests. It has to be a browser test —
   `:focus-visible` does not match a scripted `.focus()`, so a component test
   asserting the ring would be asserting its own simulation.
+- **The browser suite has no such reset, and that has already cost a red CI.**
+  `make e2e` runs against whatever is in the compose database, which on a
+  developer's machine is weeks of accumulated rows. Adding `oncall-declared`
+  moved tier 3 from three excused rules to four, and `catalog.spec.ts` kept
+  passing locally because `legacy-report-runner` was still scored under the
+  **previous** `policy_set_version` and never re-scored — CI, starting empty, got
+  four and failed. Two lessons: a scorecard assertion verified against a stale
+  row is not verified, and the neighbouring `0 of 7` assertion did not catch it
+  because the denominator coincidentally stayed 7 (11 rules − 4 excused, as
+  against 10 − 3). **Before believing a green browser run that touches scores,
+  truncate every table but `organization` and restart the control plane** so the
+  bootstrap principal is re-provisioned — that is what CI does, and it is the
+  only way the run means what it looks like it means.
 - **Tests start from the seeded state; `PostgresTestBase` guarantees it.** One
   Testcontainers instance is shared by every integration test, and a `@BeforeEach`
   in the base class truncates every table except `organization` and preserves
