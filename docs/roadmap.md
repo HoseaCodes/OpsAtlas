@@ -490,6 +490,9 @@ expanding scope.
 | **12** | **Deployment** — one box, compose behind Caddy (ADR 0014) | **Deployed.** Running on a DigitalOcean droplet since 2026-09-15 at `https://opsatlas.hoseacodes.com`: seven containers, images pulled from GHCR by tag, TLS from Let's Encrypt, one public hostname. Doing it found three faults no local check could have — an impossible first start, a console image permanently unhealthy while working, and a `latest` tag the workflow claimed not to produce. **Still open:** no backups, no zero-downtime deploy, no redundancy, and the telemetry stack is not deployed. Terraform, Kubernetes, Helm and k6 still wait, but no longer circularly — there is now something for the IaC to describe |
 | **13** | **Deployments** — what version is running where | **Built, minus drift.** A `deployment` table, `POST /api/v1/services/{slug}/environments/{name}/deployments` with a required idempotency key, `GET /api/v1/services/{slug}/deployments`, and the Promotion view in the console. `converge.sh` reports OpsAtlas's own deploys, so the platform's own entry carries real data. **Drift is still not built**: it needs an *observed* version and nothing exposes one — see ADR 0017. Instance counts are not possible here at all. Original reasoning below |
 | **14** | **Incidents** | Needs 13. Recording an incident with no deployment history is a worse spreadsheet; the value is the correlation. Detailed below |
+| **15** | **Drift detection** — declared version versus running version | The other half of 13, and the thing `CLAUDE.md` §5 has listed as the observer's job since the beginning. Needs a service to expose a running version, which means a new manifest field and observer support. Detailed below |
+| **16** | **Live on-call** — who is answering right now | A read-only paging-provider integration (PagerDuty, Opsgenie). ADR 0016 built the declared half; this is the half that needs somebody else's API and a credential per organization |
+| **17** | **Runtime topology** — instances, replicas, pod readiness | The prototype's "Instances 9 / 14" and "5 pods failing readiness". Needs an orchestrator, cluster credentials and a workload-to-service mapping that follows from nothing in the manifest today. Detailed below |
 
 ### Phase 13 — Deployments and drift
 
@@ -576,6 +579,98 @@ a timeline of entries. The nav item appears when the page is real, not before.
 incident record is only as good as the discipline of the people filling it in,
 and a half-maintained incident log reads as a claim that nothing has broken
 recently. The phase is not finished until the empty state says which it is.
+
+### Phase 15 — Drift detection
+
+Phase 13 records what somebody said they deployed. Drift is the gap between that
+and what is **actually answering**, and it is the whole reason the deployment
+concept was worth building.
+
+**The hard part is getting an observed version at all.** There is no universal
+way to ask a running service what it is. Two routes:
+
+- **A declared version endpoint.** An additive optional
+  `spec.observability.versionEndpoint` — a path the observer GETs during a pass.
+  Additive and optional, so every existing manifest still validates and
+  `apiVersion` does not move (§9). The response convention has to be lenient and
+  written down: a trimmed `text/plain` body, or JSON carrying `version` or
+  `build.version` (which is what Spring's `/actuator/info` already returns).
+  Size-capped and treated as untrusted, like every other byte from a monitored
+  repository — it is parsed, never evaluated.
+- **A header on the existing health probe**, say `X-App-Version`. No new request
+  and no new field, and that is also its defect: nothing in the manifest declares
+  it, so no scorecard rule can ask for it and no page can explain its absence.
+
+**The declared endpoint is the better route** precisely because it is declarable.
+A field the scorecard can score is a field teams can be told they are missing.
+
+**Storage is `environment_state`, not a new table.** An observed version is
+current state like `status` is — one row per environment, updated in place,
+bounded. Two columns: `observed_version` and `observed_version_at`.
+
+**Three states, and the third is the one that gets botched.** `IN_SYNC`,
+`DRIFTED`, and `NOT_CHECKABLE` — no version endpoint declared, or it never
+answered. `NOT_CHECKABLE` must never collapse into `IN_SYNC`; that is the same
+mistake as rendering a never-probed environment as healthy, and it is the mistake
+this project has already made once and written a test against.
+
+**Two timing problems that will make drift cry wolf if ignored:**
+
+1. **A rollout looks exactly like drift.** For the length of a deploy, the
+   reported version and the answering version genuinely differ. Drift must not be
+   asserted until a mismatch has *persisted* past a grace window measured from
+   the last reported deployment — configurable, and generous by default. A drift
+   signal that fires on every successful deploy is a signal everybody turns off.
+2. **During a rolling deploy, replicas disagree.** One probe reaches one replica
+   through a load balancer, so the observed version flaps between old and new for
+   the duration. Phase 17 is what actually fixes this; until then the grace
+   window is the mitigation and the limitation should be stated on the page.
+
+**Deliberately not in this phase:** any remediation. OpsAtlas does not write to
+systems it monitors (ADR 0008) and drift detection must not become the exception.
+It reports a mismatch; a human decides.
+
+### Phase 17 — Runtime topology
+
+The prototype's `Instances 9 / 14`, `Passing 10 of 10`, and
+`5 pods failing readiness — /actuator/health/readiness returned 503 three times
+running`. None of it is reachable from where OpsAtlas stands today: a probe hits
+one URL through whatever sits in front of it and cannot see how many replicas
+answered, or which ones did not.
+
+**What it needs, in the order the cost lands:**
+
+1. **Cluster credentials.** The largest decision, not the API work. This is a
+   public repository deployed on one box where `docker` group membership is
+   root-equivalent (ADR 0015); a kubeconfig on that machine is a much bigger
+   surface than polling public GitHub unauthenticated. Where those credentials
+   live, and per-organization rather than per-installation, is the same problem
+   ADR 0008 deferred for the GitHub App — and it should be solved once, for both.
+2. **A workload-to-service mapping.** Nothing in a manifest says this service is
+   Deployment `orders-api` in namespace `prod` of cluster `eu-1`. It needs a
+   declared field, per environment, and it is per-environment because the same
+   service is a different workload in staging.
+3. **A client per provider.** Kubernetes, ECS, Nomad. `integrations` currently
+   speaks to exactly one external system, read-only and unauthenticated.
+   `ArchitectureTest` enforces that only `integrations` makes outbound HTTP
+   calls, so this belongs there and not in `operations`.
+
+**What it gives back, beyond the counts:** a far better observed version than
+phase 15 can manage. An orchestrator knows the image tag of every replica, which
+answers "what is running" exactly and fixes the flapping problem a single probe
+cannot. If both phases happen, this one subsumes the version-endpoint route for
+any orchestrated service — which is an argument for doing 15 cheaply, or for
+doing 17 first if a cluster is available.
+
+**Non-negotiable: read-only.** No scaling, no restarting, no rollout triggering,
+no `kubectl` behind a button. The moment OpsAtlas can act on a cluster it is a
+deploy tool with a catalog attached, and the credential it holds stops being
+something a public repository's deployment can justify.
+
+**The caveat to write on the page from day one:** a service that is not
+orchestrated has no instances. A VM, a serverless function and a static site must
+read as *not applicable*, never as `0 / 0` — which looks exactly like everything
+being down.
 
 ### Deferred decisions, recorded so they are not lost
 

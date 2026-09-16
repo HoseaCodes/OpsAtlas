@@ -381,11 +381,19 @@ worse than no `terraform/` directory.
   declared version only. Drift is declared-versus-*observed*, and nothing exposes
   a running version to compare against — a service declaring no version endpoint
   would have to read as *not checkable*, never as *no drift*. Two environments on
-  different versions is a **promotion**, which the console says outright.
+  different versions is a **promotion**, which the console says outright. Written
+  up as **phase 15** in `docs/roadmap.md`, including the two timing traps that
+  will make it cry wolf: a rollout looks exactly like drift for its duration, and
+  replicas disagree with each other while one is in progress.
 - **Instance counts are not coming from here.** "Instances 9 / 14" and "5 pods
   failing readiness" are orchestrator facts. A probe reaches one URL through
   whatever sits in front of it and cannot see how many replicas answered. The
   Health checks section says so rather than leaving a blank that reads as a bug.
+  **Phase 17** in `docs/roadmap.md`: the cost is cluster credentials on a box
+  where `docker` membership is already root-equivalent, not the API work, and it
+  stays **read-only** — the moment OpsAtlas can act on a cluster it is a deploy
+  tool with a catalog attached. A service that is not orchestrated must read
+  *not applicable*, never `0 / 0`, which looks like everything being down.
 - **On-call is declared, never observed (ADR 0016).** `spec.operations.oncall`
   carries a rotation URL, a `coverage` enum and an escalation target, and
   `oncall-declared` scores it — REQUIRED at tier 1 and 2, NOT APPLICABLE at

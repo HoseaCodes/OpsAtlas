@@ -153,8 +153,8 @@ jobs — selection, focus ring, error-budget fill, open-incident emphasis. See
 | Cost attribution | **Not planned for slice one** | — |
 | **Deployments — what version is running where** | **Real** | `DeploymentLedgerIT` (6), `OrgIsolationIT`. Reported by whoever deploys, never discovered: a row is a claim, not an observation. A required idempotency key means a retried report is not a second deployment and a rollback that never happened. ADR 0017 |
 | OpsAtlas reporting its own deploys | **Real** | `converge.sh` POSTs after a successful convergence, keyed on version and commit. Best-effort by design — a failed report never fails a deploy that already worked |
-| **Drift** — declared version versus running version | **Not built** | this supplies the declared half only. The other half needs services to expose a running version, and a service declaring no version endpoint must then read as *not checkable*, never as *no drift* |
-| Instance counts, pod readiness | **Not built, and not possible this way** | orchestrator facts. A probe reaches one URL through whatever sits in front of it and cannot see how many replicas answered |
+| **Drift** — declared version versus running version | **Not built — phase 15** | this supplies the declared half only. The other half needs services to expose a running version, and a service declaring no version endpoint must then read as *not checkable*, never as *no drift*. Designed in [the roadmap](docs/roadmap.md) |
+| Instance counts, pod readiness | **Not built — phase 17** | orchestrator facts. A probe reaches one URL through whatever sits in front of it and cannot see how many replicas answered. Read-only when it lands, and a service that is not orchestrated reads *not applicable* rather than `0 / 0`. Designed in [the roadmap](docs/roadmap.md) |
 | Incidents | **Not built — phase 14** | needs phase 13: an incident log with no deployment history is a worse spreadsheet. OpsAtlas will record incidents, not declare them from probe failure |
 
 There is **no mocked data anywhere in this repository.** The example manifests in

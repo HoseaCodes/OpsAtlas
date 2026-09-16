@@ -97,7 +97,11 @@ claims a live fact it cannot refresh.
 truthfully. Rejected for this phase, not forever: it needs an account, a token
 with a schedule-read scope, per-organization credential storage, and a polling
 budget — and `integrations` currently reaches exactly one external system,
-read-only and unauthenticated (ADR 0008). It is the right phase 15.
+read-only and unauthenticated (ADR 0008). It is its own phase, tracked in
+`docs/roadmap.md` — named there rather than numbered here, because a phase
+number written into an ADR is a prediction that goes stale the moment the
+order changes, and this one did: drift detection took 15 and live on-call
+moved to 16.
 
 **A team and roster model in the control plane.** Model people, rotations and
 handoffs in `identity`, and compute who is on now. Rejected: it reimplements

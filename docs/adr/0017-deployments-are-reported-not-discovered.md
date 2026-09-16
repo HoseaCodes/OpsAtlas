@@ -89,10 +89,14 @@ something to correlate an incident against.
   supplies only the first half. The second needs option 1 — an additive optional
   `spec.observability.versionEndpoint` and observer support — and a service
   declaring none must then be shown as *not checkable* rather than *no drift*.
+  It is written up as its own phase in `docs/roadmap.md`, including the two
+  timing problems that will make it cry wolf if they are ignored: a rollout
+  looks exactly like drift, and replicas disagree with each other during one.
 - **No instance counts, and none possible here.** "Instances 9 / 14" and "5 pods
   failing readiness" are orchestrator facts. A probe reaches one URL through
   whatever sits in front of it and cannot see how many replicas answered. They
-  need option 2, which is a separate phase with cluster credentials.
+  need option 2 — runtime topology, its own phase in `docs/roadmap.md`, where
+  the cost is the cluster credentials rather than the API work.
 - **A trusted write path widens the blast radius of a leaked service key.** The
   observer's key can already write observations; a deploy key can now write
   deployment history. Neither can read the catalog of another organization, but
