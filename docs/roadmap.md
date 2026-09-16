@@ -530,6 +530,8 @@ expanding scope.
 | **30** | **Inbound rate limiting** | **There is none.** The only rate limit in this codebase is GitHub's, outbound. The founding prompt required org scope in rate limits; an authenticated API on a public address has nothing bounding call rate. Detailed below |
 | **31** | **The public case study surface** | The deployed console is a login wall: six routes, all gated, no public page at all. This project has two jobs and the deployment does one of them. Blocks on nothing; the decision inside it is how much live data a public page shows. Detailed below |
 | **32** | **Shareable per-service pages** | A capability URL somebody without an account can open, showing one service's status. The first unauthenticated read path in the system, so the projection is the phase: environment URLs, versions, owners and dependencies stay private, enforced by a test that fails when a field is added. Detailed below |
+| **33** | **Telemetry summaries in the control plane** | Phase 8 built a telemetry plane and the control plane has never queried it. Error rate, request volume, latency and last-sample-seen all exist one hop away and are read by nothing. It is also where percentiles and a real error budget become possible, and where `spec.observability.serviceName` gets its first reader. Detailed below |
+| **34** | **Onboard a real application** | Not a feature — the first real use. Eight curated examples written by the schema's author are not a test of the schema. Needs no new code, and should be expected to break things. Detailed below |
 
 ### Phase 11 — Outbox, platform events, read models
 
@@ -1424,6 +1426,141 @@ smaller grant and a revocation story. If both are wanted, do this first and let
 status pages are actually for. That needs phase 14, and an incident is a
 statement about impact — a much stronger claim than a probe result, and one that
 should not be published by a system that infers it from a failed health check.
+
+### Phase 33 — Telemetry summaries in the control plane
+
+**Phase 8 built a telemetry plane and the control plane has never asked it a
+question.** The collector, Prometheus, Tempo and Grafana all run; the catalog
+shows probe availability from the observer and nothing else. Every number a
+reader would actually want — error rate, request volume, latency, whether
+telemetry is arriving at all — exists a network hop away and is not read.
+
+**This is the sixth field that was validated, stored and dropped.**
+`spec.observability.serviceName` is declared in the schema, scored by
+`observability-service-name`, and read by nothing. It is the join key between a
+catalog entry and that service's metrics, and this phase is what finally uses it
+— the same pattern as the runbook, SLO, dependencies, journeys and contact
+fields, which each moved a scorecard check and nothing else until somebody
+rendered them.
+
+**What it reads, and what it must not.** Prometheus, at request time, for the
+four summaries that mean something: request rate, error rate, a latency
+quantile, and the timestamp of the last sample received. **Nothing is stored** —
+§6 forbids raw telemetry in PostgreSQL and this phase does not get an exception.
+A short in-process cache is enough at one instance; when a second instance makes
+that wrong, it is a real §6 trigger for Redis rather than a guess.
+
+**This is where percentiles become possible, and the caveat is the phase.**
+ADR 0009 says there are no percentiles and cannot be — true of the *rollups*,
+where a sum, a min and a max are not a distribution. Prometheus has them, if the
+service exports a histogram. **A service that exports no histogram must render as
+not instrumented, never as zero and never as blank** — the same rule as an
+environment that has never been probed, and the same failure if it is got wrong.
+ADR 0009 needs a line pointing here, so it stops reading as "percentiles are
+impossible" rather than "impossible from what we store".
+
+**This is also where an error budget becomes possible, and it belongs here
+rather than to the probe data.** `spec.operations.slo.availability` and `window`
+are declared and measured against nothing. The temptation is to compute a budget
+from probe availability, and that would be the worst honesty violation available
+to this project: probe availability is one vantage point against a health
+endpoint, and a service can serve errors to every user while that endpoint
+answers happily. An error budget must come from the service's own success rate.
+§10 reserves one of four permitted colour jobs for error-budget fill; this is the
+phase that earns it.
+
+**Two structural constraints, both already enforced:**
+
+- **The Prometheus client belongs in `integrations`.** `ArchitectureTest` fails
+  the build if any other module makes an outbound HTTP call, and that rule is
+  right — this is an external system like GitHub, not an internal read.
+- **Partial failure is the normal case, not the exception** (§10). This is the
+  first real upstream on a page load. Prometheus being down must leave the
+  catalog rendering with the telemetry panel unavailable, never a 500. The detail
+  page already settles two requests independently; this is the third.
+
+**The ordering problem, stated so it is not discovered later:** the telemetry
+stack is a local compose profile and is **not deployed** (ADR 0014 — four more
+containers and most of a small box's memory). So this can be built and verified
+locally while reading "not configured" in production until the box has room or
+the stack moves off it. That is an honest state and the page must render it as
+one.
+
+**Grafana links** become possible in the same phase, and for the same reason:
+`spec.observability.dashboard` already renders, but the README's Operations
+footer omits a Grafana link because nothing knows where Grafana lives. A
+configured base URL fixes that, and the link renders only when it is configured —
+a dead link is a UI element implying a capability the backend does not have.
+
+**The downsides:**
+
+- **Two numbers that disagree.** Probe availability is an outside view from one
+  vantage point; Prometheus error rate is the service's own view. They will
+  differ, and the page has to say they measure different things rather than let a
+  reader decide which one is lying.
+- **A slow or absent upstream on every page load**, which is the cost of not
+  storing anything.
+- **Retention has to be checked, not assumed.** A 30-day error budget needs 30
+  days of Prometheus retention, and the compose profile's setting has never been
+  examined for this purpose. Verify before promising the window.
+
+### Phase 34 — Onboard a real application
+
+**Not a feature. The first real use.** OpsAtlas catalogs eight neutral example
+manifests and reports its own deploys through `converge.sh`. It has never been
+pointed at another application that actually exists, which means every capability
+in this repository is verified by tests and by nothing that would push back.
+
+**It needs no new code.** A watched source polls a repository read-only and
+registers what it declares (ADR 0008). This is a `service.yaml` in a real
+repository, a source added through the console, and an honest look at what comes
+back.
+
+**The selection criteria**, because not every repository is a candidate:
+
+- A **public HTTPS health endpoint**, since the observer probes from the box and
+  through no tunnel.
+- A repository the poller can read.
+- A real deployment. A project that is not running produces an environment that
+  reads "never probed", correctly and uselessly.
+
+**Expect it to break things, and treat that as the return on the phase.** Eight
+curated manifests written by the person who wrote the schema are not a test of
+the schema. Real applications will surface at least these, and each is a decision
+rather than a bug:
+
+- **A health endpoint behind authentication.** The observer sends no credentials
+  to probe targets, deliberately — it also sends no trace context, because
+  injecting our identifiers into somebody else's logs is not our decision. A
+  service whose health endpoint requires auth will read as permanently down, and
+  there is no answer for that today.
+- **Runtimes with no `/actuator/health`.** The examples lean Spring-shaped. A
+  Next.js app or a static site has no conventional health path, and a static site
+  arguably has no meaningful readiness at all — which is a modelling question the
+  schema has never had to answer.
+- **More than five sources.** The unauthenticated GitHub limit is 60 requests an
+  hour per IP, so a sixth source needs `OPSATLAS_GITHUB_TOKEN` set. Known, and
+  this is where it stops being theoretical.
+
+**The trap, which is specific and easy to fall into:** the README's fleet table is
+generated from `examples/services` and enforced by
+`no_example_manifest_escapes_the_fleet_table`. A real application's manifest
+committed into `examples/` would be dragged into that table and into `PolicySetIT`.
+**Real services are data, registered through a source; they are not example
+fixtures.** The neutral names in `examples/` stay exactly as they are (§10).
+
+**Expect the scores to be bad, and do not fix them by weakening rules.** Eleven
+declaration checks against manifests nobody wrote for a scorecard will fail
+several. That is the scorecard working. Record the first scores as a baseline;
+the interesting artefact is the delta after the declarations are actually filled
+in, which is the only evidence this project can offer that governance changed
+somebody's behaviour — including its author's.
+
+**One consequence to carry into other phases:** once real applications are
+registered, the deployment holds real infrastructure URLs. That is the asset
+phase 29's threat model names, and the reason phase 32's shareable pages exclude
+environment URLs outright rather than behind a toggle. Today those rules protect
+example data; after this phase they protect something.
 
 ### Deferred decisions, recorded so they are not lost
 

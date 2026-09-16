@@ -666,6 +666,8 @@ Everything from 9 on is after it, and the numbering below is the one in
 | 30 | Inbound rate limiting | not started; there is none today, at any layer |
 | 31 | The public case study surface | not started; the deployed console is a login wall, so the deployment serves one of this project's two audiences |
 | 32 | Shareable per-service pages | not started; would be the first unauthenticated read path, so what the page omits is the design |
+| 33 | Telemetry summaries in the control plane | not started; the telemetry plane exists and the API queries none of it |
+| 34 | Onboard a real application | not started; needs no new code, and is the first thing that would push back |
 
 Details, what each remaining phase is waiting on, the decisions deferred rather
 than forgotten, and the four commands slice one's definition of done named but
