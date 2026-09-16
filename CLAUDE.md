@@ -56,7 +56,7 @@ worse than no `terraform/` directory.
   counters; a Go observer in `apps/observer`; W3C trace context across both
   processes with OTLP export, and a collector, Tempo, Prometheus and Grafana
   behind the compose `telemetry` profile; a production deployment configuration
-  in `deploy/production` with a runbook beside it; ADRs 0001–0015;
+  in `deploy/production` with a runbook beside it; ADRs 0001–0018;
   `docs/design/tokens.md`; `docs/architecture/slice-one.md`.
 - **Build:** pnpm workspace plus Gradle, `make` as the single entry point.
   `make up-app` builds and runs the control plane and console as containers,
@@ -565,7 +565,8 @@ com.ambitiousconcepts.opsatlas
 ├── catalog        # services, environments, registration, service.yaml ingestion
 ├── integrations   # external systems (GitHub, CI, cloud) — later phases
 ├── governance     # policies, scorecards, exceptions, audit events
-├── operations     # desired state, observations, deployments, incidents
+├── operations     # observations, deployments; desired state and incidents
+│                  # are not built — ADR 0018, phase 14
 ├── identity       # organizations, teams, principals
 └── shared         # cross-cutting: errors, pagination, correlation, time
 ```
@@ -575,9 +576,11 @@ another module's internals or repositories. `shared` depends on nothing.
 
 **Observer** (later phase) — Go. Pulls registered services from the control-plane
 API, probes health endpoints with bounded concurrency, timeouts and jittered
-retries, records availability and response time, detects desired-versus-observed
-drift, publishes normalized observations back, exposes Prometheus metrics, shuts
-down gracefully.
+retries, records availability and response time, publishes normalized
+observations back, exposes Prometheus metrics, shuts down gracefully. Drift —
+between the version desired, the version reported and the version answering — is
+**not built**; it is phase 15, and ADR 0018 says which of the three gaps means
+what.
 
 Adding any dependency not listed above requires a one-line justification in the
 PR or summary.
@@ -585,7 +588,8 @@ PR or summary.
 ## 6. Architectural planes
 
 - **Presentation** — Next.js console.
-- **Control** — catalog, ownership, policy, scorecards, desired state, incidents.
+- **Control** — catalog, ownership, policy, scorecards, deployments. Desired
+  state and incidents belong here and are not built (ADR 0018, phase 14).
 - **Execution** — Go observers, probes, reconciliation.
 - **Event** — durable normalized platform events.
 - **Telemetry** — metrics, logs, traces.
@@ -608,12 +612,16 @@ Organization
 └── Team
     └── Service
         └── Environment
-            ├── DesiredState
-            ├── Observation
-            ├── Deployment
-            ├── PolicyResult
-            └── Incident
+            ├── DesiredState    # not built — ADR 0018, ships with phase 15
+            ├── Observation     # built
+            ├── Deployment      # built — ADR 0017
+            ├── PolicyResult    # built
+            └── Incident        # not built — phase 14
 ```
+
+**The comments are the point.** This model went four phases describing two
+entities that do not exist, which is how `CLAUDE.md` §3 rule 1 fails when it is
+applied to behaviour and not to design documents. Keep them current.
 
 **Tenancy decision, so this does not get re-litigated each session:** every tenant-scoped
 table has `org_id UUID NOT NULL` with a foreign key to `organization`, and every
@@ -691,7 +699,9 @@ conventions below apply to every endpoint ever added.
 - Structured errors, one shape everywhere: `type`, `title`, `status`, `detail`,
   `correlationId`, and a `violations[]` array for validation failures.
 - Optimistic locking (`version` column, `If-Match` or a body field) wherever
-  concurrent updates are plausible — desired state above all.
+  concurrent updates are plausible. Today that is `PUT /api/v1/services/{slug}`.
+  It used to say "desired state above all", which was the better example and
+  described nothing that exists (ADR 0018).
 - Idempotency keys for observation and webhook ingestion, so a retried POST does
   not double-write.
 - Correlation ID accepted from `X-Correlation-Id` or generated, put in the MDC,

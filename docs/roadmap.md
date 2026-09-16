@@ -526,6 +526,8 @@ expanding scope.
 | **26** | **Load and soak testing** — k6 | Named in `CLAUDE.md` §14 and in the phase 12 row, written down nowhere. It is the only item on this list that deletes a sentence from the README rather than adding a feature. Ready now. Detailed below |
 | **27** | **Infrastructure as code** — Terraform | ADR 0014 rejected it with a reason that still holds: the box is worth describing in code once its shape has stopped changing, and it has not. Has a stated trigger rather than a date. Detailed below |
 | **28** | **Kubernetes and Helm** | "Deferred, not rejected" in ADR 0014. Coupled to phase 17, which needs a cluster to read; decide them together. Detailed below |
+| **29** | **Security posture and threat model** — `docs/security/` | Asked for by the founding prompt, never created, while the decisions it would document all exist and are tested. No new code; it is the consolidation plus the honest list of what is *not* defended. One finding already in hand. Ready now. Detailed below |
+| **30** | **Inbound rate limiting** | **There is none.** The only rate limit in this codebase is GitHub's, outbound. The founding prompt required org scope in rate limits; an authenticated API on a public address has nothing bounding call rate. Detailed below |
 
 ### Phase 11 — Outbox, platform events, read models
 
@@ -683,6 +685,14 @@ this project has already made once and written a test against.
    through a load balancer, so the observed version flaps between old and new for
    the duration. Phase 17 is what actually fixes this; until then the grace
    window is the mitigation and the limitation should be stated on the page.
+
+**ADR 0018 made this phase bigger.** Drift here was designed as *reported*
+versus *observed*. Desired state — declared intent, which nothing records today —
+is a third version, and the gap between desired and reported is a failure this
+phase as written cannot see: the deploy that never ran. Phase 15 therefore lands
+the desired-state endpoint too, and a view that distinguishes three gaps rather
+than two. Read ADR 0018 before starting; it argues its own rejected alternative
+well enough to be worth re-reading at that point.
 
 **Deliberately not in this phase:** any remediation. OpsAtlas does not write to
 systems it monitors (ADR 0008) and drift detection must not become the exception.
@@ -1098,6 +1108,134 @@ isolation from each other gets the credential question answered twice.
 - **It is an operating cost, not a one-off.** A managed cluster for seven
   containers is several times the droplet's bill, plus a control plane to
   upgrade — in order to run a control plane.
+
+### Phase 29 — Security posture and threat model
+
+**No new code.** Every decision this phase writes down has already been made and
+tested; none of it is anywhere a reader can find in one piece. The founding
+prompt asked for `docs/security/` and this project's second job names security
+explicitly, so the absence is conspicuous — a publicly deployed control plane
+with authentication, tenancy isolation and machine credentials, and no page
+saying what it defends against.
+
+**Three files, not a directory of stubs** (§3 rule 3 applies to `docs/` too):
+
+**`docs/security/threat-model.md`**
+
+- **Assets**, including the one that is easy to miss: the probe target list is a
+  map of somebody's infrastructure. With it, the audit log — where integrity
+  matters more than confidentiality — the `principal` rows, and the machine
+  credentials.
+- **Trust boundaries**, which are unusually drawable here because ADR 0014 made
+  them small: the internet reaches Caddy on 80 and 443 and nothing else; Caddy
+  reaches the console; the console calls the control plane and the issuer over
+  the compose network, holding the signed-in user's token in an httpOnly cookie;
+  the observer comes in on `X-OpsAtlas-Key`; JWKS and GitHub are outbound only;
+  PostgreSQL, MongoDB and Storm-Gate are published nowhere.
+- **Actors:** anonymous, authenticated-but-unprovisioned (403 rather than 401,
+  and why), a member of another organization, the observer's machine identity,
+  Prometheus, and whoever holds the box.
+- **What is defended, with the evidence beside each claim** rather than as
+  assertion — RS256 verified against the issuer's JWKS with no signing key held
+  here, membership requiring an issuer-and-subject pair, per-query org filtering
+  proven by `OrgIsolationIT` and kept honest by `no_endpoint_escapes_this_test`,
+  parse-never-execute ingestion (ADR 0002), read-only GitHub scope (ADR 0008),
+  no session and therefore no CSRF category, and `${VAR:?}` with no production
+  defaults (ADR 0014).
+- **What is not defended**, which is the section that makes the document worth
+  reading at all: no inbound rate limiting (phase 30); no roles, so every
+  principal can do everything within their organization; no row-level security,
+  so isolation is a test somebody remembered rather than the database refusing;
+  audit immutability enforced only in the application; `docker` group membership
+  on the box being root-equivalent; **the SSH hardening that was never applied**;
+  no backups (phase 25); and never having been penetration-tested.
+
+**One finding is already in hand**, and it is the reason to write this rather
+than assume it would say nothing new: `deploy/production/Caddyfile` sets HSTS and
+`X-Frame-Options: DENY` and **no Content-Security-Policy**. That matters more
+here than on a typical application, because the console holds the user's token in
+a cookie — a console XSS is a token compromise, and `httpOnly` is the only thing
+standing between those two sentences.
+
+**`docs/security/secrets.md`** — the six credentials this system has (the
+issuer's signing key, `ACCESS_TOKEN_SECRET`, the observer key, the Prometheus
+key, `deploy/production/deploy-key`, and the operator password that lives on the
+box and has never been transmitted), where each lives, who can read it, and
+**how to rotate it.** That last column exists nowhere today. §3 rule 5 says a
+leaked credential has to be rotated rather than deleted in a later commit, and
+nothing in this repository says how to rotate any of them — which makes the rule
+an instruction with no procedure behind it.
+
+**`docs/security/README.md`** — an index, and a date on every claim.
+
+**The downside, which belongs in the document itself:** a public threat model is
+a public list of what is not defended. That is the right trade for this asset set
+and it should be stated outright rather than left as something the author hopes
+nobody notices. And it has to be dated and maintained, or it becomes another
+paragraph that was true once — this repository has already had to correct one of
+those.
+
+**Acceptance: the document causes at least one fix.** A threat model that
+inventories a system and recommends nothing was written to be filed rather than
+read. The CSP and the unapplied SSH hardening are the two expected to fall out.
+
+### Phase 30 — Inbound rate limiting
+
+**There is none, anywhere.** The only rate limit in this codebase is GitHub's,
+and it is outbound and somebody else's. There is an authenticated API on a public
+address with nothing bounding how fast anyone may call it.
+
+**The design question is which layer, and the answer is not the obvious one.**
+Caddy sits in front of everything and is the conventional place. It cannot work
+as the primary control here: **every console-originated request reaches the
+control plane from one container over the compose network**, because the console
+calls the API server-side. An IP-keyed limit at the edge would therefore put
+every signed-in user in a single bucket or limit nobody, depending on the number
+chosen. Caddy cannot see who is calling; only the control plane can.
+
+So:
+
+- **Primary — an application filter keyed on the principal and the organization**,
+  which is also what the founding prompt asked for when it listed rate limits
+  among the things that must carry tenant scope.
+- **Edge IP limiting is a separate, coarser, later layer** for the unauthenticated
+  surface. Worth noting its real cost before anybody assumes it is a config line:
+  Caddy's `rate_limit` is a community plugin, so it means building a custom Caddy
+  image in CI and a change to `publish.yml`.
+
+**What it needs:**
+
+- **A filter ordered after authentication**, so there is a principal to key on,
+  and **without disturbing `CorrelationIdFilter` at `HIGHEST_PRECEDENCE + 5`** —
+  `CLAUDE.md` records that ordering as load-bearing and silently-failing, and a
+  new filter in the chain is exactly the kind of change that has broken it.
+- **An in-memory token bucket**, with the limitation stated where somebody will
+  read it: this is **per instance**, so a second control plane doubles the real
+  limit. That is also the first honest trigger for Redis under §6 — the
+  demonstrated need it has been waiting for, and not before.
+- **Two buckets, not one.** A generous default, and a tighter one for the
+  expensive paths: registration parses YAML, validates it, scores eleven rules
+  and writes an audit event inside a single transaction, and source sync spends a
+  GitHub allowance that is already only 60 requests an hour.
+- **A separate allowance for the observer**, which is the trap in this phase. It
+  is a machine identity making a legitimately high request rate, and if it shares
+  the human default then the first pass over a large fleet trips the limit and
+  health data stops arriving — silently, because a limiter returns a clean HTTP
+  response rather than an error anybody notices.
+- **429 as an RFC 9457 problem with `Retry-After`**, in the same shape as every
+  other error here. `ProblemSecurityResponses` is the precedent to follow.
+- **The organization as a metric dimension**, so the first question after a limit
+  fires — who was it — has an answer.
+
+**Deliberately out of scope: limiting `/actuator/health` and `/v3/api-docs`.**
+They are cheap, they disclose nothing, and a limiter on a health endpoint is a
+denial-of-service lever pointed at your own load balancer.
+
+**The downside:** there is no production traffic data, so the first numbers are
+guesses, and a limit set too low is a self-inflicted outage that looks exactly
+like a bug. Start generous, ship the metric first, tighten from what it shows —
+and say in the code that the numbers are guesses, so the next person changes them
+rather than treating them as measured.
 
 ### Deferred decisions, recorded so they are not lost
 

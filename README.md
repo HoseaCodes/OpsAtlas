@@ -184,6 +184,14 @@ measurement will be labelled in the interface, not only in a comment.
   [ADR 0003](docs/adr/0003-org-scoping-stub.md) records the stub this replaced,
   and that swapping one implementation was the whole migration — no query, no
   table and no caller changed.
+- **Nothing bounds how fast anyone may call it.** There is no inbound rate
+  limiting at any layer — not at Caddy, not in the control plane. The only rate
+  limit anywhere in this codebase is GitHub's, and it is outbound and somebody
+  else's. Every `/api/v1` endpoint requires a verified token and a `principal`
+  row, so this is not an open door; it is an authenticated one with no bound on
+  how often it may be used. Closing it is phase 30 in
+  [`docs/roadmap.md`](docs/roadmap.md), and the threat model that says what else
+  is undefended is phase 29.
 - **The scorecard scores manifests, not running systems.** The slice-one checks
   read what a team declared. Whether traces actually arrive, whether the image was
   actually scanned, whether coverage is actually above the gate — none of that is
@@ -654,6 +662,8 @@ Everything from 9 on is after it, and the numbering below is the one in
 | 26 | Load and soak testing — k6 | not started, and nothing blocks it; the phase that would let this README stop saying "never load-tested" |
 | 27 | Infrastructure as code — Terraform | not started; has a stated trigger, because [ADR 0014](docs/adr/0014-deployment-is-one-box.md)'s reason for rejecting it still holds |
 | 28 | Kubernetes and Helm | not started; coupled to 17, which needs a cluster to read |
+| 29 | Security posture and threat model — `docs/security/` | not started, and nothing blocks it; no new code, and one finding already in hand |
+| 30 | Inbound rate limiting | not started; there is none today, at any layer |
 
 Details, what each remaining phase is waiting on, the decisions deferred rather
 than forgotten, and the four commands slice one's definition of done named but
