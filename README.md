@@ -118,7 +118,7 @@ jobs — selection, focus ring, error-budget fill, open-incident emphasis. See
 | Probes deliberately carry **no** trace context | **Real, enforced** | `tracing_test.go` — a probe that sent `traceparent` fails the test; verified by mutation |
 | OTLP export is best-effort — a collector that is down costs a request nothing | **Real** | `TraceCorrelationIT` points the exporter at a closed port and asserts requests still succeed |
 | Traces, metrics and dashboards locally (Tempo, Prometheus, Grafana) | **Real** | `make up-telemetry`; Prometheus scraping the control plane and the observer |
-| Logs shipped to a log store (Loki) | **Not built** | deferred with a reason — see below |
+| Logs shipped to a log store (Loki) | **Not built — phase 24** | deferred with a reason (ADR 0011) that still holds; numbered so it stops being a gap with no home |
 | No credentials in source control | **Real, enforced** | `make check-secrets` — eight credential formats plus tracked `.env`/key files, run first in CI and by `make test`; verified by planting a token and a tracked `.env` and watching it fail. It raises the floor, it is not a proof — [ADR 0012](docs/adr/0012-secret-scanning-is-a-grep.md) says what it misses |
 | CI pipeline — six jobs on a clean runner | **Real, and green** | [run #1](https://github.com/HoseaCodes/OpsAtlas/actions/runs/34782671255) — contract fixtures, console, observer, control plane, OpenAPI drift and the browser smoke test all passed on first execution. The smoke job boots PostgreSQL, the control plane and the console and drives Playwright against them |
 | Scorecard — eleven declaration rules, tier-conditional | **Real** | `PolicyCheckTest` (55), `ScorecardApiIT` (12) |
@@ -147,10 +147,16 @@ jobs — selection, focus ring, error-budget fill, open-incident emphasis. See
 | The browser suite, signed in | **Real** | 61 Playwright tests against the whole stack — identity provider, control plane, PostgreSQL and the console — with a shared session from a real sign-in |
 | OpenAPI document declaring the bearer scheme | **Not done** | the generated contract says nothing about auth, so the typed client does not know a token exists |
 | Declared dependency list, with kinds | **Real** | rendered on the service detail page; an absent `spec.dependencies` reads as unanswered and an empty list as "this calls nothing", which is the distinction the schema exists to keep |
-| Dependency *graph* and blast radius | **Not built** | forward edges only. Nothing computes which registered services call a given one, so the page says it is not a blast radius |
+| Dependency *graph* and blast radius | **Not built — phase 21** | forward edges only. Nothing computes which registered services call a given one, so the page says it is not a blast radius. The edges are already stored, which makes this the cheapest item on the roadmap |
 | Real-user SLO measurement | **Not built** | probe availability is not an SLO — see below |
 | Latency percentiles over stored history | **Not built** | span durations are in Tempo; nothing aggregates them, and the rollups deliberately store mean and max only (ADR 0009) |
-| Cost attribution | **Not planned for slice one** | — |
+| Cost attribution | **Not planned** | needs a cloud billing integration and a resource-to-service mapping that follows from nothing in the manifest |
+| **Alerting — telling anyone, without being asked** | **Not built — phase 19** | the largest gap in the project. Health is measured and nobody is told; "alerting" appears in this repository only as rationale for other rules. Every input for it now exists |
+| Backups, retirement dates, test gates, scheduled jobs, API spec | **Not built — phase 20** | none are in the manifest schema, so nothing can be declared or scored. One phase because they are one pattern |
+| Deploy frequency, lead time, change failure rate, pipeline health | **Not built — phase 22** | half falls out of the deployment ledger already built; the rest needs a CI provider, and the numbers would measure reporting discipline as much as delivery |
+| SBOM, known vulnerabilities, image provenance | **Not built — phase 23** | these must be verified from an external source, never declared. OpsAtlas would read findings somebody else produced and will not scan anything itself |
+| Linters, code style, coverage percentages | **Not planned as declarations** | that a team *says* it uses a linter is worth nothing. Whether the pipeline enforcing it passed is phase 22 |
+| Anything about a service's own UX or UI | **Not planned** | outside what a service catalog can know or usefully judge |
 | **Deployments — what version is running where** | **Real** | `DeploymentLedgerIT` (6), `OrgIsolationIT`. Reported by whoever deploys, never discovered: a row is a claim, not an observation. A required idempotency key means a retried report is not a second deployment and a rollback that never happened. ADR 0017 |
 | OpsAtlas reporting its own deploys | **Real** | `converge.sh` POSTs after a successful convergence, keyed on version and commit. Best-effort by design — a failed report never fails a deploy that already worked |
 | **Drift** — declared version versus running version | **Not built — phase 15** | this supplies the declared half only. The other half needs services to expose a running version, and a service declaring no version endpoint must then read as *not checkable*, never as *no drift*. Designed in [the roadmap](docs/roadmap.md) |

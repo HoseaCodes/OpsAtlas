@@ -516,6 +516,12 @@ expanding scope.
 | **16** | **Live on-call** — who is answering right now | A read-only paging-provider integration (PagerDuty, Opsgenie). ADR 0016 built the declared half; this is the half that needs somebody else's API and a credential per organization |
 | **17** | **Runtime topology** — instances, replicas, pod readiness | The prototype's "Instances 9 / 14" and "5 pods failing readiness". Needs an orchestrator, cluster credentials and a workload-to-service mapping that follows from nothing in the manifest today. Detailed below |
 | **18** | **Catalog query** — server-side search and filtering | Slice one asked for a list endpoint filterable by team and tier and searchable by name; what shipped takes `cursor` and `limit`, and the console filters the one page it holds. Invisible at seven services, wrong at a hundred. Detailed below |
+| **19** | **Alerting** — telling somebody without being asked | **The largest gap in the project, and until now it had no phase at all.** A platform that measures health and never tells anyone is a dashboard you have to remember to open. Every input landed in phases 7, 13 and 16. Detailed below |
+| **20** | **Declared operational posture** — backups, retirement dates, tests, scheduled jobs, API spec | One phase because they are one pattern: additive optional manifest fields plus scorecard rules. The catalog cannot verify any of them and must not pretend to. Detailed below |
+| **21** | **Dependency graph and blast radius** | The cheapest thing on this list: the edges are already stored, nothing walks them. Detailed below |
+| **22** | **Delivery metrics** — deploy frequency, lead time, change failure rate, pipeline health | Half of it falls out of the deployment ledger phase 13 already built. The other half needs a CI provider. Detailed below |
+| **23** | **Supply chain and security posture** — SBOM, known vulnerabilities, image provenance | Different in kind from 20: these must be *verified* from an external source, not declared. Detailed below |
+| **24** | **Log aggregation** | Deferred in ADR 0011 with reasons that still hold. Given a number here so it stops being a gap with no home |
 
 ### Phase 11 — Outbox, platform events, read models
 
@@ -785,6 +791,152 @@ escape `OrgIsolationIT`, and a filter that reaches across organizations is the
 exact failure `no_endpoint_escapes_this_test` exists to catch. A search that
 returns another tenant's service names is a data leak whether or not it returns
 their details.
+
+### Phase 19 — Alerting
+
+**The gap that most contradicts the product's own description.** OpsAtlas
+measures probe availability, knows a service's tier, knows its declared SLO
+target, and since ADR 0016 knows where its rotation lives — and it has never
+told anybody anything. It is a dashboard somebody has to remember to open.
+
+Worth saying plainly because the repository nearly hides it: "alerting" appears
+in this codebase twice, both times as *rationale* for another rule ("an error
+budget is what makes an alert threshold something other than a guess"), and
+never as a capability. Every input for it now exists; nothing consumes them.
+
+**What it needs:**
+
+- **A rule: what is worth waking somebody for.** Tier-conditional, like every
+  other judgement here. A tier 1 production environment DOWN for three
+  consecutive probes is not the same event as a tier 3 internal tool failing
+  once.
+- **A route: where it goes.** `spec.operations.oncall.rotation` is a link to a
+  schedule, not an address that accepts a page. Routing needs either the paging
+  provider from phase 16, or a webhook per organization, or email. The honest
+  first version is probably a webhook: it needs no provider integration and
+  makes the delivery someone else's problem.
+- **Deduplication and state.** An alert must fire on a *transition*, not on
+  every evaluation, or a service down for an hour delivers a page per probe. This
+  is the part that looks trivial and is not.
+- **Silences.** Planned maintenance, a known-broken staging environment, a
+  service being retired. Without them the first noisy week trains everyone to
+  ignore the channel, and the feature is then worse than its absence.
+
+**The honest constraint that shapes the whole phase:** what OpsAtlas can alert on
+is **probe availability from one vantage point** (`CLAUDE.md` §2). It is not an
+SLO, and it is not what users experience. An alert that says "orders-api is down"
+when one network position could not reach a health endpoint is going to be wrong
+sometimes, and the message has to say what was actually observed rather than
+what somebody would like it to mean.
+
+**Deliberately not in this phase:** paging as in phone calls and escalation
+policies. That is what PagerDuty is, and reimplementing it badly is the same
+mistake ADR 0016 rejected for rotations. OpsAtlas should deliver an event to
+something that already does escalation.
+
+### Phase 20 — Declared operational posture
+
+Six fields that share one shape: a team declares something, the scorecard scores
+whether they did, and **OpsAtlas cannot verify any of it.** They are one phase
+because they are one afternoon's pattern each — additive optional field, rule,
+render — which is exactly the shape `spec.operations.oncall` took in ADR 0016.
+
+| Field | Why it earns a rule |
+|---|---|
+| `spec.operations.backup` | Whether data is backed up, how often, and where the restore is documented. A tier 1 service with a datastore dependency and no declared backup is a gap the catalog is currently blind to |
+| `spec.lifecycle.retiresOn` | `lifecycle: deprecated` with no date is a state nothing ever leaves. A date makes a deprecation reviewable |
+| `spec.quality.tests` | Where the suite runs and what gate it must pass. Not coverage as a number — a percentage in a manifest is a number nobody updates |
+| `spec.operations.schedules` | Cron jobs the service owns. An unlisted scheduled job is the classic thing nobody knows about until it stops |
+| `spec.observability.apiSpec` | The OpenAPI or schema document. The prototype's "API spec" link, which the Operations footer deliberately omits today because there is no field for it |
+| `spec.data.classification` | Whether this handles personal or regulated data. It changes what every other answer here has to be |
+
+**The rule that governs all of them, and the risk:** each is a *declaration*.
+`backup: daily` in a YAML file is not a backup, and a scorecard that reads 11/11
+because every field is filled in is a scorecard measuring paperwork. Each rule's
+failure message must say what it checked, and the page must not let a filled-in
+field read as a verified one. Phase 22 is where some of these become verifiable;
+until then the honesty burden is entirely on the wording.
+
+**A caution about count.** Every rule added moves every stored score's
+denominator (ADR 0016 consequences). Six at once is a large single movement in
+the fleet number for reasons unrelated to anything getting worse, and
+`PolicyCatalog.VERSION` exists so an old score still means what it meant. Adding
+them in one release is fine; adding them without bumping the version is not.
+
+### Phase 21 — Dependency graph and blast radius
+
+**The cheapest item in this file.** `spec.dependencies` has been stored,
+normalized and scored since phase 3. Nothing has ever walked it backwards.
+
+The console already says outright that its dependency list is *not* a blast
+radius, because nothing computes reverse edges. Computing them is a query and a
+page: for a service, which registered services declare it as a dependency, and
+transitively what a failure reaches. The prototype's "2 registered services call
+this one" and its Blast radius tab are both this.
+
+**What it needs:** either an index over the manifest JSONB, or a `dependency_edge`
+table written during registration. The second is probably right — the same
+transaction that scores and audits already has the parsed manifest in hand, and
+a table is joinable where a JSONB scan is not.
+
+**Two honest limits to render, not hide:**
+
+- **Declared edges only.** A service that calls another and does not say so is
+  invisible, and the graph will be confidently incomplete. Traces would show the
+  real calls; joining them needs `spec.observability.serviceName`, which is
+  already declared and already scored — which makes this a plausible *second*
+  version rather than a fantasy.
+- **A dependency by name is not a registered service.** `payments-api` as a
+  string may match a catalog entry or may be a service nobody registered. Both
+  are useful to show and they are not the same fact.
+
+### Phase 22 — Delivery metrics
+
+**Half of this is already sitting in the database.** The `deployment` table from
+phase 13 records version, commit and time per environment, which is deploy
+frequency and time-between-deploys with no new ingestion at all. Lead time needs
+a commit timestamp, which the commit SHA makes fetchable from the source that is
+already being polled read-only (ADR 0008). Change failure rate needs incidents —
+phase 14 — correlated to the deployment that preceded them, which is the
+correlation phase 14 exists for.
+
+So the useful ordering is: this after 14, and most of it costs a query rather
+than an integration.
+
+**The half that does need a provider:** pipeline health — run duration, failure
+rate, flakiness, whether the linter and the test gate actually ran. That needs
+GitHub Actions or equivalent, read-only, and it is the answer to "do you track
+linters and tests" that is worth anything: not *whether a team declared* a
+linter, but whether the pipeline that enforces it passed.
+
+**The caveat:** these are DORA-shaped numbers, and DORA-shaped numbers get used
+to compare teams. A deploy-frequency figure computed from whoever remembered to
+call the reporting endpoint (ADR 0017) measures reporting discipline as much as
+delivery. If this is built, the page has to say what the denominator really is.
+
+### Phase 23 — Supply chain and security posture
+
+Distinct from phase 20 because these cannot be declarations. "We scan our
+images" in a manifest is worth nothing; the finding is the thing.
+
+**What it would track:** an SBOM per released artifact, known vulnerabilities
+against it with severity, base-image age, and build provenance — whether the
+image running was built by the pipeline it claims.
+
+**What it needs:** a scanner or a registry that already produces this, read-only,
+plus a link from a service to its artifact. That link is the same
+workload-to-service mapping phase 17 needs, which is an argument for doing them
+near each other.
+
+**Why it is late rather than never:** it is the most valuable thing on this list
+for a real fleet and the most dependent on infrastructure this project does not
+have. A vulnerability count that is stale is worse than none, because it reads as
+an all-clear.
+
+**Out of scope permanently:** OpsAtlas scanning anything itself. It reads
+findings somebody else produced. A control plane that pulls and analyses
+arbitrary images from monitored repositories is a much larger attack surface than
+a catalog needs, and it violates the spirit of §3 rule 4.
 
 ### Deferred decisions, recorded so they are not lost
 
