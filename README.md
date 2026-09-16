@@ -668,6 +668,10 @@ Everything from 9 on is after it, and the numbering below is the one in
 | 32 | Shareable per-service pages | not started; would be the first unauthenticated read path, so what the page omits is the design |
 | 33 | Telemetry summaries in the control plane | not started; the telemetry plane exists and the API queries none of it |
 | 34 | Onboard a real application | not started; needs no new code, and is the first thing that would push back |
+| 35 | Scorecard history | not started; the rows already exist and nothing reads them |
+| 36 | The audit log page | not started; the endpoint has existed since phase 3 |
+| 37 | Teams | not started; in the schema and the domain model, exposed by nothing |
+| 38 | What this deployment costs | not started; per-service cost needs phases 17 and 33 first |
 
 Details, what each remaining phase is waiting on, the decisions deferred rather
 than forgotten, and the four commands slice one's definition of done named but

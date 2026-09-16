@@ -532,6 +532,10 @@ expanding scope.
 | **32** | **Shareable per-service pages** | A capability URL somebody without an account can open, showing one service's status. The first unauthenticated read path in the system, so the projection is the phase: environment URLs, versions, owners and dependencies stay private, enforced by a test that fails when a field is added. Detailed below |
 | **33** | **Telemetry summaries in the control plane** | Phase 8 built a telemetry plane and the control plane has never queried it. Error rate, request volume, latency and last-sample-seen all exist one hop away and are read by nothing. It is also where percentiles and a real error budget become possible, and where `spec.observability.serviceName` gets its first reader. Detailed below |
 | **34** | **Onboard a real application** | Not a feature — the first real use. Eight curated examples written by the schema's author are not a test of the schema. Needs no new code, and should be expected to break things. Detailed below |
+| **35** | **Scorecard history** | **The rows already exist and nothing prunes them.** `policy_result` is one row per evaluation and only the latest is ever served. Cheapest item on this list; the care is in not drawing an event log as a time series. Detailed below |
+| **36** | **The audit log page** | The endpoint has existed since phase 3 and §10's navigation names Audit Log. The most complete governance artefact in the system is reachable only by curl. Detailed below |
+| **37** | **Teams** | In the schema, in the domain model, exposed by no controller. The decision is not the page — it is what `metadata.owner` means. Detailed below |
+| **38** | **What this deployment costs** | Not the FinOps page: per-service cost needs phase 17 and phase 33. What can be built now is the platform's own bill, declared and labelled as such. Detailed below |
 
 ### Phase 11 — Outbox, platform events, read models
 
@@ -1561,6 +1565,159 @@ registered, the deployment holds real infrastructure URLs. That is the asset
 phase 29's threat model names, and the reason phase 32's shareable pages exclude
 environment URLs outright rather than behind a toggle. Today those rules protect
 example data; after this phase they protect something.
+
+### Phase 35 — Scorecard history
+
+**The rows already exist.** `policy_result` is one row per evaluation,
+`policy_result_check` one row per check per evaluation, the index is
+`(org_id, service_id, evaluated_at DESC)` — a schema built for many rows — and
+**nothing prunes either table**. History has been accumulating since phase 3 and
+only the latest row is ever served. This is the same shape as phase 21: the data
+is there, nothing walks it.
+
+**What it needs:** `GET /api/v1/services/{slug}/scorecard/history`, cursor-paged
+like every other collection (§9), and a view on the detail page's scorecard tab.
+
+**Three things that must be right, or the view is worse than nothing:**
+
+- **Every entry carries its `policy_set_version`.** This is the entire reason
+  `PolicyCatalog.VERSION` exists and is pinned by `PolicySetIT`. Adding
+  `oncall-declared` moved every denominator from ten to eleven, so "7/9 last
+  month, 7/11 now" is two different scales and rendering them on one axis is an
+  invented trend.
+- **The delta is checks gained and lost, never a score difference.** "Gained
+  `runbook-linked`, lost `oncall-declared`" survives a policy-set change; "+2"
+  does not. `policy_result_check` makes this per-check view possible, and it is
+  the more useful one anyway: *when did this service start failing
+  `slo-defined`* is a better question than *what is the number*.
+- **It is not a time series and must not be drawn as one.** A row appears when a
+  manifest actually changes — re-registration is idempotent by digest (ADR 0007)
+  — or when the policy set moves. The axis is events, not days. A line chart
+  over dates would interpolate through gaps that represent *nothing changed*,
+  which is the inverse of the never-probed rule and just as wrong.
+
+**What it cannot answer, so the page must not imply it:** "days outside policy"
+needs a daily evaluation this system does not perform. Nothing rescores on a
+schedule.
+
+**A finding this view will expose, which is worth knowing before it does:**
+**stored scores are from the last registration, and bumping the policy set does
+not rescore the fleet.** `PolicySetIT` compares the README table against what the
+scorer produces *live*, so the test stays green while stored rows quietly
+describe an older rule set. A history view makes that visible — several services
+sitting at a version nobody has re-evaluated. Deciding whether a version bump
+triggers re-evaluation is part of this phase, and it is not obviously yes: a
+rescore writes a row for every service on a day nothing about those services
+changed.
+
+**Retention: deliberately none.** These rows are sparse — one per manifest change
+— and small. Do not give them the observation retention model; that job exists
+because probe counters grow with frequency, and these do not grow with anything
+except real events.
+
+### Phase 36 — The audit log page
+
+The endpoint has existed since phase 3. `GET /api/v1/audit-events` is
+cursor-paged, org-scoped and covered by `OrgIsolationIT`. §10's navigation names
+**Audit Log**. There is no page, so the most complete governance artefact in the
+system is reachable only by curl.
+
+**What it needs:** a dense table (§10), and filters by service, actor and event
+type.
+
+**The filtering decision is the same one phase 18 has.** The endpoint takes a
+cursor and a limit and nothing else, so filters would apply to the page already
+on screen — exactly the catalog-search limitation, which the empty state
+currently admits to rather than hides. Either accept it and say so in the same
+words, or extend the endpoint — and extending it is phase 18's job, so do it once
+for both rather than growing a second query surface.
+
+**Three details specific to this data:**
+
+- **Machine actors must read as machines.** The audit log records
+  `service:observer`, because naming a person who does not exist would be worse
+  than naming nothing. The page has to render that distinction rather than
+  flattening every actor into a name column.
+- **`service.deleted` outlives the row it describes.** `audit_event` declares no
+  foreign key to `service`, deliberately — a foreign key would make every
+  deletion erase its own record. So the page must render events for services that
+  no longer exist, without linking to a detail page that will 404 and without
+  implying the service is still there.
+- **Say what backs the trail.** Immutability is enforced in the application
+  layer only; `REVOKE UPDATE, DELETE` on `audit_event` is still a deferred
+  decision. A page that presents itself as an audit trail should be accurate
+  about what would stop somebody editing it.
+
+**Empty state matters more here than anywhere else.** Audit events are
+low-frequency, and a blank table reads as broken. §10 requires real empty states
+and this is the page that will spend the most time in one.
+
+### Phase 37 — Teams
+
+`team` is in the schema, in `CLAUDE.md` §7's domain model, and **no controller
+exposes it**. Services carry `metadata.owner`, a string from somebody else's
+repository, and nothing resolves it into anything.
+
+**The decision in this phase is not the page — it is what an owner string means.**
+
+- **Derive a team from every distinct `metadata.owner`.** No administration, and
+  a typo silently creates a team.
+- **Curate teams in OpsAtlas and require the owner to match one.** Stronger, and
+  it makes registration fail on a name OpsAtlas has never heard of — which is
+  OpsAtlas imposing a workflow on a repository it does not own, the thing ADR
+  0008 keeps refusing to do.
+- **Derive, but mark unclaimed** until somebody in the organization claims the
+  team. Registration never fails; a new scorecard rule can score whether an owner
+  resolves to a *claimed* team.
+
+**The third is the one that fits this project.** It keeps registration
+permissive, makes the gap visible rather than fatal, and expresses the
+requirement as a declaration check like every other rule.
+
+**What a team page can honestly show today:** services owned, their current
+scorecards, their probe health, and their declared rotations (ADR 0016 —
+declared, and explicitly not who is on call now). Open incidents needs phase 14;
+deployment frequency needs phase 22. Render those as absent, not as zero.
+
+**The downside, and it is the same one phase 22 carries:** a team view invites
+comparison between teams, and what it measures is declaration compliance, not
+engineering quality. A team with thorough manifests and a fragile service will
+outscore the reverse. The page has to say what the number is before somebody uses
+it in a performance conversation.
+
+**Tenancy is not optional here and will be enforced for you**: `team` is
+org-scoped, so `no_endpoint_escapes_this_test` will fail the build until the new
+endpoints appear in `OrgIsolationIT`. That is the mechanism working as designed.
+
+### Phase 38 — What this deployment costs
+
+**Not the FinOps page, and not the one usually asked for.** Per-service cost needs
+per-service resource attribution: CPU and memory per workload, which needs an
+orchestrator (**phase 17**), and cost per thousand requests, which needs request
+volume (**phase 33**). Neither exists. One droplet running seven containers
+behind one Caddy has a bill, not a cost breakdown, and dividing it by service
+count would be arithmetic presented as measurement.
+
+**What can honestly be built now:** what the control plane itself costs to run —
+droplet, snapshots if enabled, registry storage, domain — **entered as
+configuration and labelled declared.** OpsAtlas has a consistent pattern for
+facts it cannot verify: on-call is declared, not observed (ADR 0016); a
+deployment is reported, not discovered (ADR 0017). A cost figure nobody's billing
+API confirmed is the third member of that family and must be labelled the same
+way. Integrating a provider billing API is a credential and a phase of its own.
+
+**Do not add the Costs nav item yet.** §10 says a nav item appears only when its
+page is real, and a Costs tab showing one infrastructure figure implies
+per-service costing that does not exist — a UI element implying a capability the
+backend lacks, which is the prohibition. The number belongs on a page about the
+deployment until phase 17 makes the breakdown possible.
+
+**Why build it at all before then:** because an architecture decision that ignores
+cost is half a decision, and this project has several worth pricing — the
+telemetry stack is undeployed for exactly this reason (ADR 0014), a managed
+database was rejected on cost, and phase 28 notes that a cluster for seven
+containers is several times the droplet's bill. Those are cost arguments made
+without a number attached to any of them.
 
 ### Deferred decisions, recorded so they are not lost
 
