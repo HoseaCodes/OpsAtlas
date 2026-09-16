@@ -487,6 +487,88 @@ expanding scope.
 | ~~10~~ | ~~Packaging~~ — **done**. Multi-stage Dockerfiles for the control plane (JDK builds, JRE runs) and the console (Next standalone output), both non-root with their code read-only to the process. `make up-app` runs the stack containerised; verified by signing in through a real browser against it. Images are built from this repository rather than pulled — there is no published OpsAtlas image, and naming one that does not exist would be a promise the compose file cannot keep. | |
 | 11 | Transactional outbox, platform events, Redis read models | Only once there is a demonstrated need (§6). Nothing today has a second consumer of registration events, no observer needs coordinating, and no read model is slow |
 | **12** | **Deployment** — one box, compose behind Caddy (ADR 0014) | **Deployed.** Running on a DigitalOcean droplet since 2026-09-15 at `https://opsatlas.hoseacodes.com`: seven containers, images pulled from GHCR by tag, TLS from Let's Encrypt, one public hostname. Doing it found three faults no local check could have — an impossible first start, a console image permanently unhealthy while working, and a `latest` tag the workflow claimed not to produce. **Still open:** no backups, no zero-downtime deploy, no redundancy, and the telemetry stack is not deployed. Terraform, Kubernetes, Helm and k6 still wait, but no longer circularly — there is now something for the IaC to describe |
+| **13** | **Deployments and drift** — what version is running where | **Next, and the one that unblocks the others.** The catalog knows what a service declares and whether its health endpoint answers. It does not know what is *running*, and that single gap is why drift detection was deferred in phase 7, why the prototype's entire Promotion block has nothing behind it, and why an incident would have no "what changed" to point at. Detailed below |
+| **14** | **Incidents** | Needs 13. Recording an incident with no deployment history is a worse spreadsheet; the value is the correlation. Detailed below |
+
+### Phase 13 — Deployments and drift
+
+The first phase since the observer that adds a new fact about the world rather
+than a new view of an existing one.
+
+**What it adds.** A `deployment` table under `environment`, and the
+`DesiredState` that §7 has listed since the beginning and nothing has ever
+written: the version an environment is *supposed* to be running. A deployment
+row is version, commit SHA, who or what deployed it, and when. "In place for 9h"
+falls out of `deployed_at` and needs no column.
+
+Storage is bounded by deploy frequency rather than probe frequency, so ADR 0009's
+rule does not apply and these are rows, not counters. They are platform metadata,
+which is exactly what §6 says PostgreSQL is the system of record for.
+
+**Where the declared version comes from.** An endpoint the deploying pipeline
+calls — `POST /api/v1/services/{slug}/environments/{name}/deployments`, with an
+idempotency key per §9, because a retried deploy notification must not become two
+deployments. The thing that deploys is the only thing that reliably knows it
+happened. OpsAtlas does not watch a registry and does not infer.
+
+**Where the observed version comes from, and the hard part.** The observer has to
+be able to ask a running service what it is. There is no universal convention for
+that, which is the real reason this phase is not free: it needs an additive
+optional `spec.observability.versionEndpoint` in the v1 schema — a declared path
+returning a version string. Additive and optional, so every existing manifest
+still validates and `apiVersion` does not move (§9). A service that declares none
+can be deployed-to and tracked; it simply cannot be drift-checked, and must be
+shown as *not checkable* rather than as *no drift*. That distinction is the same
+one the ribbon already makes between "never probed" and "healthy", and it will be
+got wrong the same way if it is not asserted.
+
+**What it unblocks, which is the argument for doing it next:**
+
+- **Drift detection**, deferred since phase 7 for exactly this reason. Declared
+  version ≠ observed version, per environment. A failed probe stays an outage;
+  drift is a different fact and must keep its own name.
+- **The Promotion view** — prod on 5.0.2 while staging is on 5.1.0-rc1, and how
+  long each has been there. Every field in that block of the prototype except
+  instance counts.
+- **Phase 14**, below.
+
+**Deliberately not in this phase, so the scope does not drift the way the code
+might:**
+
+- **Deploy gates.** Blocking somebody's pipeline on a scorecard is a much larger
+  promise than recording what it did, and it makes OpsAtlas a hard dependency of
+  everyone else's release. Recording first, gating only if asked for.
+- **Triggering a deploy.** OpsAtlas never writes to a monitored repository
+  (ADR 0008) and this does not change that. It records; it does not act.
+- **"Instances 10 / 10" and "3 consecutive failures to evict."** These are
+  orchestrator facts. Probing one URL through a load balancer cannot count
+  replicas, and rendering a number that cannot be measured is the failure §10
+  rules out. They need a Kubernetes integration, not a deployment table.
+
+### Phase 14 — Incidents
+
+Listed in §7's domain model, in §10's eventual navigation, and in the four jobs
+colour is rationed to ("open-incident emphasis"). Until now it had no phase,
+which meant it was in the vocabulary of the project and in nobody's plan.
+
+**The decision that shapes it: OpsAtlas records incidents, it does not declare
+them.** Opening one automatically from probe failure is the obvious feature and
+the wrong one at this fidelity — probe availability from a single vantage point
+is not an outage, and an incident that pages someone because one network position
+had a bad minute is worse than no incident at all. Incidents are opened by a
+person, or by an external alerting system through the API. What OpsAtlas adds is
+the correlation nobody else has in one place: the affected service and
+environments, the deployments that landed just before it (phase 13), the
+declared `spec.journeys` that say who is affected, and the audit trail.
+
+**What it needs:** a lifecycle (open → mitigated → resolved), a severity rendered
+as a count of filled marks rather than a colour (§10), affected environments, and
+a timeline of entries. The nav item appears when the page is real, not before.
+
+**The honest caveat to write down now, before it is convenient to forget:** an
+incident record is only as good as the discipline of the people filling it in,
+and a half-maintained incident log reads as a claim that nothing has broken
+recently. The phase is not finished until the empty state says which it is.
 
 ### Deferred decisions, recorded so they are not lost
 

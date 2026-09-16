@@ -17,7 +17,15 @@ import { ServiceTabs } from "@/components/ServiceTabs";
 import { ErrorState, NotYetMeasured, PartialFailure } from "@/components/states";
 import { controlPlane, noStore } from "@/lib/api";
 import { absoluteTime, relativeTime, tierLabel } from "@/lib/format";
-import { dashboardUrl, observabilityServiceName } from "@/lib/manifestLinks";
+import {
+  dashboardUrl,
+  dependencyList,
+  journeyList,
+  observabilityServiceName,
+  operationsContact,
+  runbookRef,
+  sloTarget,
+} from "@/lib/manifestLinks";
 
 export const dynamic = "force-dynamic";
 
@@ -168,6 +176,11 @@ function OverviewPane({
 }) {
   const dashboard = dashboardUrl(service.manifest);
   const telemetryName = observabilityServiceName(service.manifest);
+  const runbook = runbookRef(service.manifest);
+  const contact = operationsContact(service.manifest);
+  const slo = sloTarget(service.manifest);
+  const dependencies = dependencyList(service.manifest);
+  const journeys = journeyList(service.manifest);
 
   return (
     <div className="flex flex-col gap-7 px-4 py-5 md:px-6">
@@ -201,6 +214,63 @@ function OverviewPane({
             {relativeTime(service.registeredAt)}
           </dd>
         </dl>
+      </section>
+
+      <section>
+        <h2 className="mb-2.5 text-[13px] font-semibold">Operations</h2>
+        <dl className="grid grid-cols-[minmax(0,150px)_minmax(0,1fr)] gap-x-3.5 gap-y-2 text-[13px]">
+          <dt className="text-ink-2">Runbook</dt>
+          <dd className="m-0 break-words text-[12.5px]">
+            {runbook?.kind === "url" ? (
+              <a
+                href={runbook.href}
+                target="_blank"
+                rel="noreferrer noopener external"
+                className="mono underline"
+                style={{ color: "var(--accent)" }}
+              >
+                {runbook.href}
+              </a>
+            ) : runbook ? (
+              // A repository-relative path, shown as a path. The repository is
+              // owner/name with no host, so linking it would mean guessing a
+              // forge the manifest never named.
+              <>
+                <span className="mono">{runbook.path}</span>{" "}
+                <span className="text-ink-3">in {service.repository}</span>
+              </>
+            ) : (
+              <span className="text-ink-3">
+                none declared — add <span className="mono">spec.operations.runbook</span>
+              </span>
+            )}
+          </dd>
+
+          <dt className="text-ink-2">Contact</dt>
+          {contact ? (
+            <dd className="mono m-0 break-words text-[12.5px]">{contact}</dd>
+          ) : (
+            <dd className="m-0 text-[12.5px] text-ink-3">
+              none declared — add <span className="mono">spec.operations.contact</span>
+            </dd>
+          )}
+
+          <dt className="text-ink-2">SLO target</dt>
+          {slo ? (
+            <dd className="mono m-0 text-[12.5px]">
+              {slo.availability}% over {slo.window}
+            </dd>
+          ) : (
+            <dd className="m-0 text-[12.5px] text-ink-3">
+              none declared — add <span className="mono">spec.operations.slo</span>
+            </dd>
+          )}
+        </dl>
+        <p className="mt-2 max-w-prose text-[12.5px] text-ink-3">
+          Declarations by the owning team. Nothing here measures against the target: the 30-day ribbon
+          below is probe availability from one vantage point, which is a different measurement and
+          cannot be compared to this number.
+        </p>
       </section>
 
       <section>
@@ -327,6 +397,56 @@ function OverviewPane({
           {health?.notice ??
             "This is probe availability from one vantage point against a health endpoint, not an SLO."}
         </p>
+      </section>
+
+      <section>
+        <h2 className="mb-2.5 text-[13px] font-semibold">Depends on</h2>
+        {!dependencies.stated ? (
+          <p className="max-w-prose text-[12.5px] text-ink-3">
+            Not stated. <span className="mono">spec.dependencies</span> is absent, which is a question
+            nobody answered — an empty list would be the answer “this service calls nothing”.
+          </p>
+        ) : dependencies.entries.length === 0 ? (
+          <p className="max-w-prose text-[12.5px] text-ink-2">
+            Stated: this service calls nothing.
+          </p>
+        ) : (
+          <ul className="flex flex-wrap gap-1.5 p-0">
+            {dependencies.entries.map((dependency) => (
+              <li
+                key={`${dependency.kind}:${dependency.name}`}
+                className="list-none rounded border border-rule-2 px-2 py-1 text-[12.5px]"
+              >
+                <span className="mono">{dependency.name}</span>
+                {dependency.kind === "service" ? null : (
+                  <span className="text-ink-3"> ({dependency.kind})</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+        <p className="mt-2 max-w-prose text-[12.5px] text-ink-3">
+          What this service declares it calls, unverified. OpsAtlas does not compute the reverse — nothing
+          here knows which registered services call this one — so this is not a blast radius.
+        </p>
+      </section>
+
+      <section>
+        <h2 className="mb-2.5 text-[13px] font-semibold">Journeys</h2>
+        {journeys.length > 0 ? (
+          <ul className="flex flex-wrap gap-1.5 p-0">
+            {journeys.map((journey) => (
+              <li key={journey} className="list-none rounded border border-rule-2 px-2 py-1 text-[12.5px]">
+                {journey}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="max-w-prose text-[12.5px] text-ink-3">
+            none declared — add <span className="mono">spec.journeys</span>, the customer-visible
+            experiences this service is on the path for. It is the one field telemetry cannot supply.
+          </p>
+        )}
       </section>
 
       <section>

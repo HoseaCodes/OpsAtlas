@@ -84,8 +84,10 @@ jobs — selection, focus ring, error-budget fill, open-incident emphasis. See
 | OpenAPI document generated from the code, drift-checked | **Real** | `make check-openapi` fails the build on any difference |
 | Swagger UI over that document, at `/swagger-ui.html` | **Real** | served by springdoc; on by default locally, off when `OPSATLAS_SWAGGER_UI=false` |
 | Typed TypeScript client, no hand-written API types | **Real** | `make typecheck` |
-| Web console — catalog, detail, scorecard, register by paste, edit and delete | **Real** | 50 component tests, 36 Playwright tests against the real stack |
+| Web console — catalog, detail, scorecard, register by paste, edit and delete | **Real** | 67 component and unit tests, 45 Playwright tests against the real stack |
 | A declared dashboard, rendered as a followable link | **Real** | `manifestLinks.test.ts` refuses `javascript:`, `data:`, `http:` and protocol-relative URLs; `observability.spec.ts` drives the real link in a browser |
+| Declared runbook, contact, SLO target, dependencies and journeys, rendered | **Real** | all five were validated, stored and shown nowhere until now. `manifestLinks.test.ts` (26 tests) and `declarations.spec.ts` (9 Playwright tests); a repository-relative runbook stays a path rather than being guessed into a github.com link |
+| Declared SLO target, shown as a declaration | **Real, and labelled** | the page says outright that nothing measures against it — the ribbon beside it is probe availability from one vantage point, which is a different measurement |
 | Editing a manifest from the console, with `If-Match` | **Real** | `manage.spec.ts` — an invalid edit is refused with the control plane's own JSON Pointer |
 | Retiring a service, keeping its entry and history | **Real** | `manage.spec.ts` — `spec.lifecycle: retired` through the edit form, and it stays in the catalog |
 | Deleting a service, with the audit trail surviving it | **Real** | cross-org and positive-control coverage in the isolation suite, plus `manage.spec.ts` — `service.deleted` is still readable after the row is gone |
@@ -138,13 +140,15 @@ jobs — selection, focus ring, error-budget fill, open-incident emphasis. See
 | Rotating a key revokes the old one immediately | **Real** | `ServiceCredentialIT` — both keys working during a changeover would leave a leaked key live |
 | Console sign-in, session and sign-out | **Real, and verified live** | `signin.spec.ts` drives a real browser against a real Storm-Gate: redirect to sign-in, sign in, catalog renders, reload keeps the session, sign out ends it |
 | The console holds no credential of its own | **Real** | it forwards the reader's token, so the audit log names the person rather than "the console" |
-| The browser suite, signed in | **Real** | 36 Playwright tests against the whole stack — identity provider, control plane, PostgreSQL and the console — with a shared session from a real sign-in |
+| The browser suite, signed in | **Real** | 45 Playwright tests against the whole stack — identity provider, control plane, PostgreSQL and the console — with a shared session from a real sign-in |
 | OpenAPI document declaring the bearer scheme | **Not done** | the generated contract says nothing about auth, so the typed client does not know a token exists |
-| Dependency graph and blast radius | **Not built** | needs trace data |
+| Declared dependency list, with kinds | **Real** | rendered on the service detail page; an absent `spec.dependencies` reads as unanswered and an empty list as "this calls nothing", which is the distinction the schema exists to keep |
+| Dependency *graph* and blast radius | **Not built** | forward edges only. Nothing computes which registered services call a given one, so the page says it is not a blast radius |
 | Real-user SLO measurement | **Not built** | probe availability is not an SLO — see below |
 | Latency percentiles over stored history | **Not built** | span durations are in Tempo; nothing aggregates them, and the rollups deliberately store mean and max only (ADR 0009) |
 | Cost attribution | **Not planned for slice one** | — |
-| Incidents | **Not planned for slice one** | — |
+| Deployments, versions and drift | **Not built — phase 13** | nothing knows what version is running, which is why drift detection was deferred in phase 7 and why the promotion view has nothing behind it. See [the roadmap](docs/roadmap.md) |
+| Incidents | **Not built — phase 14** | needs phase 13: an incident log with no deployment history is a worse spreadsheet. OpsAtlas will record incidents, not declare them from probe failure |
 
 There is **no mocked data anywhere in this repository.** The example manifests in
 `examples/services/` are real test inputs that a real validator really validates.

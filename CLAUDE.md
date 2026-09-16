@@ -34,8 +34,10 @@ worse than no `terraform/` directory.
   the audit log. Phase 11 — the transactional outbox and platform events — waits
   for a demonstrated need (§6). Phase 12 was split: the **deployment is live**
   (ADR 0014), and **Terraform, Kubernetes, Helm and k6 still wait** — no longer
-  circularly, since there is now something for them to describe. The phase list
-  is in `docs/roadmap.md`.
+  circularly, since there is now something for them to describe. **Phases 13
+  (deployments and drift) and 14 (incidents) are now written down**, which they
+  never were — incidents were in the domain model, the navigation plan and the
+  colour rules, and in no phase. The phase list is in `docs/roadmap.md`.
 - **What exists:** the `service.yaml` v1 JSON Schema and fixtures; a running
   control plane that registers services from a real manifest and serves them —
   `POST`, `GET /{slug}`, `GET` (cursor-paged), `PUT` with `If-Match` — with the
@@ -70,9 +72,9 @@ worse than no `terraform/` directory.
   **No JDK needs to be installed** — the build declares a Java 21 toolchain and
   Gradle provisions Temurin 21 itself. Go 1.27+ **is** required for
   `apps/observer`; it is installed here via Homebrew.
-- **Tests:** `make test` — 14 schema fixtures, 50 console component tests,
-  35 Go tests (race-clean) and 288 JVM tests, all passing. `make test-all` adds
-  36 Playwright tests against the real stack. Integration tests use
+- **Tests:** `make test` — 14 schema fixtures, 67 console component and unit
+  tests, 35 Go tests (race-clean) and 288 JVM tests, all passing. `make test-all`
+  adds 45 Playwright tests against the real stack. Integration tests use
   Testcontainers and need a running Docker daemon; the Playwright tests need the
   stack running.
 - **CI is green on `master`.** Run #3 on 2026-09-15, commit `4e23098`: all six
@@ -340,6 +342,20 @@ worse than no `terraform/` directory.
   the hardcoded string `local` and so announced the production deployment as a
   laptop. It is now `OPSATLAS_ENVIRONMENT`, read at request time so one image
   still runs anywhere; a `NEXT_PUBLIC_` variable would bake it in at build.
+- **Five more manifest fields are rendered now, and were not before.**
+  `spec.operations.runbook`, `spec.operations.slo`, `spec.dependencies` and
+  `spec.journeys` each moved a scorecard check and nothing else;
+  **`spec.operations.contact` moved nothing at all** — a team could declare a
+  chat channel and no part of this system would mention it again. The readers
+  are in `apps/web/lib/manifestLinks.ts` and each has a test, because this is
+  the second time a validated field reached no reader. Three things there are
+  deliberate: a repository-relative runbook stays a **path**, since
+  `metadata.repository` is `owner/name` with no host and linking it would mean
+  guessing github.com; the **SLO target sits away from the ribbon** and says
+  outright that nothing measures against it; and an absent `spec.dependencies`
+  renders differently from an empty one, which is the distinction the schema
+  exists to keep. The dependency list states that it is **not a blast radius**,
+  because nothing computes the reverse edges.
 - **`spec.observability.dashboard` is rendered now, and was not before.** It was
   validated, parsed and dropped — no column, no rule, nothing shown — so
   declaring one did nothing. `ServiceDetail` already carried the whole manifest,

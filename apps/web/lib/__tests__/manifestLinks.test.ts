@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { dashboardUrl, observabilityServiceName } from "../manifestLinks";
+import {
+  dashboardUrl,
+  dependencyList,
+  journeyList,
+  observabilityServiceName,
+  operationsContact,
+  runbookRef,
+  sloTarget,
+} from "../manifestLinks";
 
 const withDashboard = (dashboard: unknown) => ({
   spec: { observability: { dashboard } },
@@ -67,5 +75,144 @@ describe("reading the observability service name", () => {
     expect(observabilityServiceName({ spec: { observability: {} } })).toBeUndefined();
     expect(observabilityServiceName({ spec: { observability: { serviceName: "  " } } })).toBeUndefined();
     expect(observabilityServiceName(null)).toBeUndefined();
+  });
+});
+
+describe("reading the runbook", () => {
+  const withRunbook = (runbook: unknown) => ({ spec: { operations: { runbook } } });
+
+  it("returns an https URL as a link", () => {
+    expect(runbookRef(withRunbook("https://wiki.example.com/runbooks/orders"))).toEqual({
+      kind: "url",
+      href: "https://wiki.example.com/runbooks/orders",
+    });
+  });
+
+  it("returns a repository-relative path as a path, not a link", () => {
+    // The schema permits docs/runbook.md. Turning that into a github.com URL
+    // would invent a host the manifest never named.
+    expect(runbookRef(withRunbook("docs/runbook.md"))).toEqual({ kind: "path", path: "docs/runbook.md" });
+  });
+
+  it("never returns a dangerous scheme as a link", () => {
+    // Falls through to `path`, which renders as text. The point is that no
+    // value other than an https URL can reach an href.
+    expect(runbookRef(withRunbook("javascript:alert(1)"))).toEqual({
+      kind: "path",
+      path: "javascript:alert(1)",
+    });
+    expect(runbookRef(withRunbook("http://wiki.example.com"))).toEqual({
+      kind: "path",
+      path: "http://wiki.example.com",
+    });
+  });
+
+  it("returns nothing when absent, blank, or not a string", () => {
+    expect(runbookRef(withRunbook(undefined))).toBeUndefined();
+    expect(runbookRef(withRunbook("   "))).toBeUndefined();
+    expect(runbookRef(withRunbook(42))).toBeUndefined();
+    expect(runbookRef({})).toBeUndefined();
+    expect(runbookRef(null)).toBeUndefined();
+  });
+});
+
+describe("reading the operations contact", () => {
+  it("returns a declared channel", () => {
+    expect(operationsContact({ spec: { operations: { contact: "#orders-eng" } } })).toBe("#orders-eng");
+  });
+
+  it("returns nothing when absent or blank", () => {
+    expect(operationsContact({ spec: { operations: {} } })).toBeUndefined();
+    expect(operationsContact({ spec: { operations: { contact: "  " } } })).toBeUndefined();
+    expect(operationsContact(undefined)).toBeUndefined();
+  });
+});
+
+describe("reading the SLO target", () => {
+  const withSlo = (slo: unknown) => ({ spec: { operations: { slo } } });
+
+  it("returns both halves of a declared target", () => {
+    expect(sloTarget(withSlo({ availability: 99.9, window: "30d" }))).toEqual({
+      availability: 99.9,
+      window: "30d",
+    });
+  });
+
+  it("returns nothing when either half is missing", () => {
+    // Half a target renders as a measurement. It is not one.
+    expect(sloTarget(withSlo({ availability: 99.9 }))).toBeUndefined();
+    expect(sloTarget(withSlo({ window: "30d" }))).toBeUndefined();
+    expect(sloTarget(withSlo({}))).toBeUndefined();
+    expect(sloTarget({})).toBeUndefined();
+  });
+
+  it("refuses an availability that is not a finite number", () => {
+    expect(sloTarget(withSlo({ availability: "99.9", window: "30d" }))).toBeUndefined();
+    expect(sloTarget(withSlo({ availability: Number.NaN, window: "30d" }))).toBeUndefined();
+  });
+});
+
+describe("reading the dependency list", () => {
+  it("distinguishes an absent key from an empty list", () => {
+    // The whole reason the schema keeps both shapes, and what
+    // DependenciesDeclaredCheck rewards.
+    expect(dependencyList({ spec: {} })).toEqual({ stated: false, entries: [] });
+    expect(dependencyList({ spec: { dependencies: [] } })).toEqual({ stated: true, entries: [] });
+  });
+
+  it("normalizes the string shorthand to kind service", () => {
+    expect(dependencyList({ spec: { dependencies: ["payments-api"] } })).toEqual({
+      stated: true,
+      entries: [{ name: "payments-api", kind: "service" }],
+    });
+  });
+
+  it("keeps a declared kind and defaults an unknown one to service", () => {
+    expect(
+      dependencyList({
+        spec: {
+          dependencies: [
+            { name: "postgres", kind: "datastore" },
+            { name: "stripe", kind: "external" },
+            { name: "odd", kind: "nonsense" },
+          ],
+        },
+      }),
+    ).toEqual({
+      stated: true,
+      entries: [
+        { name: "postgres", kind: "datastore" },
+        { name: "stripe", kind: "external" },
+        { name: "odd", kind: "service" },
+      ],
+    });
+  });
+
+  it("drops entries with no usable name rather than rendering a blank chip", () => {
+    expect(dependencyList({ spec: { dependencies: ["", "  ", {}, { name: 7 }, null, ["x"]] } })).toEqual({
+      stated: true,
+      entries: [],
+    });
+  });
+
+  it("survives a manifest shaped nothing like a manifest", () => {
+    expect(dependencyList({ spec: { dependencies: "postgres" } })).toEqual({ stated: false, entries: [] });
+    expect(dependencyList(null)).toEqual({ stated: false, entries: [] });
+  });
+});
+
+describe("reading the journey list", () => {
+  it("returns declared journeys", () => {
+    expect(journeyList({ spec: { journeys: ["Checkout", "Refunds"] } })).toEqual(["Checkout", "Refunds"]);
+  });
+
+  it("treats an empty list as not declared, matching the scorecard check", () => {
+    expect(journeyList({ spec: { journeys: [] } })).toEqual([]);
+    expect(journeyList({ spec: {} })).toEqual([]);
+    expect(journeyList(undefined)).toEqual([]);
+  });
+
+  it("drops blank and non-string entries", () => {
+    expect(journeyList({ spec: { journeys: ["Checkout", "", "   ", 42, null] } })).toEqual(["Checkout"]);
   });
 });
