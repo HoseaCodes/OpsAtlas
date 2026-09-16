@@ -109,7 +109,8 @@ integration can see file renames in a diff.
 
 ### Phase 3 — Scorecard and audit ✓ **complete**
 
-`governance` module, the ten declaration checks from ADR 0004, `PolicyCatalog`,
+`governance` module, the declaration checks from ADR 0004 (ten at the time, eleven
+since ADR 0016), `PolicyCatalog`,
 evaluation inside the registration transaction, `policy_result`,
 `policy_result_check`, `audit_event`, `GET /api/v1/services/{slug}/scorecard`,
 `GET /api/v1/policy/rules`, `GET /api/v1/audit-events`.

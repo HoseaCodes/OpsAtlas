@@ -92,7 +92,7 @@ test("the scorecard tab is a real navigation, not client-only state", async ({ p
 test("a service detail page shows its scorecard and what the checks do not cover", async ({ page }) => {
   await page.goto("/catalog/orders-api?tab=scorecard");
 
-  await expect(page.getByRole("heading", { name: /10 of 10 applicable checks passing/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /11 of 11 applicable checks passing/ })).toBeVisible();
 
   // The claim the whole project turns on: these are declaration checks, and the
   // interface says so rather than implying runtime verification.

@@ -51,7 +51,11 @@ class PolicyCheckTest extends PostgresTestBase {
                 Optional.of("docs/runbook.md"),
                 Optional.of(new ServiceFacts.Slo(99.9, "30d")),
                 Optional.of(List.of("Place an order")),
-                Optional.of(List.of("postgres")));
+                Optional.of(List.of("postgres")),
+                Optional.of(new ServiceFacts.Oncall(
+                        Optional.of("https://pagerduty.example.com/schedules/P1"),
+                        Optional.of("24x7"),
+                        Optional.of("platform-leads"))));
     }
 
     /** A manifest with nothing beyond what the schema forces. Every applicable rule should fail. */
@@ -62,6 +66,7 @@ class PolicyCheckTest extends PostgresTestBase {
                 tier,
                 Optional.empty(),
                 List.of(new ServiceFacts.EnvironmentFacts("staging", Optional.empty())),
+                Optional.empty(),
                 Optional.empty(),
                 Optional.empty(),
                 Optional.empty(),
@@ -92,13 +97,14 @@ class PolicyCheckTest extends PostgresTestBase {
     }
 
     @Test
-    @DisplayName("the rule set is the ten declaration checks, with unique ids")
+    @DisplayName("the rule set is the eleven declaration checks, with unique ids")
     void the_rule_set_is_what_it_claims() {
-        assertThat(rules()).hasSize(10);
+        assertThat(rules()).hasSize(11);
         assertThat(rules().stream().map(PolicyCheck::id).toList()).doesNotHaveDuplicates();
         assertThat(rules().stream().map(PolicyCheck::id))
                 .containsExactlyInAnyOrder(
                         "owner-declared",
+                        "oncall-declared",
                         "runbook-linked",
                         "slo-defined",
                         "readiness-probe-declared",
@@ -174,7 +180,8 @@ class PolicyCheckTest extends PostgresTestBase {
         // the worst thing in the fleet and the fleet compliance number becomes
         // a number nobody can act on.
         assertThat(notApplicable)
-                .containsExactlyInAnyOrder("slo-defined", "journeys-declared", "production-environment-declared");
+                .containsExactlyInAnyOrder(
+                        "slo-defined", "journeys-declared", "production-environment-declared", "oncall-declared");
     }
 
     @Test
@@ -225,12 +232,71 @@ class PolicyCheckTest extends PostgresTestBase {
                 Optional.of("docs/runbook.md"),
                 Optional.of(new ServiceFacts.Slo(99.9, "30d")),
                 Optional.of(List.of("Place an order")),
-                Optional.of(List.of()));
+                Optional.of(List.of()),
+                Optional.of(new ServiceFacts.Oncall(
+                        Optional.of("https://pagerduty.example.com/schedules/P1"),
+                        Optional.of("24x7"),
+                        Optional.empty())));
 
         CheckOutcome outcome = rule("environment-urls-declared").evaluate(facts);
 
         assertThat(outcome.status()).isEqualTo(CheckOutcome.Status.FAIL);
         assertThat(outcome.detail()).contains("staging").doesNotContain("production");
+    }
+
+    /**
+     * The tier 1 case the rule exists for, and the one a simpler rule would miss.
+     *
+     * <p>A declared rotation covering business hours passes for tier 2 and fails
+     * for tier 1. Without this, "has a rotation" would be satisfied by a rotation
+     * that is asleep at exactly the hour a tier 1 service needs one.
+     */
+    @Test
+    @DisplayName("a business-hours rotation passes at tier 2 and fails at tier 1")
+    void business_hours_coverage_is_judged_by_tier() {
+        ServiceFacts.Oncall businessHours = new ServiceFacts.Oncall(
+                Optional.of("https://pagerduty.example.com/schedules/P1"),
+                Optional.of("business-hours"),
+                Optional.empty());
+
+        CheckOutcome atTierTwo = rule("oncall-declared").evaluate(withOncall(2, businessHours));
+        assertThat(atTierTwo.status()).isEqualTo(CheckOutcome.Status.PASS);
+
+        CheckOutcome atTierOne = rule("oncall-declared").evaluate(withOncall(1, businessHours));
+        assertThat(atTierOne.status()).isEqualTo(CheckOutcome.Status.FAIL);
+        assertThat(atTierOne.detail()).contains("business-hours").contains("24x7");
+    }
+
+    @Test
+    @DisplayName("an oncall block with no rotation URL is not a rotation")
+    void an_oncall_block_without_a_rotation_fails() {
+        // Declaring coverage without saying where the schedule is leaves nothing
+        // to open at 03:00, so the block being present must not be enough.
+        CheckOutcome outcome = rule("oncall-declared")
+                .evaluate(withOncall(
+                        1, new ServiceFacts.Oncall(Optional.empty(), Optional.of("24x7"), Optional.empty())));
+
+        assertThat(outcome.status()).isEqualTo(CheckOutcome.Status.FAIL);
+        assertThat(outcome.detail()).contains("spec.operations.oncall.rotation");
+    }
+
+    /** A complete manifest at the given tier, with its on-call block replaced. */
+    private static ServiceFacts withOncall(int tier, ServiceFacts.Oncall oncall) {
+        ServiceFacts base = complete(tier);
+        return new ServiceFacts(
+                base.serviceId(),
+                base.slug(),
+                base.tier(),
+                base.owner(),
+                base.environments(),
+                base.readinessPath(),
+                base.livenessPath(),
+                base.observabilityServiceName(),
+                base.runbook(),
+                base.slo(),
+                base.journeys(),
+                base.dependencies(),
+                Optional.of(oncall));
     }
 
     @Test
@@ -274,7 +340,8 @@ class PolicyCheckTest extends PostgresTestBase {
                 base.runbook(),
                 base.slo(),
                 base.journeys(),
-                dependencies);
+                dependencies,
+                base.oncall());
     }
 
     private static ServiceFacts withJourneys(Optional<List<String>> journeys) {
@@ -291,6 +358,7 @@ class PolicyCheckTest extends PostgresTestBase {
                 base.runbook(),
                 base.slo(),
                 journeys,
-                base.dependencies());
+                base.dependencies(),
+                base.oncall());
     }
 }

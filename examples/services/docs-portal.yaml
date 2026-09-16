@@ -36,6 +36,11 @@ spec:
       window: 30d
     runbook: https://example.com/runbooks/docs-portal
     contact: "#docs-eng"
+    # business-hours is a real answer at tier 2, and passes. The same declaration
+    # on a tier 1 service fails, which is the point of the coverage field.
+    oncall:
+      rotation: https://example.com/oncall/docs-portal
+      coverage: business-hours
   journeys:
     - Read the documentation
   dependencies: []

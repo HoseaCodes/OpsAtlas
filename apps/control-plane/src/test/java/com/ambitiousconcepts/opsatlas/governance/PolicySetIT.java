@@ -60,7 +60,7 @@ class PolicySetIT extends PostgresTestBase {
      * <p>Changing this list without changing the version is the mistake being
      * guarded against, so they are written down together, here, on purpose.
      */
-    private static final String VERSION = "2026-09-12.1";
+    private static final String VERSION = "2026-09-15.1";
 
     private static final List<String> RULES = List.of(
             "dependencies-declared",
@@ -68,6 +68,7 @@ class PolicySetIT extends PostgresTestBase {
             "journeys-declared",
             "liveness-probe-declared",
             "observability-service-name",
+            "oncall-declared",
             "owner-declared",
             "production-environment-declared",
             "readiness-probe-declared",

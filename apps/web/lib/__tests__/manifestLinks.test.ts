@@ -4,6 +4,8 @@ import {
   dependencyList,
   journeyList,
   observabilityServiceName,
+  coverageLabel,
+  oncall,
   operationsContact,
   runbookRef,
   sloTarget,
@@ -214,5 +216,57 @@ describe("reading the journey list", () => {
 
   it("drops blank and non-string entries", () => {
     expect(journeyList({ spec: { journeys: ["Checkout", "", "   ", 42, null] } })).toEqual(["Checkout"]);
+  });
+});
+
+describe("reading the on-call declaration", () => {
+  const withOncall = (value: unknown) => ({ spec: { operations: { oncall: value } } });
+
+  it("returns the rotation, coverage and escalation", () => {
+    expect(
+      oncall(
+        withOncall({
+          rotation: "https://pagerduty.example.com/schedules/P1",
+          coverage: "24x7",
+          escalation: "platform-leads",
+        }),
+      ),
+    ).toEqual({
+      rotation: "https://pagerduty.example.com/schedules/P1",
+      coverage: "24x7",
+      escalation: "platform-leads",
+    });
+  });
+
+  it("refuses a rotation that is not an https URL", () => {
+    // Same rule as every other link read out of somebody else's document.
+    expect(oncall(withOncall({ rotation: "javascript:alert(1)", coverage: "24x7" }))?.rotation).toBeUndefined();
+    expect(oncall(withOncall({ rotation: "http://pager.example.com", coverage: "24x7" }))?.rotation).toBeUndefined();
+  });
+
+  it("drops a coverage value outside the three the schema allows", () => {
+    expect(oncall(withOncall({ rotation: "https://x.example.com", coverage: "sometimes" }))?.coverage)
+      .toBeUndefined();
+  });
+
+  it("treats an empty block as no declaration at all", () => {
+    // Otherwise `oncall: {}` renders a section claiming something was declared.
+    expect(oncall(withOncall({}))).toBeUndefined();
+    expect(oncall(withOncall({ rotation: "   " }))).toBeUndefined();
+  });
+
+  it("returns nothing when absent or shaped wrongly", () => {
+    expect(oncall({ spec: { operations: {} } })).toBeUndefined();
+    expect(oncall(withOncall("business-hours"))).toBeUndefined();
+    expect(oncall(withOncall([]))).toBeUndefined();
+    expect(oncall(null)).toBeUndefined();
+  });
+});
+
+describe("labelling coverage", () => {
+  it("says what each value means for whether anyone is woken", () => {
+    expect(coverageLabel("24x7")).toContain("around the clock");
+    expect(coverageLabel("business-hours")).toContain("business hours");
+    expect(coverageLabel("best-effort")).toContain("nobody paged");
   });
 });

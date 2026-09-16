@@ -23,6 +23,8 @@ import {
   journeyList,
   observabilityServiceName,
   operationsContact,
+  oncall,
+  coverageLabel,
   runbookRef,
   sloTarget,
 } from "@/lib/manifestLinks";
@@ -181,6 +183,23 @@ function OverviewPane({
   const slo = sloTarget(service.manifest);
   const dependencies = dependencyList(service.manifest);
   const journeys = journeyList(service.manifest);
+  const rotation = oncall(service.manifest);
+  // Distinct, because spec.health is one declaration copied onto every
+  // environment row; listing it per environment would repeat one fact N times.
+  const readinessPaths = [
+    ...new Set(service.environments.map((e) => e.readinessPath).filter((p): p is string => !!p)),
+  ];
+  const livenessPaths = [
+    ...new Set(service.environments.map((e) => e.livenessPath).filter((p): p is string => !!p)),
+  ];
+  // Only entries with a real https destination. A repository-relative runbook
+  // is deliberately absent: it is shown as a path above, and a link that cannot
+  // be built is not a link.
+  const operationsLinks = [
+    runbook?.kind === "url" ? { label: "Runbook", href: runbook.href } : null,
+    dashboard ? { label: "Grafana dashboard", href: dashboard } : null,
+    rotation?.rotation ? { label: "On-call rotation", href: rotation.rotation } : null,
+  ].filter((link): link is { label: string; href: string } => link !== null);
 
   return (
     <div className="flex flex-col gap-7 px-4 py-5 md:px-6">
@@ -264,6 +283,39 @@ function OverviewPane({
             </dd>
           )}
 
+          <dt className="text-ink-2">On-call rotation</dt>
+          <dd className="m-0 break-words text-[12.5px]">
+            {rotation?.rotation ? (
+              <a
+                href={rotation.rotation}
+                target="_blank"
+                rel="noreferrer noopener external"
+                className="mono underline"
+                style={{ color: "var(--accent)" }}
+              >
+                {rotation.rotation}
+              </a>
+            ) : (
+              <span className="text-ink-3">
+                none declared — add <span className="mono">spec.operations.oncall.rotation</span>
+              </span>
+            )}
+          </dd>
+
+          <dt className="text-ink-2">Coverage</dt>
+          {rotation?.coverage ? (
+            <dd className="m-0 text-[12.5px]">{coverageLabel(rotation.coverage)}</dd>
+          ) : (
+            <dd className="m-0 text-[12.5px] text-ink-3">not declared</dd>
+          )}
+
+          {rotation?.escalation ? (
+            <>
+              <dt className="text-ink-2">Escalates to</dt>
+              <dd className="mono m-0 break-words text-[12.5px]">{rotation.escalation}</dd>
+            </>
+          ) : null}
+
           <dt className="text-ink-2">SLO target</dt>
           {slo ? (
             <dd className="mono m-0 text-[12.5px]">
@@ -278,7 +330,8 @@ function OverviewPane({
         <p className="mt-2 max-w-prose text-[12.5px] text-ink-3">
           Declarations by the owning team. Nothing here measures against the target: the 30-day ribbon
           below is probe availability from one vantage point, which is a different measurement and
-          cannot be compared to this number.
+          cannot be compared to this number. The rotation is a link to a schedule, not a claim about
+          who is on call now — OpsAtlas has no paging provider to ask.
         </p>
       </section>
 
@@ -330,6 +383,41 @@ function OverviewPane({
         manifest={service.manifest}
         lifecycle={service.lifecycle}
       />
+
+      <section>
+        <h2 className="mb-2.5 text-[13px] font-semibold">Health checks</h2>
+        {/* readinessPath and livenessPath were in the API response and rendered
+            nowhere - the same "validated, stored, dropped" failure as the
+            manifest fields above. They are per environment in the contract, but
+            spec.health applies to all of them, so the distinct values are shown
+            rather than one row per environment repeating itself. */}
+        <dl className="grid grid-cols-[minmax(0,150px)_minmax(0,1fr)] gap-x-3.5 gap-y-2 text-[13px]">
+          <dt className="text-ink-2">Readiness</dt>
+          {readinessPaths.length > 0 ? (
+            <dd className="mono m-0 break-all text-[12.5px]">{readinessPaths.join(", ")}</dd>
+          ) : (
+            <dd className="m-0 text-[12.5px] text-ink-3">
+              none declared — add <span className="mono">spec.health.readiness</span>, and nothing can
+              be probed without it
+            </dd>
+          )}
+
+          <dt className="text-ink-2">Liveness</dt>
+          {livenessPaths.length > 0 ? (
+            <dd className="mono m-0 break-all text-[12.5px]">{livenessPaths.join(", ")}</dd>
+          ) : (
+            <dd className="m-0 text-[12.5px] text-ink-3">
+              none declared — add <span className="mono">spec.health.liveness</span>
+            </dd>
+          )}
+        </dl>
+        <p className="mt-2 max-w-prose text-[12.5px] text-ink-3">
+          The probe interval and timeout are the observer&rsquo;s own configuration, not this
+          service&rsquo;s, so they are not shown here as though the manifest set them. There is no
+          per-instance count either: a probe reaches one URL through whatever sits in front of it and
+          cannot see how many replicas answered.
+        </p>
+      </section>
 
       <section>
         <h2 className="mb-2.5 text-[13px] font-semibold">Environments</h2>
@@ -456,6 +544,42 @@ function OverviewPane({
             experiences this service is on the path for. It is the one field telemetry cannot supply.
           </p>
         )}
+      </section>
+
+      <section>
+        <h2 className="mb-2.5 text-[13px] font-semibold">Operations links</h2>
+        {/* Only links that go somewhere. The prototype's row also had Traces,
+            Logs and API spec: there is no log store to link to (Loki is deferred,
+            ADR 0011), no per-service trace URL because nothing here knows where
+            Grafana lives, and no apiSpec field in the schema. CLAUDE.md §10 rules
+            out an element that implies a capability the backend does not have,
+            and a dead link is exactly that. */}
+        {operationsLinks.length > 0 ? (
+          <ul className="flex flex-wrap gap-x-5 gap-y-2 p-0">
+            {operationsLinks.map((link) => (
+              <li key={link.label} className="list-none">
+                <a
+                  href={link.href}
+                  target="_blank"
+                  rel="noreferrer noopener external"
+                  className="text-[13px] underline"
+                  style={{ color: "var(--accent)" }}
+                >
+                  {link.label}
+                </a>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="max-w-prose text-[12.5px] text-ink-3">
+            No linkable declarations. A runbook, dashboard or rotation declared as an{" "}
+            <span className="mono">https</span> URL appears here.
+          </p>
+        )}
+        <p className="mt-2 max-w-prose text-[12.5px] text-ink-3">
+          Every link here came out of this service&rsquo;s manifest. Nothing checks that any of them
+          resolves.
+        </p>
       </section>
 
       <section>

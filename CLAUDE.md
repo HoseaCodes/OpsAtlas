@@ -42,7 +42,7 @@ worse than no `terraform/` directory.
   control plane that registers services from a real manifest and serves them —
   `POST`, `GET /{slug}`, `GET` (cursor-paged), `PUT` with `If-Match` — with the
   ADR 0002 ingestion pipeline, RFC 9457 problem responses, correlation IDs and
-  real authentication (ADR 0013); a `governance` module scoring ten declaration rules and
+  real authentication (ADR 0013); a `governance` module scoring eleven declaration rules and
   auditing every change, both inside the registration transaction; Flyway schema
   for `organization`, `team`, `service`, `environment`, `policy_result`,
   `policy_result_check`, `audit_event`; a generated-and-drift-checked OpenAPI
@@ -304,7 +304,7 @@ worse than no `terraform/` directory.
   An exporter retrying against a collector that is not there once turned a
   20-second suite into four minutes. `TraceCorrelationIT` turns tracing back on
   for itself, deliberately pointed at a closed port.
-- **The scorecard scores manifests, not running systems.** All ten rules are
+- **The scorecard scores manifests, not running systems.** All eleven rules are
   declaration checks. `GET /api/v1/policy/rules` says so in its payload; do not
   describe them as production-readiness checks.
 - **Bump `PolicyCatalog.VERSION`** whenever a rule is added, removed, or changed
@@ -355,6 +355,31 @@ worse than no `terraform/` directory.
   the hardcoded string `local` and so announced the production deployment as a
   laptop. It is now `OPSATLAS_ENVIRONMENT`, read at request time so one image
   still runs anywhere; a `NEXT_PUBLIC_` variable would bake it in at build.
+- **On-call is declared, never observed (ADR 0016).** `spec.operations.oncall`
+  carries a rotation URL, a `coverage` enum and an escalation target, and
+  `oncall-declared` scores it — REQUIRED at tier 1 and 2, NOT APPLICABLE at
+  tier 3. It is **stricter at tier 1**: a rotation declaring `business-hours`
+  passes at tier 2 and fails at tier 1, because a tier 1 service is paged around
+  the clock by definition. **Nothing here says who is on call now** — that is
+  live state in a paging provider, and a name this system could not refresh
+  would go stale into the one page somebody reads at 03:00. Do not add a
+  who-is-on-call field without the integration behind it.
+- **The policy set is eleven rules at `2026-09-15.1`.** Adding `oncall-declared`
+  moved every stored score's denominator; the README fleet table was regenerated
+  from what the scorer actually produces, which is what `PolicySetIT` prints on
+  failure.
+- **`spec.health.readiness` and `.liveness` are rendered now, and were not.**
+  They were in `ServiceDetail.EnvironmentView` and shown nowhere — the same
+  "validated, stored, dropped" failure as the manifest fields below, found by
+  reading the page against the prototype. The Health checks section states
+  plainly that the probe interval and timeout are the *observer's* configuration
+  and that nothing can count replicas behind a URL, so neither is invented.
+- **The Operations links footer lists only links that resolve to somewhere.**
+  Runbook (when it is an https URL rather than a repository path), dashboard and
+  rotation. The prototype's Traces, Logs and API spec are deliberately absent:
+  there is no log store (Loki is deferred, ADR 0011), nothing knows where
+  Grafana lives, and there is no `apiSpec` field. A dead link is a UI element
+  implying a capability the backend does not have.
 - **Five more manifest fields are rendered now, and were not before.**
   `spec.operations.runbook`, `spec.operations.slo`, `spec.dependencies` and
   `spec.journeys` each moved a scorecard check and nothing else;

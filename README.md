@@ -87,6 +87,10 @@ jobs — selection, focus ring, error-budget fill, open-incident emphasis. See
 | Web console — catalog, detail, scorecard, register by paste, edit and delete | **Real** | 67 component and unit tests, 47 Playwright tests against the real stack |
 | A declared dashboard, rendered as a followable link | **Real** | `manifestLinks.test.ts` refuses `javascript:`, `data:`, `http:` and protocol-relative URLs; `observability.spec.ts` drives the real link in a browser |
 | Declared runbook, contact, SLO target, dependencies and journeys, rendered | **Real** | all five were validated, stored and shown nowhere until now. `manifestLinks.test.ts` (26 tests) and `declarations.spec.ts` (9 Playwright tests); a repository-relative runbook stays a path rather than being guessed into a github.com link |
+| **On-call rotation, declared and scored** | **Real** | `spec.operations.oncall` — a rotation URL, what it covers, and who it escalates to. `oncall-declared` is REQUIRED at tier 1 and 2, and is **stricter at tier 1**: a business-hours rotation passes at tier 2 and fails at tier 1. `PolicyCheckTest` (55), ADR 0016 |
+| Who is on call *right now* | **Not built** | needs a read-only paging-provider integration. A name this system could not refresh would go stale into the one page somebody reads at 03:00, so nothing claims it |
+| Health check paths, shown | **Real** | `spec.health.readiness` and `.liveness` were in the API response and rendered nowhere until now; `declarations.spec.ts` drives them in a browser |
+| Probe interval, timeout, eviction, replica counts | **Not built** | the interval and timeout are the observer's own configuration, not the service's. A probe reaches one URL through whatever sits in front of it and cannot count replicas |
 | Declared SLO target, shown as a declaration | **Real, and labelled** | the page says outright that nothing measures against it — the ribbon beside it is probe availability from one vantage point, which is a different measurement |
 | Editing a manifest from the console, with `If-Match` | **Real** | `manage.spec.ts` — an invalid edit is refused with the control plane's own JSON Pointer |
 | Retiring a service, keeping its entry and history | **Real** | `manage.spec.ts` — `spec.lifecycle: retired` through the edit form, and it stays in the catalog |
@@ -117,7 +121,7 @@ jobs — selection, focus ring, error-budget fill, open-incident emphasis. See
 | Logs shipped to a log store (Loki) | **Not built** | deferred with a reason — see below |
 | No credentials in source control | **Real, enforced** | `make check-secrets` — eight credential formats plus tracked `.env`/key files, run first in CI and by `make test`; verified by planting a token and a tracked `.env` and watching it fail. It raises the floor, it is not a proof — [ADR 0012](docs/adr/0012-secret-scanning-is-a-grep.md) says what it misses |
 | CI pipeline — six jobs on a clean runner | **Real, and green** | [run #1](https://github.com/HoseaCodes/OpsAtlas/actions/runs/34782671255) — contract fixtures, console, observer, control plane, OpenAPI drift and the browser smoke test all passed on first execution. The smoke job boots PostgreSQL, the control plane and the console and drives Playwright against them |
-| Scorecard — ten declaration rules, tier-conditional | **Real** | `PolicyCheckTest` (49), `ScorecardApiIT` (12) |
+| Scorecard — eleven declaration rules, tier-conditional | **Real** | `PolicyCheckTest` (55), `ScorecardApiIT` (12) |
 | **The fleet table below is asserted, not maintained by hand** | **Real, enforced** | `PolicySetIT` registers all six manifests and compares the real scores to the table printed in this README; it also pins the rule-id set beside `PolicyCatalog.VERSION`, so a rule cannot change a verdict without the build noticing |
 | `NOT_APPLICABLE` as a real outcome, with a moving denominator | **Real** | a tier 3 service is scored out of 7, not 10 |
 | Scorecard + audit written in the registration transaction | **Real, and verified** | `ScorecardApiIT` — a forced mid-registration failure leaves no service, no scorecard and no audit row |
@@ -354,18 +358,18 @@ processes; `OPSATLAS_OTLP_ENDPOINT` points them somewhere else.
 
 ### The scorecard, and what it does not check
 
-Registering a service evaluates ten rules and stores the result in the same
+Registering a service evaluates eleven rules and stores the result in the same
 transaction as the service row. Registering the seven example manifests produces:
 
 ```text
 service                  tier  score    failing
-orders-api               1     10/10    -
-pricing-engine           1     8/10     journeys-declared, runbook-linked
-billing-worker           2     7/10     environment-urls-declared, liveness-probe-declared, readiness-probe-declared
-customer-portal          2     9/10     observability-service-name
-identity-bff             1     9/10     dependencies-declared
-legacy-report-runner     3     0/7      (7 failing; 3 not applicable at tier 3)
-docs-portal              2     10/10    -
+orders-api               1     11/11    -
+pricing-engine           1     8/11     journeys-declared, oncall-declared, runbook-linked
+billing-worker           2     7/11     environment-urls-declared, liveness-probe-declared, oncall-declared, readiness-probe-declared
+customer-portal          2     9/11     observability-service-name, oncall-declared
+identity-bff             1     9/11     dependencies-declared, oncall-declared
+legacy-report-runner     3     0/7      (7 failing; 4 not applicable at tier 3)
+docs-portal              2     11/11    -
 ```
 
 Two things in that table are the whole design:

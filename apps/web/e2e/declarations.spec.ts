@@ -61,7 +61,7 @@ test("a declared contact is shown", async ({ page }) => {
   // The field that reached no reader at all before this. If it stops being
   // rendered, this is the test that says so.
   await page.goto("/catalog/orders-api");
-  await expect(page.getByRole("heading", { name: "Operations" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Operations", exact: true })).toBeVisible();
   await expect(page.getByText("#orders-eng", { exact: true })).toBeVisible();
 });
 
@@ -176,4 +176,79 @@ test("a service declaring everything has no 'none declared' anywhere on it", asy
   ).toBeVisible();
 
   await expect(page.getByText(/none declared/)).toHaveCount(0);
+});
+
+test("the tier is in the ownership block, not only in the header", async ({ page }) => {
+  await page.goto("/catalog/orders-api");
+  const ownership = page.getByRole("heading", { name: "Ownership and source" });
+  await expect(ownership).toBeVisible();
+  // The em dash scopes this to the Ownership row; the header above the tabs
+  // prints the same label in parentheses.
+  await expect(page.getByText("— customer-facing, paged")).toBeVisible();
+});
+
+test("the declared health check paths are shown", async ({ page }) => {
+  // readinessPath and livenessPath were in the API response and rendered
+  // nowhere, which is the same failure as the manifest fields above.
+  await page.goto("/catalog/orders-api");
+
+  await expect(page.getByRole("heading", { name: "Health checks" })).toBeVisible();
+  await expect(page.getByText("/actuator/health/readiness", { exact: true })).toBeVisible();
+  await expect(page.getByText("/actuator/health/liveness", { exact: true })).toBeVisible();
+});
+
+test("the health section refuses to invent an interval or a replica count", async ({ page }) => {
+  // The prototype showed "10s / 2s · 3 consecutive failures to evict" and
+  // "Passing 9 of 14". The first is the observer's own configuration and the
+  // second needs an orchestrator. Neither is this service's declaration.
+  await page.goto("/catalog/orders-api");
+  await expect(page.getByText(/cannot see how many replicas answered/)).toBeVisible();
+});
+
+test("a declared rotation is a followable link, and coverage is spelled out", async ({ page }) => {
+  await page.goto("/catalog/orders-api");
+
+  const link = page.getByRole("link", { name: "https://pagerduty.example.com/schedules/PORDERS" });
+  await expect(link).toBeVisible();
+  await expect(page.getByText("24x7 — paged around the clock")).toBeVisible();
+  await expect(page.getByText("platform-leads", { exact: true })).toBeVisible();
+});
+
+test("the page never claims to know who is on call", async ({ page }) => {
+  // The prototype's "On call now — t.nguyen". OpsAtlas has no paging provider
+  // to ask, and a stale name is worse than no name (ADR 0016).
+  await page.goto("/catalog/orders-api");
+  await expect(page.getByText(/not a claim about who is on call now/)).toBeVisible();
+  await expect(page.getByText(/On call now/)).toHaveCount(0);
+});
+
+test("the operations links footer lists only links that go somewhere", async ({ page }) => {
+  await page.goto("/catalog/orders-api");
+
+  const footer = page.getByRole("heading", { name: "Operations links" });
+  await expect(footer).toBeVisible();
+
+  const list = page.getByRole("list").filter({ hasText: "Grafana dashboard" }).first();
+  await expect(list.getByRole("link", { name: "Grafana dashboard" })).toBeVisible();
+  await expect(list.getByRole("link", { name: "On-call rotation" })).toBeVisible();
+
+  // orders-api's runbook is a repository path, so it cannot become a link and
+  // is deliberately not in this list — it is shown as a path further up.
+  await expect(list.getByRole("link", { name: "Runbook" })).toHaveCount(0);
+
+  // Never rendered, because there is nothing behind them.
+  for (const dead of ["Traces", "Logs", "API spec"]) {
+    await expect(list.getByRole("link", { name: dead })).toHaveCount(0);
+  }
+});
+
+test("a service with an https runbook gets it in the links footer too", async ({ page }) => {
+  await page.goto("/catalog/customer-portal");
+  const list = page.getByRole("list").filter({ hasText: "Runbook" }).first();
+  await expect(list.getByRole("link", { name: "Runbook" })).toBeVisible();
+});
+
+test("a service declaring no rotation says so rather than leaving the row blank", async ({ page }) => {
+  await page.goto("/catalog/legacy-report-runner");
+  await expect(page.getByText("spec.operations.oncall.rotation", { exact: true })).toBeVisible();
 });

@@ -162,3 +162,41 @@ export function journeyList(manifest: unknown): string[] {
   if (!Array.isArray(node)) return [];
   return node.map(text).filter((entry): entry is string => entry !== undefined);
 }
+
+export type Coverage = "24x7" | "business-hours" | "best-effort";
+
+/**
+ * `spec.operations.oncall` - where the rotation lives and what it covers.
+ *
+ * Never who is on call. That is live state in a paging provider, and a name
+ * this console could not refresh would go stale into the one page somebody
+ * reads at 03:00 (ADR 0016).
+ */
+export function oncall(manifest: unknown):
+  | { rotation?: string; coverage?: Coverage; escalation?: string }
+  | undefined {
+  const node = at(manifest, ["spec", "operations", "oncall"]);
+  if (typeof node !== "object" || node === null || Array.isArray(node)) return undefined;
+
+  const rotation = httpsUrl(at(node, ["rotation"]));
+  const raw = at(node, ["coverage"]);
+  const coverage =
+    raw === "24x7" || raw === "business-hours" || raw === "best-effort" ? (raw as Coverage) : undefined;
+  const escalation = text(at(node, ["escalation"]));
+
+  // An empty block is the same as no block: it declares nothing.
+  if (rotation === undefined && coverage === undefined && escalation === undefined) return undefined;
+  return { rotation, coverage, escalation };
+}
+
+/** How a declared coverage reads to a person, rather than as a wire value. */
+export function coverageLabel(coverage: Coverage): string {
+  switch (coverage) {
+    case "24x7":
+      return "24x7 — paged around the clock";
+    case "business-hours":
+      return "business hours only";
+    default:
+      return "best effort, nobody paged";
+  }
+}

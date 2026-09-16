@@ -24,7 +24,7 @@ public class PolicyCatalog {
      * still be read as what it meant then, rather than being silently reinterpreted
      * under today's rules. ADR 0004.
      */
-    public static final String VERSION = "2026-09-12.1";
+    public static final String VERSION = "2026-09-15.1";
 
     private final List<PolicyCheck> checks;
 
