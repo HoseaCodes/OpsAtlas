@@ -38,4 +38,17 @@ class DefaultEnvironmentLookup implements EnvironmentLookup {
     public Optional<UUID> serviceIdBySlug(UUID orgId, String slug) {
         return services.findByOrgIdAndSlug(orgId, slug).map(ServiceEntity::getId);
     }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<UUID> environmentIdByName(UUID orgId, UUID serviceId, String name) {
+        return environments.findByOrgIdAndServiceIdAndName(orgId, serviceId, name).map(EnvironmentEntity::getId);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Map<UUID, String> namesOf(UUID orgId, UUID serviceId) {
+        return environments.findByOrgIdAndServiceIdOrderByNameAsc(orgId, serviceId).stream()
+                .collect(Collectors.toMap(EnvironmentEntity::getId, EnvironmentEntity::getName));
+    }
 }

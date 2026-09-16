@@ -100,6 +100,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/services/{slug}/environments/{environment}/deployments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["report"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/observations": {
         parameters: {
             query?: never;
@@ -156,6 +172,22 @@ export interface paths {
             cookie?: never;
         };
         get: operations["forService_1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/services/{slug}/deployments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["forService_2"];
         put?: never;
         post?: never;
         delete?: never;
@@ -278,6 +310,26 @@ export interface components {
             /** Format: int64 */
             version: number;
         };
+        DeployedVersion: {
+            version: string;
+            commitSha: string;
+            deployedBy: string;
+            /** Format: date-time */
+            deployedAt: string;
+            idempotencyKey: string;
+        };
+        Deployment: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            environmentId: string;
+            environmentName: string;
+            version: string;
+            commitSha: string;
+            deployedBy: string;
+            /** Format: date-time */
+            deployedAt: string;
+        };
         Observation: {
             /** Format: uuid */
             environmentId: string;
@@ -380,6 +432,16 @@ export interface components {
             serviceId: string;
             environments: components["schemas"]["EnvironmentHealth"][];
             neverObserved: boolean;
+            notice: string;
+        };
+        ServiceDeployments: {
+            /** Format: uuid */
+            serviceId: string;
+            current: {
+                [key: string]: components["schemas"]["Deployment"];
+            };
+            history: components["schemas"]["Deployment"][];
+            nothingReported: boolean;
             notice: string;
         };
         PolicyRuleView: {
@@ -668,6 +730,33 @@ export interface operations {
             };
         };
     };
+    report: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+                environment: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeployedVersion"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["Deployment"];
+                };
+            };
+        };
+    };
     accept: {
         parameters: {
             query?: never;
@@ -774,6 +863,28 @@ export interface operations {
                 };
                 content: {
                     "*/*": components["schemas"]["ServiceHealth"];
+                };
+            };
+        };
+    };
+    forService_2: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ServiceDeployments"];
                 };
             };
         };

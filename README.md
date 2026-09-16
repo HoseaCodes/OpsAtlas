@@ -78,13 +78,13 @@ jobs — selection, focus ring, error-budget fill, open-incident emphasis. See
 | Idempotent re-registration by manifest digest | **Real** | `RegistrationApiIT` — a replay returns 200 and does not move `version` |
 | `PUT` with `If-Match` optimistic locking (428 / 412) | **Real** | `RegistrationApiIT` |
 | `GET /api/v1/services` and `/{slug}` with cursor pagination | **Real** | `CatalogApiIT`, `RegistrationApiIT` |
-| Cross-organization isolation, on **every** org-scoped endpoint | **Real, and verified** | `OrgIsolationIT` — 27 tests covering services, sources, scorecard, audit log, both health endpoints, observation ingestion and deletion; two prove the database itself refuses a cross-org reference |
+| Cross-organization isolation, on **every** org-scoped endpoint | **Real, and verified** | `OrgIsolationIT` — 30 tests covering services, sources, scorecard, audit log, both health endpoints, observation ingestion, deployments and deletion; two prove the database itself refuses a cross-org reference |
 | That an endpoint cannot be added without covering its isolation | **Real, enforced** | `no_endpoint_escapes_this_test` enumerates every `/api/v1` mapping and fails the build on any that is neither covered nor exempt with a written reason |
 | That those isolation tests would catch a real leak | **Real, and verified** | removing the org filter from the audit log, the fleet health rollup and the environment lookup fails exactly three of them and nothing else |
 | OpenAPI document generated from the code, drift-checked | **Real** | `make check-openapi` fails the build on any difference |
 | Swagger UI over that document, at `/swagger-ui.html` | **Real** | served by springdoc; on by default locally, off when `OPSATLAS_SWAGGER_UI=false` |
 | Typed TypeScript client, no hand-written API types | **Real** | `make typecheck` |
-| Web console — catalog, detail, scorecard, register by paste, edit and delete | **Real** | 67 component and unit tests, 47 Playwright tests against the real stack |
+| Web console — catalog, detail, scorecard, register by paste, edit and delete | **Real** | 67 component and unit tests, 61 Playwright tests against the real stack |
 | A declared dashboard, rendered as a followable link | **Real** | `manifestLinks.test.ts` refuses `javascript:`, `data:`, `http:` and protocol-relative URLs; `observability.spec.ts` drives the real link in a browser |
 | Declared runbook, contact, SLO target, dependencies and journeys, rendered | **Real** | all five were validated, stored and shown nowhere until now. `manifestLinks.test.ts` (26 tests) and `declarations.spec.ts` (9 Playwright tests); a repository-relative runbook stays a path rather than being guessed into a github.com link |
 | **On-call rotation, declared and scored** | **Real** | `spec.operations.oncall` — a rotation URL, what it covers, and who it escalates to. `oncall-declared` is REQUIRED at tier 1 and 2, and is **stricter at tier 1**: a business-hours rotation passes at tier 2 and fails at tier 1. `PolicyCheckTest` (55), ADR 0016 |
@@ -144,14 +144,17 @@ jobs — selection, focus ring, error-budget fill, open-incident emphasis. See
 | Rotating a key revokes the old one immediately | **Real** | `ServiceCredentialIT` — both keys working during a changeover would leave a leaked key live |
 | Console sign-in, session and sign-out | **Real, and verified live** | `signin.spec.ts` drives a real browser against a real Storm-Gate: redirect to sign-in, sign in, catalog renders, reload keeps the session, sign out ends it |
 | The console holds no credential of its own | **Real** | it forwards the reader's token, so the audit log names the person rather than "the console" |
-| The browser suite, signed in | **Real** | 47 Playwright tests against the whole stack — identity provider, control plane, PostgreSQL and the console — with a shared session from a real sign-in |
+| The browser suite, signed in | **Real** | 61 Playwright tests against the whole stack — identity provider, control plane, PostgreSQL and the console — with a shared session from a real sign-in |
 | OpenAPI document declaring the bearer scheme | **Not done** | the generated contract says nothing about auth, so the typed client does not know a token exists |
 | Declared dependency list, with kinds | **Real** | rendered on the service detail page; an absent `spec.dependencies` reads as unanswered and an empty list as "this calls nothing", which is the distinction the schema exists to keep |
 | Dependency *graph* and blast radius | **Not built** | forward edges only. Nothing computes which registered services call a given one, so the page says it is not a blast radius |
 | Real-user SLO measurement | **Not built** | probe availability is not an SLO — see below |
 | Latency percentiles over stored history | **Not built** | span durations are in Tempo; nothing aggregates them, and the rollups deliberately store mean and max only (ADR 0009) |
 | Cost attribution | **Not planned for slice one** | — |
-| Deployments, versions and drift | **Not built — phase 13** | nothing knows what version is running, which is why drift detection was deferred in phase 7 and why the promotion view has nothing behind it. See [the roadmap](docs/roadmap.md) |
+| **Deployments — what version is running where** | **Real** | `DeploymentLedgerIT` (6), `OrgIsolationIT`. Reported by whoever deploys, never discovered: a row is a claim, not an observation. A required idempotency key means a retried report is not a second deployment and a rollback that never happened. ADR 0017 |
+| OpsAtlas reporting its own deploys | **Real** | `converge.sh` POSTs after a successful convergence, keyed on version and commit. Best-effort by design — a failed report never fails a deploy that already worked |
+| **Drift** — declared version versus running version | **Not built** | this supplies the declared half only. The other half needs services to expose a running version, and a service declaring no version endpoint must then read as *not checkable*, never as *no drift* |
+| Instance counts, pod readiness | **Not built, and not possible this way** | orchestrator facts. A probe reaches one URL through whatever sits in front of it and cannot see how many replicas answered |
 | Incidents | **Not built — phase 14** | needs phase 13: an incident log with no deployment history is a worse spreadsheet. OpsAtlas will record incidents, not declare them from probe failure |
 
 There is **no mocked data anywhere in this repository.** The example manifests in

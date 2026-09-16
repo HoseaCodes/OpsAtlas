@@ -74,7 +74,7 @@ worse than no `terraform/` directory.
   `apps/observer`; it is installed here via Homebrew.
 - **Tests:** `make test` — 15 schema fixtures, 67 console component and unit
   tests, 35 Go tests (race-clean) and 290 JVM tests, all passing. `make test-all`
-  adds 47 Playwright tests against the real stack. Integration tests use
+  adds 61 Playwright tests against the real stack. Integration tests use
   Testcontainers and need a running Docker daemon; the Playwright tests need the
   stack running.
 - **CI is green on `master`.** Run #3 on 2026-09-15, commit `4e23098`: all six
@@ -211,14 +211,14 @@ worse than no `terraform/` directory.
     UI can send either and the contract states what every endpoint requires.
     **`make check-openapi` stays red until the regenerated contract is
     committed** — that is the check doing its job, not a failure.
-- **`OrgIsolationIT` proves scoping *and* authorization.** Its 27 tests plant a
+- **`OrgIsolationIT` proves scoping *and* authorization.** Its 30 tests plant a
   second organization's rows, and now a principal who belongs to it, so three of
   them authenticate as that caller and assert they reach their own catalog and
   not ours. Worth remembering why: until those existed, a resolver that ignored
   the principal's organization and always returned the seeded one would have
   passed the entire suite. Checked by mutation — doing exactly that now fails
   two tests.
-- **Cross-organization isolation is verified** by `OrgIsolationIT` (27 tests),
+- **Cross-organization isolation is verified** by `OrgIsolationIT` (30 tests),
   and it now covers **every org-scoped endpoint in the contract** — services,
   sources, the scorecard, the audit log, both health endpoints and observation
   ingestion. `GET /api/v1/policy/rules` is the only operation it does not cover,
@@ -355,6 +355,37 @@ worse than no `terraform/` directory.
   the hardcoded string `local` and so announced the production deployment as a
   laptop. It is now `OPSATLAS_ENVIRONMENT`, read at request time so one image
   still runs anywhere; a `NEXT_PUBLIC_` variable would bake it in at build.
+- **Deployments are reported, never discovered (ADR 0017).** A pipeline POSTs to
+  `/api/v1/services/{slug}/environments/{name}/deployments`; OpsAtlas records it
+  and **does not verify it**. A row says somebody claimed a version went out, not
+  that it is running. Three things there are load-bearing: `version` is free text
+  because a version is a semver, a date stamp or a branch name depending on whose
+  pipeline is talking; `deployed_at` comes from the reporter, not the server's
+  clock, or "in place for" silently measures how long ago OpsAtlas was told; and
+  the **idempotency key is required and never generated**, because a key this
+  endpoint invented would differ on every retry — which is the exact failure it
+  exists to prevent.
+- **A constraint violation aborts the whole PostgreSQL transaction.** The
+  idempotent write is "insert, and on conflict read back the row that beat us",
+  and doing both in one transaction cannot work: every statement after the
+  violation fails with *current transaction is aborted*. `DeploymentWriter`
+  exists solely to hold the insert in `REQUIRES_NEW` so the failure is confined.
+  Found by a test, not by review — do not collapse it back into one method.
+- **`converge.sh` reports OpsAtlas's own deploys**, keyed on version and commit,
+  so the platform's own catalog entry carries real promotion data. It is
+  **best-effort on purpose**: a failed report must never fail a convergence that
+  already succeeded, or a reporting hiccup teaches everyone to ignore the exit
+  code. It needs `deploy/production/deploy-key`; without it the script says so
+  and moves on.
+- **Drift is still not built, and must not be implied.** This supplies the
+  declared version only. Drift is declared-versus-*observed*, and nothing exposes
+  a running version to compare against — a service declaring no version endpoint
+  would have to read as *not checkable*, never as *no drift*. Two environments on
+  different versions is a **promotion**, which the console says outright.
+- **Instance counts are not coming from here.** "Instances 9 / 14" and "5 pods
+  failing readiness" are orchestrator facts. A probe reaches one URL through
+  whatever sits in front of it and cannot see how many replicas answered. The
+  Health checks section says so rather than leaving a blank that reads as a bug.
 - **On-call is declared, never observed (ADR 0016).** `spec.operations.oncall`
   carries a rotation URL, a `coverage` enum and an escalation target, and
   `oncall-declared` scores it — REQUIRED at tier 1 and 2, NOT APPLICABLE at

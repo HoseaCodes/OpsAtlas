@@ -109,7 +109,9 @@ class OrgIsolationIT extends PostgresTestBase {
             "DELETE /api/v1/sources/{id}",
             "POST /api/v1/sources/{id}/sync",
             "POST /api/v1/sources/{id}/enable",
-            "POST /api/v1/sources/{id}/disable");
+            "POST /api/v1/sources/{id}/disable",
+            "POST /api/v1/services/{slug}/environments/{environment}/deployments",
+            "GET /api/v1/services/{slug}/deployments");
 
     /**
      * Endpoints that hold no tenant data, with the reason each one is exempt.
@@ -177,6 +179,21 @@ class OrgIsolationIT extends PostgresTestBase {
                 theirEnvironmentId,
                 THEIRS,
                 theirServiceId);
+
+        // A deployment of theirs. A read path that forgets its orgId leaks what
+        // version a competitor is running and when they last shipped, which is
+        // release-cadence intelligence nobody hands out on purpose.
+        jdbc.update(
+                """
+                insert into deployment (
+                    id, org_id, environment_id, version, commit_sha, deployed_by,
+                    deployed_at, idempotency_key, created_at)
+                values (?, ?, ?, 'their-secret-7.3.1', 'deadbee', 'their-release-bot',
+                    now(), 'their-key', now())
+                """,
+                UUID.randomUUID(),
+                THEIRS,
+                theirEnvironmentId);
 
         jdbc.update(
                 """
@@ -605,6 +622,63 @@ class OrgIsolationIT extends PostgresTestBase {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.statuses." + ours.serviceId()).value("HEALTHY"))
                 .andExpect(jsonPath("$.statuses." + theirServiceId).doesNotExist());
+    }
+
+    // -- Deployments (phase 13) ---------------------------------------------
+
+    @Test
+    @DisplayName("another organization's deployments are 404, not a version list")
+    void their_deployments_are_not_readable() throws Exception {
+        mockMvc.perform(get("/api/v1/services/their-secret-api/deployments"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.type").value("https://opsatlas.ambitiousconcepts.io/problems/not-found"));
+    }
+
+    @Test
+    @DisplayName("our deployment read returns our versions and never theirs")
+    void deployment_read_does_not_leak_their_versions() throws Exception {
+        // The positive control matters here: a read that answered nobody would
+        // pass a leak check trivially. Ours is registered and deployed in the
+        // same request, so the assertion below is about scoping and not about
+        // an endpoint that is simply broken.
+        Registered ours = registerAndObserveOurOwn();
+
+        mockMvc.perform(post("/api/v1/services/orders-api/environments/production/deployments")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"version":"1.4.2","commitSha":"abc1234","deployedBy":"ci","idempotencyKey":"k1"}
+                                """))
+                .andExpect(status().isCreated());
+
+        String body = mockMvc.perform(get("/api/v1/services/orders-api/deployments"))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        assertThat(body)
+                .contains("1.4.2")
+                .doesNotContain("their-secret-7.3.1")
+                .doesNotContain("their-release-bot")
+                .doesNotContain("deadbee");
+        assertThat(ours.serviceId()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("a deployment cannot be reported against another organization's service")
+    void cannot_report_a_deployment_onto_their_service() throws Exception {
+        // 404 rather than 403: their service does not exist as far as this
+        // caller is concerned, and saying otherwise confirms the slug.
+        mockMvc.perform(post("/api/v1/services/their-secret-api/environments/production/deployments")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"version":"planted","idempotencyKey":"k-planted"}
+                                """))
+                .andExpect(status().isNotFound());
+
+        assertThat(jdbc.queryForObject(
+                        "select count(*) from deployment where version = 'planted'", Integer.class))
+                .isZero();
     }
 
     /** A service of ours with one observed environment, for positive controls. */

@@ -5,6 +5,7 @@ import {
   ApiError,
   type EnvironmentHealth,
   type Scorecard,
+  type ServiceDeployments,
   type ServiceDetail,
   type ServiceHealth,
 } from "@opsatlas/contracts";
@@ -49,10 +50,11 @@ export default async function ServicePage({
   // plane: if the scorecard cannot be read, the service detail is still worth
   // showing, and the page says which half is missing instead of failing whole.
   const api = await controlPlane();
-  const [detailResult, scorecardResult, healthResult] = await Promise.allSettled([
+  const [detailResult, scorecardResult, healthResult, deploymentResult] = await Promise.allSettled([
     api.getService(slug, noStore),
     api.getScorecard(slug, noStore),
     api.getServiceHealth(slug, noStore),
+    api.getServiceDeployments(slug, noStore),
   ]);
 
   if (detailResult.status === "rejected") {
@@ -79,6 +81,10 @@ export default async function ServicePage({
 
   const health: ServiceHealth | null = healthResult.status === "fulfilled" ? healthResult.value : null;
   const healthError = healthResult.status === "rejected" ? healthResult.reason : null;
+
+  const deployments: ServiceDeployments | null =
+    deploymentResult.status === "fulfilled" ? deploymentResult.value : null;
+  const deploymentError = deploymentResult.status === "rejected" ? deploymentResult.reason : null;
 
   // Keyed by environment so the overview can join without a second pass.
   // Absent means this environment has never been probed.
@@ -144,6 +150,8 @@ export default async function ServicePage({
           health={health}
           healthByEnvironment={healthByEnvironment}
           healthError={healthError}
+          deployments={deployments}
+          deploymentError={deploymentError}
         />
       )}
     </>
@@ -168,6 +176,8 @@ function OverviewPane({
   health,
   healthByEnvironment,
   healthError,
+  deployments,
+  deploymentError,
 }: {
   service: ServiceDetail;
   scorecard: Scorecard | null;
@@ -175,6 +185,8 @@ function OverviewPane({
   health: ServiceHealth | null;
   healthByEnvironment: Map<string, EnvironmentHealth>;
   healthError: unknown;
+  deployments: ServiceDeployments | null;
+  deploymentError: unknown;
 }) {
   const dashboard = dashboardUrl(service.manifest);
   const telemetryName = observabilityServiceName(service.manifest);
@@ -195,6 +207,15 @@ function OverviewPane({
   // Only entries with a real https destination. A repository-relative runbook
   // is deliberately absent: it is shown as a path above, and a link that cannot
   // be built is not a link.
+  const deployedByEnvironment = new Map<string, NonNullable<ServiceDeployments["current"]>[string]>(
+    Object.entries(deployments?.current ?? {}),
+  );
+  // Distinct versions across environments. Two or more means something is
+  // mid-promotion, which is normal and worth saying so nobody reads it as drift.
+  const deployedVersions = [...new Set([...deployedByEnvironment.values()].map((d) => d.version))];
+  // history is newest first from the control plane, so the head is the last deploy.
+  const lastDeploy = deployments?.history?.[0];
+
   const operationsLinks = [
     runbook?.kind === "url" ? { label: "Runbook", href: runbook.href } : null,
     dashboard ? { label: "Grafana dashboard", href: dashboard } : null,
@@ -425,6 +446,9 @@ function OverviewPane({
           <thead>
             <tr>
               <th>Environment</th>
+              <th>Version</th>
+              <th>Commit</th>
+              <th>In place for</th>
               <th>Health</th>
               <th>URL</th>
               <th>Probe availability</th>
@@ -434,9 +458,31 @@ function OverviewPane({
           <tbody>
             {service.environments.map((environment) => {
               const state = healthByEnvironment.get(environment.id);
+              const deployed = deployedByEnvironment.get(environment.id);
               return (
                 <tr key={environment.id}>
                   <td className="mono text-[12.5px]">{environment.name}</td>
+                  <td className="mono text-[12.5px]">
+                    {deployed ? (
+                      deployed.version
+                    ) : (
+                      // Nothing reported is not "not deployed". Rendering a dash
+                      // as though it were a reading is the failure §10 rules out.
+                      <NotYetMeasured>not reported</NotYetMeasured>
+                    )}
+                  </td>
+                  <td className="mono text-[12.5px]">
+                    {deployed?.commitSha ?? <span className="text-ink-3">—</span>}
+                  </td>
+                  <td className="text-[12.5px]">
+                    {deployed ? (
+                      <span title={absoluteTime(deployed.deployedAt)}>
+                        {relativeTime(deployed.deployedAt).replace(/ ago$/, "")}
+                      </span>
+                    ) : (
+                      <span className="text-ink-3">—</span>
+                    )}
+                  </td>
                   <td>
                     <HealthMeter state={toHealthState(state?.status)} detail={state?.detail} />
                   </td>
@@ -464,6 +510,63 @@ function OverviewPane({
             })}
           </tbody>
         </table>
+      </section>
+
+      <section>
+        <h2 className="mb-2.5 text-[13px] font-semibold">Deployments</h2>
+        {deploymentError ? (
+          <PartialFailure
+            what="The deployment history"
+            detail={
+              deploymentError instanceof ApiError
+                ? deploymentError.detail
+                : "The deployment read did not complete."
+            }
+            correlationId={deploymentError instanceof ApiError ? deploymentError.correlationId : undefined}
+          />
+        ) : (
+          <>
+            {lastDeploy ? (
+              <dl className="grid grid-cols-[minmax(0,150px)_minmax(0,1fr)] gap-x-3.5 gap-y-2 text-[13px]">
+                <dt className="text-ink-2">Last deploy</dt>
+                <dd className="m-0 text-[12.5px]" title={absoluteTime(lastDeploy.deployedAt)}>
+                  {relativeTime(lastDeploy.deployedAt)} to{" "}
+                  <span className="mono">{lastDeploy.environmentName}</span>
+                  {lastDeploy.deployedBy ? (
+                    <>
+                      {" "}
+                      by <span className="mono">{lastDeploy.deployedBy}</span>
+                    </>
+                  ) : null}
+                </dd>
+              </dl>
+            ) : (
+              <p className="max-w-prose text-[12.5px] text-ink-3">
+                Nothing has reported a deployment for this service. That means nothing told OpsAtlas,
+                not that nothing was deployed — a version is reported by whoever deploys it, and
+                OpsAtlas neither reads a registry nor asks a cluster.
+              </p>
+            )}
+
+            {deployedVersions.length > 1 ? (
+              <p className="mt-2 max-w-prose text-[12.5px] text-ink-2">
+                Environments are running different versions. That is normal for an in-flight change —
+                a promotion is a later stage of the same run — and it is not drift: nothing here
+                compares a declared version to a running one.
+              </p>
+            ) : null}
+
+            {/* Only when there is something to caveat. With nothing reported the
+                empty state above already says the same thing, and printing both
+                is two paragraphs telling a reader one fact. */}
+            {lastDeploy ? (
+              <p className="mt-2 max-w-prose text-[12.5px] text-ink-3">
+                {deployments?.notice ??
+                  "Versions are reported by whoever deployed them and are not verified."}
+              </p>
+            ) : null}
+          </>
+        )}
       </section>
 
       <section>

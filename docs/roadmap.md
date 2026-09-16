@@ -488,10 +488,16 @@ expanding scope.
 | ~~10~~ | ~~Packaging~~ — **done**. Multi-stage Dockerfiles for the control plane (JDK builds, JRE runs) and the console (Next standalone output), both non-root with their code read-only to the process. `make up-app` runs the stack containerised; verified by signing in through a real browser against it. Images are built from this repository rather than pulled — there is no published OpsAtlas image, and naming one that does not exist would be a promise the compose file cannot keep. | |
 | 11 | Transactional outbox, platform events, Redis read models | Only once there is a demonstrated need (§6). Nothing today has a second consumer of registration events, no observer needs coordinating, and no read model is slow |
 | **12** | **Deployment** — one box, compose behind Caddy (ADR 0014) | **Deployed.** Running on a DigitalOcean droplet since 2026-09-15 at `https://opsatlas.hoseacodes.com`: seven containers, images pulled from GHCR by tag, TLS from Let's Encrypt, one public hostname. Doing it found three faults no local check could have — an impossible first start, a console image permanently unhealthy while working, and a `latest` tag the workflow claimed not to produce. **Still open:** no backups, no zero-downtime deploy, no redundancy, and the telemetry stack is not deployed. Terraform, Kubernetes, Helm and k6 still wait, but no longer circularly — there is now something for the IaC to describe |
-| **13** | **Deployments and drift** — what version is running where | **Next, and the one that unblocks the others.** The catalog knows what a service declares and whether its health endpoint answers. It does not know what is *running*, and that single gap is why drift detection was deferred in phase 7, why the prototype's entire Promotion block has nothing behind it, and why an incident would have no "what changed" to point at. Detailed below |
+| **13** | **Deployments** — what version is running where | **Built, minus drift.** A `deployment` table, `POST /api/v1/services/{slug}/environments/{name}/deployments` with a required idempotency key, `GET /api/v1/services/{slug}/deployments`, and the Promotion view in the console. `converge.sh` reports OpsAtlas's own deploys, so the platform's own entry carries real data. **Drift is still not built**: it needs an *observed* version and nothing exposes one — see ADR 0017. Instance counts are not possible here at all. Original reasoning below |
 | **14** | **Incidents** | Needs 13. Recording an incident with no deployment history is a worse spreadsheet; the value is the correlation. Detailed below |
 
 ### Phase 13 — Deployments and drift
+
+> **Built on 2026-09-16, except drift.** The table, the endpoints, the console
+> view and OpsAtlas reporting its own deploys are done and tested. What follows
+> was written before that and is kept because the reasoning still holds — the
+> deferred half is the same half. ADR 0017 records what was decided.
+
 
 The first phase since the observer that adds a new fact about the world rather
 than a new view of an existing one.

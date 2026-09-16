@@ -21,6 +21,8 @@ export type EnvironmentHealth = components["schemas"]["EnvironmentHealth"];
 export type DailyAvailability = components["schemas"]["DailyAvailability"];
 export type HealthSummary = components["schemas"]["HealthSummary"];
 export type ServiceHealth = components["schemas"]["ServiceHealth"];
+export type Deployment = components["schemas"]["Deployment"];
+export type ServiceDeployments = components["schemas"]["ServiceDeployments"];
 
 export interface Page<T> {
   items: T[];
@@ -141,6 +143,20 @@ export class OpsAtlasClient {
   /** Per-environment state and daily history for one service. */
   getServiceHealth(slug: string, init?: RequestInit) {
     return this.request<ServiceHealth>(`/api/v1/services/${encodeURIComponent(slug)}/health`, init);
+  }
+
+  /**
+   * What version is running where, as reported by whoever deployed it.
+   *
+   * Served separately from the catalog for the same reason health is (ADR 0010),
+   * and read separately by the console so a slow deployment read cannot delay
+   * the service detail.
+   */
+  getServiceDeployments(slug: string, init?: RequestInit) {
+    return this.request<ServiceDeployments>(
+      `/api/v1/services/${encodeURIComponent(slug)}/deployments`,
+      init,
+    );
   }
 
   /** Repositories OpsAtlas watches. Read-only against the provider; see ADR 0008. */

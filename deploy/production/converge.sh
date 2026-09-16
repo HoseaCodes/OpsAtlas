@@ -98,3 +98,56 @@ echo "applying"
 docker compose up -d --remove-orphans
 
 echo "converged to $desired at $(git rev-parse --short HEAD)"
+
+# ---------------------------------------------------------------------------
+# Tell OpsAtlas what was just deployed.
+#
+# The catalog cannot discover a running version - nothing exposes one to probe
+# yet (ADR 0017) - so the thing that deploys is the thing that knows. This is
+# that report, and it makes OpsAtlas the first service in its own catalog with
+# real promotion data rather than an empty column.
+#
+# Deliberately best-effort. A failed report must never fail a convergence that
+# has already succeeded: the site is up on the new version either way, and
+# turning a reporting hiccup into a red deploy would teach everyone to ignore
+# the exit code. It logs and moves on.
+#
+# The idempotency key is the version and the commit, so the timer firing again
+# on an unchanged box - or a retry after a network blip - records nothing new.
+# ---------------------------------------------------------------------------
+report_deployment() {
+    local api="${OPSATLAS_API_URL:-http://localhost:8080}"
+    local key_file="${OPSATLAS_DEPLOY_KEY_FILE:-$DIR/deploy-key}"
+    local service="${OPSATLAS_SELF_SLUG:-opsatlas}"
+    local environment="${OPSATLAS_SELF_ENVIRONMENT:-production}"
+
+    if [ ! -r "$key_file" ]; then
+        echo "no deploy key at $key_file; not reporting this deployment"
+        return 0
+    fi
+
+    local sha
+    sha="$(git rev-parse --short=12 HEAD)"
+
+    local body
+    body="$(printf '{"version":"%s","commitSha":"%s","deployedBy":"ci:converge","idempotencyKey":"%s"}' \
+        "$desired" "$sha" "$desired@$sha")"
+
+    local status
+    status="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 \
+        -X POST "$api/api/v1/services/$service/environments/$environment/deployments" \
+        -H "X-OpsAtlas-Key: $(tr -d ' \t\r\n' < "$key_file")" \
+        -H 'Content-Type: application/json' \
+        -d "$body" || echo 000)"
+
+    case "$status" in
+        201) echo "reported deployment $desired ($sha)" ;;
+        200) echo "deployment $desired ($sha) was already reported" ;;
+        404) echo "OpsAtlas does not have a service '$service' with an environment '$environment';"
+             echo "  register one, or set OPSATLAS_SELF_SLUG, and the version column stays empty until then" ;;
+        000) echo "could not reach the control plane to report the deployment; it is still deployed" ;;
+        *)   echo "reporting the deployment returned $status; it is still deployed" ;;
+    esac
+}
+
+report_deployment
