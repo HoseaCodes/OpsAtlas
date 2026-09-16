@@ -70,7 +70,7 @@ jobs — selection, focus ring, error-budget fill, open-incident emphasis. See
 | Semantic validation — duplicate environment names | **Real** | same |
 | Architecture decisions, phases 0–10 | **Real** (written down) | [`docs/adr/`](docs/adr/), [`docs/roadmap.md`](docs/roadmap.md) |
 | Design system extracted from the prototype | **Real** (written down) | [`docs/design/tokens.md`](docs/design/tokens.md) |
-| Control plane (Java 21 / Spring Boot) | **Real** | `make test` — 290 JVM tests |
+| Control plane (Java 21 / Spring Boot) | **Real** | `make test` — 305 JVM tests |
 | PostgreSQL schema and Flyway migrations | **Real** | `SeedConsistencyIT`, and Hibernate `ddl-auto: validate` refuses to start on drift |
 | `POST /api/v1/services` — register from a `service.yaml` | **Real** | `RegistrationApiIT`, plus 13 curl assertions against a running server |
 | Safe YAML ingestion — size cap, no alias expansion, no type construction | **Real** | `ManifestValidationTest` — billion-laughs, `!!java` tags, duplicate keys and a 70 KiB body are all refused |
@@ -84,7 +84,7 @@ jobs — selection, focus ring, error-budget fill, open-incident emphasis. See
 | OpenAPI document generated from the code, drift-checked | **Real** | `make check-openapi` fails the build on any difference |
 | Swagger UI over that document, at `/swagger-ui.html` | **Real** | served by springdoc; on by default locally, off when `OPSATLAS_SWAGGER_UI=false` |
 | Typed TypeScript client, no hand-written API types | **Real** | `make typecheck` |
-| Web console — catalog, detail, scorecard, register by paste, edit and delete | **Real** | 67 component and unit tests, 61 Playwright tests against the real stack |
+| Web console — catalog, detail, scorecard, register by paste, edit and delete | **Real** | 73 component and unit tests, 61 Playwright tests against the real stack |
 | A declared dashboard, rendered as a followable link | **Real** | `manifestLinks.test.ts` refuses `javascript:`, `data:`, `http:` and protocol-relative URLs; `observability.spec.ts` drives the real link in a browser |
 | Declared runbook, contact, SLO target, dependencies and journeys, rendered | **Real** | all five were validated, stored and shown nowhere until now. `manifestLinks.test.ts` (26 tests) and `declarations.spec.ts` (9 Playwright tests); a repository-relative runbook stays a path rather than being guessed into a github.com link |
 | **On-call rotation, declared and scored** | **Real** | `spec.operations.oncall` — a rotation URL, what it covers, and who it escalates to. `oncall-declared` is REQUIRED at tier 1 and 2, and is **stricter at tier 1**: a business-hours rotation passes at tier 2 and fails at tier 1. `PolicyCheckTest` (55), ADR 0016 |
@@ -164,15 +164,31 @@ measurement will be labelled in the interface, not only in a comment.
 
 ### Things this project does not do, and will not claim to
 
-- **It is not multi-tenant.** The data model is single-tenant, shaped so that
-  multi-tenancy is possible later. Every scoped table carries `org_id`, and there
-  is exactly one seeded organization behind a stub resolver. See
-  [ADR 0003](docs/adr/0003-org-scoping-stub.md).
+- **It is not multi-tenant, though it is no longer stubbed.** Every scoped table
+  carries `org_id`, and the organization now comes from the authenticated caller:
+  a verified token is looked up in the `principal` table by issuer *and* subject,
+  and a caller with no row gets 403 rather than somebody else's catalog
+  ([ADR 0013](docs/adr/0013-authentication-via-storm-gate.md)). Isolation is
+  verified by `OrgIsolationIT`, and `no_endpoint_escapes_this_test` fails the
+  build if an endpoint is added without covering it. What is still missing before
+  the word multi-tenant would be honest: there is no way to create an
+  organization, one is seeded; there are no roles, so every principal can do
+  everything within their own; and there is nowhere to keep a per-organization
+  secret, which is what the first external integration will need.
+  [ADR 0003](docs/adr/0003-org-scoping-stub.md) records the stub this replaced,
+  and that swapping one implementation was the whole migration — no query, no
+  table and no caller changed.
 - **The scorecard scores manifests, not running systems.** The slice-one checks
   read what a team declared. Whether traces actually arrive, whether the image was
   actually scanned, whether coverage is actually above the gate — none of that is
   checked yet, because the integrations that would check it do not exist. See
   [ADR 0004](docs/adr/0004-scorecard-rule-model.md).
+- **Catalog search is not fleet-wide.** The list endpoint takes a cursor and a
+  limit and nothing else, so the console's search box and tier filter apply to
+  the page already on screen. At this fleet size the difference is invisible; it
+  would not be at a hundred services. The empty state says so rather than
+  implying a search that reached everything, and closing it is phase 18 in
+  [`docs/roadmap.md`](docs/roadmap.md).
 - **Nothing has been load-tested or security-tested.** No performance, scale,
   availability or security claim appears anywhere in this repository, because
   none has been measured. It *is* deployed — [`deploy/production/`](deploy/production/),
@@ -192,7 +208,7 @@ Six planes. Five of them now have something real in them:
 | **Control** | catalog, ownership, policy, scorecards | **built** — phases 1–3, 6 |
 | Execution | Go observer, probes | **built** — phase 7; reconciliation is not, and needs a deployment concept |
 | Telemetry | traces and metrics | **built** — phase 8; logs are on stdout and shipped nowhere |
-| Event | durable normalized platform events | not built — phase 9, and §6 says it waits for a demonstrated need |
+| Event | durable normalized platform events | not built — phase 11, and §6 says it waits for a demonstrated need, not for time |
 | Data | the monitored applications themselves | — |
 
 The control plane is a **modular monolith**, not microservices:
@@ -568,7 +584,7 @@ OpsAtlas/
 │   └── Dockerfile          multi-stage: JDK builds the jar, JRE runs it
 │   └── src/main/java/com/ambitiousconcepts/opsatlas/
 │       ├── shared/         errors, pagination, correlation — depends on nothing
-│       ├── identity/       the org-scoping stub
+│       ├── identity/       organizations, principals, token resolution
 │       ├── catalog/        services, environments, service.yaml ingestion
 │       ├── governance/     policy rules, scorecards, audit
 │       ├── integrations/   polling watched repositories (read-only)
@@ -592,7 +608,9 @@ OpsAtlas/
 
 ## Roadmap
 
-Slice one is the catalog vertical slice, and nothing else.
+Slice one is the catalog vertical slice — phases 0 through 8, all complete.
+Everything from 9 on is after it, and the numbering below is the one in
+[`docs/roadmap.md`](docs/roadmap.md); the two used to disagree.
 
 | Phase | What | State |
 |---|---|---|
@@ -605,8 +623,17 @@ Slice one is the catalog vertical slice, and nothing else.
 | 6 | GitHub sync — poll watched repositories | **complete** |
 | 7 | The Go observer, and everything health-shaped | **complete** |
 | 8 | OpenTelemetry — traces across both processes, Tempo, Prometheus, Grafana | **complete** |
-| 9 | Transactional outbox, platform events, Redis read models | not started |
-| 10 | Terraform, Kubernetes, Helm, k6 | not started |
+| 9 | Authentication and authorization | **complete** — [ADR 0013](docs/adr/0013-authentication-via-storm-gate.md) |
+| 10 | Packaging — container images for both apps | **complete** |
+| 11 | Transactional outbox, platform events, Redis read models | not started, and waiting on a demonstrated need rather than on time |
+| 12 | Deployment — one box, compose behind Caddy | **deployed**; Terraform, Kubernetes, Helm and k6 still wait |
+| 13 | Deployments — what version is running where | **built, minus drift** — [ADR 0017](docs/adr/0017-deployments-are-reported-not-discovered.md) |
+| 14 | Incidents | not started |
+| 15 | Drift detection — declared version versus running version | not started; the deferred half of 13 |
+| 16 | Live on-call — who is answering right now | not started |
+| 17 | Runtime topology — instances, replicas, pod readiness | not started |
+| 18 | Catalog query — server-side search and filtering | not started; asked for in slice one and not delivered |
 
-Details, what each remaining phase is waiting on, and the decisions deferred
-rather than forgotten are in [`docs/roadmap.md`](docs/roadmap.md).
+Details, what each remaining phase is waiting on, the decisions deferred rather
+than forgotten, and the four commands slice one's definition of done named but
+never delivered are in [`docs/roadmap.md`](docs/roadmap.md).

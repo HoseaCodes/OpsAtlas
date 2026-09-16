@@ -72,11 +72,23 @@ worse than no `terraform/` directory.
   **No JDK needs to be installed** — the build declares a Java 21 toolchain and
   Gradle provisions Temurin 21 itself. Go 1.27+ **is** required for
   `apps/observer`; it is installed here via Homebrew.
-- **Tests:** `make test` — 15 schema fixtures, 67 console component and unit
-  tests, 35 Go tests (race-clean) and 290 JVM tests, all passing. `make test-all`
+- **Tests:** `make test` — 15 schema fixtures, 73 console component and unit
+  tests, 35 Go tests (race-clean) and 305 JVM tests, all passing. `make test-all`
   adds 61 Playwright tests against the real stack. Integration tests use
   Testcontainers and need a running Docker daemon; the Playwright tests need the
   stack running.
+- **There is no `make lint`, `make build` or `make seed`**, and slice one's
+  definition of done named all three. Nothing lints or formats either language:
+  `apps/web/package.json` declares a `lint` script wrapping `next lint`, but
+  eslint is not a dependency, so it cannot run. `make build` is missing even
+  though both build paths exist inside the phase 10 Dockerfiles, so nothing
+  checks that the jar and the console still build without building images.
+  Seeding was superseded rather than dropped — a seeder needs a credential now
+  (ADR 0013), and committing one is what §3 rule 5 forbids. None of this is a
+  correctness gap: `make test` and CI verify the same six things a developer
+  does. It is style enforcement that is absent, and it is written down in
+  `docs/roadmap.md` under **Unfinished business from slice one** rather than
+  rediscovered each session.
 - **CI is green on `master`.** Run #3 on 2026-09-15, commit `4e23098`: all six
   jobs — contract fixtures (20s), observer (21s), console (54s), OpenAPI drift
   (130s), browser smoke (152s), control plane (201s). The browser smoke job is

@@ -22,7 +22,7 @@ OpsAtlas/
 │   ├── control-plane/             ✓ Java 21 / Spring Boot 3 modular monolith
 │   │   └── src/main/java/com/ambitiousconcepts/opsatlas/
 │   │       ├── shared/            ✓ errors, pagination, correlation
-│   │       ├── identity/          ✓ the org-scoping stub
+│   │       ├── identity/          ✓ organizations, principals, token resolution
 │   │       ├── catalog/           ✓ services, environments, service.yaml ingestion
 │   │       ├── governance/        ✓ policy rules, scorecards, audit
 │   │       ├── operations/        ✓ observations, rolled up; health read model
@@ -148,7 +148,7 @@ link, and 375px does not scroll horizontally.
 **Known limitation:** catalog search and tier filtering are applied in the
 console, over the current page only, because the control plane has no search
 endpoint. The empty state says so rather than implying a fleet-wide search.
-Server-side filtering is the obvious next API change.
+Server-side filtering is phase 18.
 
 ### Phase 7 — The observer ✓ **complete**
 
@@ -473,6 +473,28 @@ silently:**
 
 ---
 
+## Unfinished business from slice one
+
+Slice one's definition of done named four commands. Three of them do not exist,
+and the fourth was replaced without the swap being written down. They are
+recorded here rather than quietly dropped, because a definition of done that
+names a command nobody can run teaches everybody to skim the list.
+
+| Asked for | State | What it would take |
+|---|---|---|
+| `make lint` | **Missing.** `apps/web/package.json` declares a `lint` script wrapping `next lint`, but **eslint is not a dependency**, so the script cannot run. Nothing lints the Java at all | An eslint config and dependency for the console, and a Java linter — Checkstyle, or Spotless with `palantir-java-format` — as a Gradle plugin. Both are dependencies under `CLAUDE.md` §5 and need the one-line justification |
+| `make format:check` | **Missing**, and the name is wrong for this Makefile besides: every other check is hyphenated (`check-openapi`, `check-secrets`), so it would be `make check-format` | Prettier for the workspace, Spotless for the JVM. The cost is one formatting commit that touches nearly every file |
+| `make build` | **Missing.** The work happens — the console's standalone build and the control plane's bootable jar are both produced inside the phase 10 Dockerfiles — but nothing exposes it, so there is no way to check that both still build without building images | A thin target over `pnpm --filter @opsatlas/web build` and `./gradlew :control-plane:bootJar` |
+| `make seed` | **Superseded, not dropped.** Registering the example manifests is now `make first-user` plus the console, or a watched source, or curl with a token. Seeding stopped being one command when authentication landed (ADR 0013): a seeder needs a credential, and one committed for convenience is exactly what §3 rule 5 exists to stop | Either a target that reuses the operator token `make first-user` already produces, or a decision to leave it and say so |
+
+**None of this is a correctness risk, and that is why it survived this long.**
+`make test` already runs `check-secrets`, `check-examples`, `typecheck` and
+three test suites, and CI runs the same six jobs a developer does. What is
+missing is style enforcement, not verification. It is listed because slice one
+claimed it and slice one did not deliver it.
+
+---
+
 ## After slice one
 
 Not implemented, not scaffolded, not configured. `CLAUDE.md` §14: if one of these
@@ -481,7 +503,7 @@ expanding scope.
 
 | Phase | What | Why it waits |
 |---|---|---|
-| ~~6~~ | ~~GitHub sync~~ — **done**, by polling rather than webhooks (ADR 0008). A GitHub App is still deferred: it needs a registered application, a private key, an installation flow and somewhere to keep per-installation tokens, and identity is still a stub. | |
+| ~~6~~ | ~~GitHub sync~~ — **done**, by polling rather than webhooks (ADR 0008). A GitHub App is still deferred, though no longer because identity is stubbed — it needs a registered application, a private key, an installation flow, and somewhere to keep a per-installation secret at rest. That last one is the same missing piece phases 16 and 17 need, and it should be solved once for all three. | |
 | ~~7~~ | ~~Go observer~~ — **done**. Drift detection is deferred: it needs a deployment concept to compare a declared version against a running one. | |
 | ~~8~~ | ~~OpenTelemetry, Prometheus, Tempo, Grafana~~ — **done**. Loki is still deferred: structured JSON on stdout already carries the correlation ID, and shipping it needs an agent, a retention policy and a second query language. | |
 | ~~9~~ | ~~**Authentication and authorization**~~ (ADR 0013) — **done**. Every `/api/v1` endpoint needs a verified RS256 token, and a verified token is not a membership: a `principal` row keyed on issuer **and** subject is required, or the answer is 403. The stub resolver is deleted. The four items this row listed as open are all closed — the observer carries its own key on `X-OpsAtlas-Key`, `OrgIsolationIT` covers authorization across organizations and `no_endpoint_escapes_this_test` keeps it covering every endpoint, Prometheus scrapes with a credential, and Swagger UI is off unless asked for | |
@@ -493,6 +515,32 @@ expanding scope.
 | **15** | **Drift detection** — declared version versus running version | The other half of 13, and the thing `CLAUDE.md` §5 has listed as the observer's job since the beginning. Needs a service to expose a running version, which means a new manifest field and observer support. Detailed below |
 | **16** | **Live on-call** — who is answering right now | A read-only paging-provider integration (PagerDuty, Opsgenie). ADR 0016 built the declared half; this is the half that needs somebody else's API and a credential per organization |
 | **17** | **Runtime topology** — instances, replicas, pod readiness | The prototype's "Instances 9 / 14" and "5 pods failing readiness". Needs an orchestrator, cluster credentials and a workload-to-service mapping that follows from nothing in the manifest today. Detailed below |
+| **18** | **Catalog query** — server-side search and filtering | Slice one asked for a list endpoint filterable by team and tier and searchable by name; what shipped takes `cursor` and `limit`, and the console filters the one page it holds. Invisible at seven services, wrong at a hundred. Detailed below |
+
+### Phase 11 — Outbox, platform events, read models
+
+**No design here, deliberately.** Every decision this phase needs depends on the
+consumer that does not exist: whether events are ordered per service or globally,
+whether a read model is Redis or a materialized view, and whether the outbox is
+polled or tailed are all answerable once something consumes them and guesses
+before that. Writing the design now would mean writing it twice, and the second
+version would have to argue with the first.
+
+**The trigger to watch for**, so this is deferred by judgement rather than by
+inertia — any one of:
+
+- A second consumer of registration. Today the only one is the scorecard, and it
+  runs inside the same transaction, which is the correct design for exactly one
+  consumer and the wrong one for two.
+- A read query slow enough to need caching and not fixable by an index. None
+  exists; the fleet is small enough that every catalog query is a sequential scan
+  nobody notices.
+- Work that has to survive a control-plane restart. The retention job and the
+  source poller are both `@Scheduled` and both re-run harmlessly on the next
+  tick, which is why neither needs durability.
+
+Until one of those is true, this phase is a directory that would exist to look
+serious — which is what §3 rule 3 rules out.
 
 ### Phase 13 — Deployments and drift
 
@@ -630,6 +678,37 @@ this project has already made once and written a test against.
 systems it monitors (ADR 0008) and drift detection must not become the exception.
 It reports a mismatch; a human decides.
 
+### Phase 16 — Live on-call
+
+ADR 0016 built the declared half: `spec.operations.oncall` carries a rotation
+URL, a `coverage` enum and an escalation target, and `oncall-declared` scores it,
+stricter at tier 1 than at tier 2. It stops short of naming a person, and
+`CLAUDE.md` says why — a name this system could not refresh would go stale into
+the one page somebody reads at 03:00.
+
+**What it needs:** a read-only integration with a paging provider (PagerDuty,
+Opsgenie), a credential per organization, and a mapping from a declared rotation
+URL to that provider's schedule id.
+
+**The decision that shapes it is the same one ADR 0016 made.** A name this system
+displays must carry the time it was fetched, and must fall back to the declared
+rotation link when the provider cannot be reached. **"Nobody is on call" and "we
+could not ask" are different answers and must never render the same** — which is
+the never-probed rule from phase 7 applied to a different absence.
+
+**Where it lives:** `integrations`, with the rest of the outbound HTTP.
+`ArchitectureTest` enforces that, and a paging provider is exactly the kind of
+caller that would otherwise be wired straight into a console component.
+
+**The cost worth stating before starting, because it is larger than the feature:**
+this is the first integration needing a per-organization secret at rest, and there
+is nowhere to put one today. GitHub polling is unauthenticated, the observer's key
+is a single shared value, and every other credential is process configuration. Per
+tenant secret storage is its own decision with its own ADR — and it is the same
+problem ADR 0008 deferred for the GitHub App and phase 17 needs for cluster
+credentials. **It should be solved once, for all three**, and whichever phase goes
+first pays for it.
+
 ### Phase 17 — Runtime topology
 
 The prototype's `Instances 9 / 14`, `Passing 10 of 10`, and
@@ -672,13 +751,58 @@ orchestrated has no instances. A VM, a serverless function and a static site mus
 read as *not applicable*, never as `0 / 0` — which looks exactly like everything
 being down.
 
+### Phase 18 — Catalog query
+
+Slice one's definition of done asked for `GET /api/v1/services` "filterable by
+team and tier, searchable by name". What shipped takes `cursor` and `limit`, and
+the console filters the page it already holds. With seven services that is
+invisible. At a hundred it is wrong, and wrong in the way that matters most: a
+search box that silently searches one page of results looks exactly like a search
+box that found nothing.
+
+The console's empty state says so, which is the honest handling of a gap and not
+a substitute for closing it.
+
+**What it needs:** `team`, `tier` and `q` parameters on the list endpoint, pushed
+into the repository query rather than applied after paging.
+
+**The part that is easy to get wrong:** a cursor encodes a position in an ordered
+set, so changing the filter changes the set the cursor refers to. A cursor issued
+under one filter and replayed under another silently skips or repeats rows. The
+filter therefore belongs *inside* the cursor, and a cursor whose filter does not
+match the request is a `400` naming the mismatch — not a best effort.
+
+**Why the console cannot fix this at any page size:** it never sees the rows it
+did not fetch. This is the API's problem by construction.
+
+**Deliberately not in this phase:** ranking, full-text search, or anything needing
+an index this database does not have. `name ILIKE '%q%'` with a trigram index is
+the whole feature. A search engine is a different decision, with a different
+operational cost, and nothing here justifies it yet.
+
+**Isolation applies as it does everywhere:** a new endpoint parameter does not
+escape `OrgIsolationIT`, and a filter that reaches across organizations is the
+exact failure `no_endpoint_escapes_this_test` exists to catch. A search that
+returns another tenant's service names is a data leak whether or not it returns
+their details.
+
 ### Deferred decisions, recorded so they are not lost
 
-- **Policy exceptions** — dated, auto-expiring waivers with a named approver. The
-  best governance idea in the prototype, deferred because an approver requires
-  identity, and identity is stubbed (ADR 0003, ADR 0004).
-- **PostgreSQL row-level security** — the strongest form of org scoping, and the
-  right answer once real authentication lands (ADR 0003).
+- **Policy exceptions** — dated, auto-expiring waivers with a named approver.
+  The best governance idea in the prototype. The reason it waited has changed:
+  identity is no longer a stub (ADR 0013), so a principal *can* be named. What is
+  missing now is **roles** — every principal can do everything within their own
+  organization, so "approved by" would record who clicked rather than who was
+  entitled to, and a waiver anyone can grant themselves is not a control
+  (ADR 0004).
+- **PostgreSQL row-level security** — the strongest form of org scoping.
+  **Its trigger has fired.** ADR 0003 deferred it until real authentication
+  landed, and ADR 0013 landed it. Today isolation is enforced by every query
+  filtering on `org_id`, proven by `OrgIsolationIT` and kept honest by
+  `no_endpoint_escapes_this_test` — which is a test that a developer remembered,
+  where RLS would be the database refusing regardless. Worth revisiting as its
+  own decision rather than left on a list of things waiting for something that
+  already happened.
 - **Database-level audit immutability** — `REVOKE UPDATE, DELETE` on `audit_event`
   for the application role. Enforced only in the application layer in slice one,
   and described that way.
